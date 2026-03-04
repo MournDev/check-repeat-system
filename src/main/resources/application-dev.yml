@@ -1,0 +1,237 @@
+# 服务基础配置
+server:
+  address: 0.0.0.0
+  port: 8080
+  servlet:
+    context-path: /check
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+# 预览服务
+kkfileview:
+  base-url: http://192.168.30.138:8080
+# 对象存储
+minio:
+  endpoint: http://192.168.30.138:9000
+  accesskey: admin
+  secretkey: 12345678
+  bucket:
+    main: check-repeat-system
+    avatar: avatar
+    report: report-bucket
+    paper_content: paper-content
+spring:
+  application:
+    name: check-repeat-system
+  # 数据源配置
+  datasource:
+    url: jdbc:mysql://localhost:3306/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&initialTimeout=2
+    username: root
+    password: 89864243
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10 # 连接池最大连接数
+      minimum-idle: 5 # 连接池最小空闲连接数
+      idle-timeout: 180000 # 连接空闲超时时间（3分钟）
+      connection-timeout: 30000 # 连接获取超时时间（30秒）
+      max-lifetime: 1800000 # 连接最大生存时间（30分钟）
+      validation-timeout: 5000 # 连接验证超时时间（5秒）
+      leak-detection-threshold: 60000 # 连接泄漏检测阈值（60秒）
+      connection-test-query: SELECT 1 # 连接测试查询
+      # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 50MB # 单个文件最大大小
+      max-request-size: 200MB # 单次请求最大文件大小
+
+    # 缓存配置（Redis，后续高优先级集成）
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 123456
+      database: 0
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+  # 自定义配置：JWT
+  jwt:
+    secret-key: paperCheckSystem2024SecretKey123456 # 密钥（生产环境需加密存储）
+    expiration: 86400000 # 令牌有效期（24小时，单位：毫秒）
+    token-header: Authorization # 请求头名
+  # 1. 邮件发送核心配置（QQ邮箱专属）
+  mail:
+    host: smtp.qq.com  # QQ邮箱SMTP服务器地址（固定值，不可修改）
+    port: 465  # QQ邮箱SMTP SSL加密端口（固定465，非加密端口25易被屏蔽，优先用465）
+    username: 3070500838@qq.com  # 系统发送邮箱账号（即你刚才开启SMTP的QQ邮箱，如123456789@qq.com）
+    password: tedxbsknokhmdecj  # 此处填第一步获取的16位授权码（不是QQ登录密码！）
+    protocol: smtp  # 邮件传输协议（固定smtp）
+    default-encoding: UTF-8  # 编码格式（防止邮件内容乱码）
+    # 2. SMTP额外属性（QQ邮箱需开启SSL）
+    properties:
+      mail:
+        smtp:
+          auth: true  # 开启SMTP认证（必须为true，否则无法登录QQ邮箱服务器）
+          ssl:
+            enable: true  # 开启SSL加密（对应465端口，必须开启）
+            required: true  # 强制要求SSL连接（防止非加密传输）
+          starttls:
+            enable: false  # QQ邮箱不支持starttls，设为false（避免冲突）
+        debug: true  # 关闭调试模式（生产环境禁用，调试时可设为true查看发送日志）
+
+  # 3. 通知内容模板（保持原有逻辑，无需修改）
+  notice:
+    email:
+      subject-prefix: "[论文查重管理系统] "  # 邮件主题前缀（如“[论文查重系统] 论文提交成功通知”）
+      content-header: "尊敬的用户：<br><br>您有一条新的系统通知，请查收：<br><br>"  # 邮件内容头部（HTML格式）
+      content-footer: "<br><br>此邮件为系统自动发送，请勿回复。如需帮助，请联系管理员。<br>论文查重系统团队"  # 邮件尾部
+# 自定义配置：查重算法
+check:
+  task:
+    max-concurrent: 10 # 最大并发查重任务数（避免服务器资源耗尽）
+    timeout: 3600000   # 任务超时时间（1小时，单位：毫秒）
+    temp-file-path: /data/check-temp/ # 查重临时文件存储路径
+  simhash:
+    hash-bits: 64 # SimHash哈希位数
+    k: 3 # 海明距离阈值（小于等于3判定为相似）
+    hamming-threshold: 3 # 海明距离阈值（与k相同，用于相似性判断）
+  text:
+    segment:
+      type: ik # 分词类型（ik-IK Analyzer）
+      dic-path: classpath:dic/ # 自定义词典路径
+  # 本地查重引擎配置
+  local:
+    enabled: true # 是否启用本地查重引擎
+    cache-enabled: true # 是否启用结果缓存
+    cache-expire-hours: 24 # 缓存过期时间（小时）
+  # 第三方查重引擎配置
+  third-party:
+    enabled: false # 是否启用第三方查重
+    api-url: https://api.thirdparty.com/check # 第三方API地址
+    api-key: your-api-key # API密钥
+    timeout: 30000 # API调用超时时间（毫秒）
+  # 深度学习引擎配置
+  deep-learning:
+    enabled: false # 是否启用深度学习引擎
+    model-path: /models/bert-similarity # 模型文件路径
+    gpu-enabled: false # 是否使用GPU加速
+  # MyBatis-Plus配置
+mybatis-plus:
+    mapper-locations: classpath*:mapper/**/*.xml # Mapper.xml文件路径
+    type-aliases-package: com.abin.checkrepeatsystem.pojo.entity
+    configuration:
+      map-underscore-to-camel-case: true # 下划线转驼峰
+      log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # 控制台打印SQL（开发环境）
+    global-config:
+      db-config:
+        id-type: ASSIGN_ID # 雪花ID主键策略
+        logic-delete-field: isDeleted # 软删除字段名
+        logic-delete-value: 1 # 软删除值（1-已删除）
+        logic-not-delete-value: 0 # 未删除值（0-未删除）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,logfile
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    metrics:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    enable:
+      jvm: true
+      system: true
+      process: true
+      logback: true
+
+# 报告模块配置
+report:
+  pdf:
+    font-path: fonts/SimHei.ttf # 中文字体路径（需在resources/fonts下放置SimHei.ttf）
+    page-size: A4 # PDF页面大小（A4/A3/Letter）
+    margin: 50    # 页面边距（单位：pt）
+  preview:
+    max-paragraph-length: 500 # 在线预览时单段最大长度（避免页面过长）
+  storage:
+    enabled: true
+    base-path: D:/data/report # 报告文件存储根路径
+    expire-days: 365 # 报告文件过期时间（365天，过期可清理）
+  # 增强版报告配置
+  enhanced:
+    enabled: true # 是否启用增强版报告
+    include-charts: true # 是否包含图表
+    include-recommendations: true # 是否包含改进建议
+    template-type: professional # 报告模板类型（professional/business/simple）
+# 教师审核模块配置
+review:
+  attach:
+    base-path: /data/review-attach/ # 审核附件存储路径
+    max-size: 50MB # 附件最大大小
+    allowed-types: doc,docx,pdf,jpg,png # 允许的附件格式
+  batch:
+    max-count: 20 # 批量审核最大数量（避免单次操作过多）
+  notify:
+    enabled: true # 是否开启审核结果通知（后续扩展消息推送时使用）
+# 管理员规则配置模块默认值
+admin:
+  check-rule:
+    default-threshold: 20.00 # 默认重复率阈值（%）
+    default-interval: 86400 # 默认二次查重间隔（秒）
+    default-max-count: 5 # 默认最大查重次数
+  compare-lib:
+    default-enabled: 1 # 新建比对库默认启用
+  system-param:
+    max-paper-size: 209715200 # 默认论文最大大小（200MB=200*1024*1024）
+    max-concurrent-check: 10 # 默认最大并发查重数
+  jwt-expiration: 86400000 # 默认JWT有效期（毫秒）
+# 头像存储配置
+avatar:
+  storage:
+    base-path: D:/data/avatar-storage # 头像文件存储根路径
+    max-size: 5MB # 头像文件最大大小
+    allowed-types: jpg,jpeg,png # 允许的头像格式
+  access:
+    url-prefix: /api/avatar/ # 头像访问URL前缀
+
+# 文件上传配置
+file:
+  upload:
+    storage-type: LOCAL # 存储类型：LOCAL（本地）/OSS（阿里云OSS）
+    base-path: D:/upload/ # 本地存储根路径（Windows）/ 或 /home/upload/（Linux）
+    max-size-mb: 50 # 最大文件大小（MB）
+
+# 阿里云OSS配置（存储类型为OSS时生效）
+aliyun:
+  oss:
+    endpoint: oss-cn-shenzhen.aliyuncs.com # OSS地域Endpoint（需替换为你的地域，如oss-cn-beijing）
+    access-key-id: LTAI5txxxxxxxxxxxxxxx # 你的OSS AccessKeyId（从阿里云控制台获取）
+    access-key-secret: 8xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx # 你的OSS AccessKeySecret
+    bucket-name: your-bucket-name # 你的OSS Bucket名称（需提前创建，且配置跨域）
+    # OSS文件访问前缀（可选，CDN加速时配置）
+    access-prefix: https://your-bucket-name.oss-cn-shenzhen.aliyuncs.com/
+# 论文查重服务配置
+paper-check:
+  threshold: 20.0 # 查重通过阈值（重复率≤20%为通过）
+  min-hash-distance: 3 # SimHash汉明距离阈值（≤3视为相似）
+  parse-timeout: 30000 # 文本解析超时时间（30秒）
+  report-storage-path: D:/check-report/ # 查重报告存储路径（Linux：/home/check-report/）
+  compare-library:
+    校内论文库: true # 是否启用校内论文库比对
+    network-resource: false # 是否启用网络资源比对（默认关闭，避免版权问题）
+advisor-assign:
+  max-task-count: 10
+  retry-count: 3
+
+# 兼容性配置（用于旧代码）
+upload:
+  base-path: D:/upload/

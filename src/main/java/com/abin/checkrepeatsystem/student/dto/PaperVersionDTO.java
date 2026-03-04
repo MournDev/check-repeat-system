@@ -1,0 +1,22 @@
+package com.abin.checkrepeatsystem.student.dto;
+
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * 论文版本信息DTO
+ */
+@Data
+public class PaperVersionDTO {
+    private Long id;
+    private Long paperId;
+    private Integer version;
+    private LocalDateTime submitTime;
+    private Boolean isCurrent;
+    private BigDecimal similarityRate;
+    private Integer wordCount;
+    private String fileId;
+    private String changes; // 主要修改内容
+}

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- namespace 必须与 Mapper 接口的全类名一致 -->
+<mapper namespace="com.abin.checkrepeatsystem.admin.mapper.PaperSubmitMapper">
+
+    <!-- 实现 countByTimeRange 方法：按时间维度统计提交人数 -->
+    <select id="countByTimeRange" resultType="java.util.Map">
+        SELECT
+        -- 根据统计维度格式化时间（日/周/月）
+        CASE
+        WHEN #{statDimension} = 'DAY' THEN DATE_FORMAT(submit_time, '%Y-%m-%d')
+        WHEN #{statDimension} = 'WEEK' THEN CONCAT(
+        DATE_FORMAT(DATE_SUB(submit_time, INTERVAL WEEKDAY(submit_time) DAY), '%Y-%m-%d'),
+        ' 至 ',
+        DATE_FORMAT(DATE_ADD(submit_time, INTERVAL 6 - WEEKDAY(submit_time) DAY), '%Y-%m-%d')
+        )
+        WHEN #{statDimension} = 'MONTH' THEN DATE_FORMAT(submit_time, '%Y-%m')
+        END AS time_key, -- 时间维度的 key（对应 Map 的 key）
+        COUNT(DISTINCT student_id) AS submit_count -- 提交人数（去重，避免同一学生多次提交）
+        FROM
+        paper_submit
+        WHERE
+        -- 时间范围筛选
+        DATE(submit_time) BETWEEN #{startDate} AND #{endDate}
+        -- 专业筛选（非空才加条件）
+        <if test="majorId != null">AND major_id = #{majorId}</if>
+        -- 年级筛选（非空才加条件）
+        <if test="grade != null">AND grade = #{grade}</if>
+        -- 软删除：只查未删除的记录
+        AND is_deleted = 0
+        GROUP BY
+        -- 按格式化后的时间分组
+        CASE
+        WHEN #{statDimension} = 'DAY' THEN DATE_FORMAT(submit_time, '%Y-%m-%d')
+        WHEN #{statDimension} = 'WEEK' THEN CONCAT(
+        DATE_FORMAT(DATE_SUB(submit_time, INTERVAL WEEKDAY(submit_time) DAY), '%Y-%m-%d'),
+        ' 至 ',
+        DATE_FORMAT(DATE_ADD(submit_time, INTERVAL 6 - WEEKDAY(submit_time) DAY), '%Y-%m-%d')
+        )
+        WHEN #{statDimension} = 'MONTH' THEN DATE_FORMAT(submit_time, '%Y-%m')
+        END
+        ORDER BY
+        -- 按时间升序排列
+        CASE
+        WHEN #{statDimension} = 'DAY' THEN DATE_FORMAT(submit_time, '%Y-%m-%d')
+        WHEN #{statDimension} = 'WEEK' THEN DATE_FORMAT(DATE_SUB(submit_time, INTERVAL WEEKDAY(submit_time) DAY), '%Y-%m-%d')
+        WHEN #{statDimension} = 'MONTH' THEN DATE_FORMAT(submit_time, '%Y-%m')
+        END ASC
+    </select>
+    <select id="selectAdvisorTaskList" resultType="com.abin.checkrepeatsystem.user.vo.PaperAdvisorTaskVO">
+        SELECT
+        ps.id AS paperId,
+        ps.paper_title AS paperTitle,
+        ps.paper_type AS paperType,
+        ps.submit_status AS submitStatus,
+        -- 状态描述：1=待指导，2=指导中，3=指导完成
+        CASE ps.submit_status
+        WHEN 1 THEN '待指导'
+        WHEN 2 THEN '指导中'
+        WHEN 3 THEN '指导完成'
+        ELSE '其他' END AS submitStatusDesc,
+        ps.student_id AS studentId,
+        su.real_name AS studentName, -- 关联学生表获取姓名
+        su.username AS studentNo, -- 假设 username 存储学号
+        ps.submit_time AS submitTime,
+        ps.advisor_assign_time AS advisorAssignTime,
+        ps.advisor_suggestion AS advisorSuggestion,
+        ps.advisor_score AS advisorScore
+        FROM paper_submit ps
+        -- 关联 sys_user 表（学生信息）：ps.student_id = su.id
+        LEFT JOIN sys_user su ON ps.student_id = su.id AND su.is_deleted = 0
+        WHERE
+        ps.advisor_id = #{advisorId} -- 筛选当前教师的任务
+        AND ps.is_deleted = 0 -- 过滤已删除的论文
+        <if test="status != null">
+            AND ps.submit_status = #{status} -- 可选：按状态筛选
+        </if>
+        ORDER BY ps.advisor_assign_time DESC -- 按分配时间倒序（最新任务在前）
+    </select>
+
+
+</mapper>
