@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.Resource;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -208,12 +209,56 @@ public class AdminPaperController {
      */
     @PostMapping("/{paperId:[0-9]+}/internal-check")
     public Result<String> internalCheckPaper(@PathVariable Long paperId) {
-        log.info("接收内部查重检测请求: paperId={}", paperId);
+        log.info("接收内部查重检测请求：paperId={}", paperId);
         try {
             return adminPaperService.schoolInternalCheckPaper(paperId);
         } catch (Exception e) {
-            log.error("校内查重检测失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "校内查重检测失败: " + e.getMessage());
+            log.error("校内查重检测失败：{}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "校内查重检测失败：" + e.getMessage());
+        }
+    }
+    
+    /**
+     * 批量内部查重检测
+     */
+    @PostMapping("/batch-internal-check")
+    public Result<String> batchInternalCheckPaper(@RequestBody List<Long> paperIds) {
+        log.info("接收批量内部查重检测请求：paperIds={}", paperIds);
+        try {
+            return adminPaperService.batchSchoolInternalCheckPaper(paperIds);
+        } catch (Exception e) {
+            log.error("批量校内查重检测失败：{}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "批量校内查重检测失败：" + e.getMessage());
+        }
+    }
+    
+    /**
+     * 批量第三方查重检测
+     */
+    @PostMapping("/batch-third-party-check")
+    public Result<String> batchThirdPartyCheckPaper(@RequestBody List<Long> paperIds) {
+        log.info("接收批量第三方查重检测请求：paperIds={}", paperIds);
+        try {
+            return adminPaperService.batchThirdPartyCheckPaper(paperIds);
+        } catch (Exception e) {
+            log.error("批量第三方查重检测失败：{}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "批量第三方查重检测失败：" + e.getMessage());
+        }
+    }
+    
+    /**
+     * 第三方查重检测（单篇）
+     */
+    @PostMapping("/{paperId:[0-9]+}/third-party-check")
+    public Result<String> thirdPartyCheckPaper(@PathVariable Long paperId) {
+        log.info("接收第三方查重检测请求：paperId={}", paperId);
+        try {
+            List<Long> paperIds = new ArrayList<>();
+            paperIds.add(paperId);
+            return adminPaperService.batchThirdPartyCheckPaper(paperIds);
+        } catch (Exception e) {
+            log.error("第三方查重检测失败：{}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "第三方查重检测失败：" + e.getMessage());
         }
     }
 }

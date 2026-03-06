@@ -2,7 +2,11 @@ package com.abin.checkrepeatsystem.admin.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.service.AdminDictService;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.mapper.CollegeMapper;
+import com.abin.checkrepeatsystem.pojo.entity.College;
+import com.abin.checkrepeatsystem.pojo.entity.Major;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.student.mapper.MajorMapper;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -22,27 +26,30 @@ public class AdminDictServiceImpl implements AdminDictService {
     @Resource
     private SysUserService sysUserService;
 
+    @Resource
+    private CollegeMapper collegeMapper;
+
+    @Resource
+    private MajorMapper majorMapper;
+
     @Override
     public Result<List<Map<String, Object>>> getMajors() {
-        // 从用户表中提取所有专业信息
-        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-        wrapper.select(SysUser::getMajor)
-               .isNotNull(SysUser::getMajor)
-               .ne(SysUser::getMajor, "")
-               .eq(SysUser::getIsDeleted, 0)
-               .groupBy(SysUser::getMajor);
+        // 从 major 表查询所有专业信息
+        LambdaQueryWrapper<Major> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Major::getIsDeleted, 0)
+               .orderByAsc(Major::getMajorName);
         
-        List<SysUser> users = sysUserService.list(wrapper);
+        List<Major> majorList = majorMapper.selectList(wrapper);
         
-        List<Map<String, Object>> majors = users.stream()
-                .map(user -> {
-                    Map<String, Object> major = new HashMap<>();
-                    major.put("value", user.getMajor());
-                    major.put("label", user.getMajor());
-                    return major;
+        List<Map<String, Object>> majors = majorList.stream()
+                .map(major -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("value", major.getId());
+                    map.put("label", major.getMajorName());
+                    map.put("code", major.getMajorCode());
+                    map.put("collegeId", major.getCollegeId());
+                    return map;
                 })
-                .distinct()
-                .sorted(Comparator.comparing(m -> (String) m.get("label")))
                 .collect(Collectors.toList());
         
         log.debug("获取专业列表成功: count={}", majors.size());
@@ -82,25 +89,21 @@ public class AdminDictServiceImpl implements AdminDictService {
 
     @Override
     public Result<List<Map<String, Object>>> getColleges() {
-        // 从用户表中提取所有学院信息
-        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-        wrapper.select(SysUser::getCollegeName)
-               .isNotNull(SysUser::getCollegeName)
-               .ne(SysUser::getCollegeName, "")
-               .eq(SysUser::getIsDeleted, 0)
-               .groupBy(SysUser::getCollegeName);
+        // 从 college 表查询所有学院信息
+        LambdaQueryWrapper<College> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(College::getIsDeleted, 0)
+               .orderByAsc(College::getCollegeName);
         
-        List<SysUser> users = sysUserService.list(wrapper);
+        List<College> collegeList = collegeMapper.selectList(wrapper);
         
-        List<Map<String, Object>> colleges = users.stream()
-                .map(user -> {
-                    Map<String, Object> college = new HashMap<>();
-                    college.put("value", user.getCollegeName());
-                    college.put("label", user.getCollegeName());
-                    return college;
+        List<Map<String, Object>> colleges = collegeList.stream()
+                .map(college -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("value", college.getId());
+                    map.put("label", college.getCollegeName());
+                    map.put("code", college.getCollegeCode());
+                    return map;
                 })
-                .distinct()
-                .sorted(Comparator.comparing(m -> (String) m.get("label")))
                 .collect(Collectors.toList());
         
         log.debug("获取学院列表成功: count={}", colleges.size());
@@ -110,21 +113,17 @@ public class AdminDictServiceImpl implements AdminDictService {
     @Override
     public Result<Map<String, String>> getMajorNameMap() {
         try {
-            // 从用户表中提取专业代码和名称的映射关系
-            LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-            wrapper.select(SysUser::getMajor, SysUser::getMajor)
-                   .isNotNull(SysUser::getMajor)
-                   .ne(SysUser::getMajor, "")
-                   .eq(SysUser::getIsDeleted, 0)
-                   .groupBy(SysUser::getMajor);
+            // 从 major 表查询专业ID和名称的映射关系
+            LambdaQueryWrapper<Major> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(Major::getIsDeleted, 0);
             
-            List<SysUser> users = sysUserService.list(wrapper);
+            List<Major> majors = majorMapper.selectList(wrapper);
             
-            Map<String, String> majorMap = users.stream()
+            Map<String, String> majorMap = majors.stream()
                 .collect(Collectors.toMap(
-                    SysUser::getMajor,  // key: 专业代码
-                    SysUser::getMajor,  // value: 专业名称（这里简化处理）
-                    (existing, replacement) -> existing  // 处理重复key
+                    major -> String.valueOf(major.getId()),
+                    Major::getMajorName,
+                    (existing, replacement) -> existing
                 ));
             
             log.debug("获取专业名称映射成功: count={}", majorMap.size());

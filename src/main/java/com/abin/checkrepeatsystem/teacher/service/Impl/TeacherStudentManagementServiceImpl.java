@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.teacher.service.Impl;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
@@ -216,8 +217,11 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     @Override
     public boolean sendMessage(SendMessageDTO sendMessageDTO) {
         try {
+            // 使用当前登录用户ID
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+                
             SystemMessage message = new SystemMessage();
-            message.setSenderId(0L); // 系统发送，实际应该是当前教师ID
+            message.setSenderId(currentUserId); // 使用当前教师 ID 而非硬编码 0
             message.setReceiverId(sendMessageDTO.getReceiverId());
             message.setTitle(sendMessageDTO.getTitle() != null ? sendMessageDTO.getTitle() : "系统消息");
             message.setContent(sendMessageDTO.getContent());

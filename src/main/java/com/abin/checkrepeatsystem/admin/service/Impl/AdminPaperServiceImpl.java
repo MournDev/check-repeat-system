@@ -351,8 +351,89 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             }
             
         } catch (Exception e) {
-            log.error("校内查重检测失败: paperId={}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "校内查重检测失败: " + e.getMessage());
+            log.error("校内查重检测失败：paperId={}", paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "校内查重检测失败：" + e.getMessage());
+        }
+    }
+        
+    @Override
+    public Result<String> batchSchoolInternalCheckPaper(List<Long> paperIds) {
+        try {
+            if (paperIds == null || paperIds.isEmpty()) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文 ID 列表不能为空");
+            }
+                
+            if (paperIds.size() > 20) {
+                return Result.error(ResultCode.PARAM_ERROR, "单次批量查重最多支持 20 篇论文");
+            }
+                
+            int successCount = 0;
+            int failCount = 0;
+            List<String> failReasons = new ArrayList<>();
+                
+            for (Long paperId : paperIds) {
+                try {
+                    PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+                    if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+                        failCount++;
+                        failReasons.add("论文 ID " + paperId + " 不存在");
+                        continue;
+                    }
+                        
+                    // 更新论文查重标记
+                    updatePaperCheckFlags(paperInfo, "school", "local");
+                        
+                    // 执行内部查重检测
+                    Result<SimilarityDetectionResult> detectionResult = detectionService.detectPaperSimilarity(paperId, null);
+                        
+                    if (detectionResult.getCode() == 200) {
+                        SimilarityDetectionResult result = detectionResult.getData();
+                        updatePaperCheckCompletion(paperInfo, result.getOverallSimilarity(), true);
+                        successCount++;
+                        log.info("批量查重 - 论文 ID: {}, 相似度：{}%", paperId, result.getOverallSimilarity());
+                    } else {
+                        failCount++;
+                        failReasons.add("论文 ID " + paperId + ": " + detectionResult.getMessage());
+                        updatePaperCheckCompletion(paperInfo, null, false);
+                    }
+                } catch (Exception e) {
+                    failCount++;
+                    failReasons.add("论文 ID " + paperId + ": " + e.getMessage());
+                    log.error("批量查重失败：paperId={}", paperId, e);
+                }
+            }
+                
+            String message = String.format("批量查重完成：成功%d篇，失败%d篇", successCount, failCount);
+            if (!failReasons.isEmpty()) {
+                message += "。失败详情：" + String.join("; ", failReasons);
+            }
+                
+            return Result.success(message);
+                
+        } catch (Exception e) {
+            log.error("批量校内查重失败", e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "批量校内查重失败：" + e.getMessage());
+        }
+    }
+        
+    @Override
+    public Result<String> batchThirdPartyCheckPaper(List<Long> paperIds) {
+        try {
+            if (paperIds == null || paperIds.isEmpty()) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文 ID 列表不能为空");
+            }
+                
+            if (paperIds.size() > 20) {
+                return Result.error(ResultCode.PARAM_ERROR, "单次批量查重最多支持 20 篇论文");
+            }
+                
+            // TODO: 实现第三方查重逻辑（需要对接知网、维普等 API）
+            // 当前返回提示错误
+            return Result.error(ResultCode.SYSTEM_ERROR, "第三方查重功能暂未实现，请联系管理员配置");
+                
+        } catch (Exception e) {
+            log.error("批量第三方查重失败", e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "批量第三方查重失败：" + e.getMessage());
         }
     }
 
@@ -400,14 +481,18 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             updateInfo.setCheckEngineType(engineType);
             updateInfo.setCheckSource(source);
             updateInfo.setCheckTime(LocalDateTime.now());
+            // 初始化查重完成状态为 0（未开始），实际完成时由 updatePaperCheckCompletion 设置为 1
+            if (paperInfo.getCheckCompleted() == null) {
+                updateInfo.setCheckCompleted(0);
+            }
             updateInfo.setUpdateTime(LocalDateTime.now());
-            
+                
             paperInfoMapper.updateById(updateInfo);
-            
-            log.info("论文查重标记更新成功: paperId={}, engineType={}, source={}", 
+                
+            log.info("论文查重标记更新成功：paperId={}, engineType={}, source={}", 
                     paperInfo.getId(), engineType, source);
         } catch (Exception e) {
-            log.error("更新论文查重标记失败: paperId={}", paperInfo.getId(), e);
+            log.error("更新论文查重标记失败：paperId={}", paperInfo.getId(), e);
         }
     }
     
@@ -419,25 +504,36 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             PaperInfo updateInfo = new PaperInfo();
             updateInfo.setId(paperInfo.getId());
             updateInfo.setCheckCompleted(success ? 1 : 0);
-            
+                
             if (similarity != null) {
                 updateInfo.setSimilarityRate(BigDecimal.valueOf(similarity));
-            }
-            
-            if (success) {
-                updateInfo.setCheckResult("查重完成，相似度: " + similarity + "%");
+                // 设置查重结果描述
+                updateInfo.setCheckResult("查重完成，相似度：" + similarity + "%");
             } else {
-                updateInfo.setCheckResult("查重失败");
+                updateInfo.setCheckResult(success ? "查重完成" : "查重失败");
             }
-            
+                
+            // 确保查重引擎类型和来源被正确设置
+            if (paperInfo.getCheckEngineType() == null) {
+                updateInfo.setCheckEngineType("LOCAL");
+            }
+            if (paperInfo.getCheckSource() == null) {
+                updateInfo.setCheckSource("LOCAL");
+            }
+                
+            // 设置查重时间（如果是第一次完成）
+            if (success && paperInfo.getCheckTime() == null) {
+                updateInfo.setCheckTime(LocalDateTime.now());
+            }
+                
             updateInfo.setUpdateTime(LocalDateTime.now());
-            
+                
             paperInfoMapper.updateById(updateInfo);
-            
-            log.info("论文查重完成状态更新: paperId={}, success={}, similarity={}", 
+                
+            log.info("论文查重完成状态更新：paperId={}, success={}, similarity={}", 
                     paperInfo.getId(), success, similarity);
         } catch (Exception e) {
-            log.error("更新论文查重完成状态失败: paperId={}", paperInfo.getId(), e);
+            log.error("更新论文查重完成状态失败：paperId={}", paperInfo.getId(), e);
         }
     }
     

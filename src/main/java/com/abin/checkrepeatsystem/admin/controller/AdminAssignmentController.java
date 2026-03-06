@@ -18,8 +18,7 @@ import java.util.Map;
  * 负责处理论文指导老师分配相关的所有接口
  */
 @RestController
-@RequestMapping({"/api/admin/assignment", "/api/admin/assignments"})
-//@PreAuthorize("hasAuthority('ADMIN')")
+@RequestMapping("/api/admin/assignment")
 @Slf4j
 public class AdminAssignmentController {
 

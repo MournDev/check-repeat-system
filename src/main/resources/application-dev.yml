@@ -10,10 +10,10 @@ server:
       min-spare: 20
 # 预览服务
 kkfileview:
-  base-url: http://192.168.30.138:8080
+  base-url: http://192.168.30.139:8080
 # 对象存储
 minio:
-  endpoint: http://192.168.30.138:9000
+  endpoint: http://192.168.30.139:9000
   accesskey: admin
   secretkey: 12345678
   bucket:

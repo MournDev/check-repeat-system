@@ -4,6 +4,8 @@ import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
@@ -42,6 +44,41 @@ public class MessageVO {
 
     @ApiModelProperty("发送者头像")
     private String senderAvatar;
+
+    @ApiModelProperty("格式化后的时间（相对时间）")
+    private String formattedTime;
+
+    /**
+     * 获取格式化的时间显示
+     */
+    public String getFormattedTime() {
+        if (sendTime == null || sendTime.isEmpty()) {
+            return "";
+        }
+        
+        try {
+            LocalDateTime sentTime = LocalDateTime.parse(sendTime);
+            LocalDateTime now = LocalDateTime.now();
+            long minutesBetween = java.time.Duration.between(sentTime, now).toMinutes();
+            
+            if (minutesBetween < 1) {
+                return "刚刚";
+            } else if (minutesBetween < 60) {
+                return minutesBetween + "分钟前";
+            } else if (minutesBetween < 1440) { // 24 小时内
+                long hours = minutesBetween / 60;
+                return hours + "小时前";
+            } else if (sentTime.toLocalDate().equals(now.toLocalDate())) {
+                return "今天 " + sentTime.format(DateTimeFormatter.ofPattern("HH:mm"));
+            } else if (sentTime.toLocalDate().equals(now.minusDays(1).toLocalDate())) {
+                return "昨天 " + sentTime.format(DateTimeFormatter.ofPattern("HH:mm"));
+            } else {
+                return sentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            }
+        } catch (Exception e) {
+            return sendTime; // 如果解析失败，返回原始时间
+        }
+    }
 
     /**
      *消息附件VO

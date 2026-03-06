@@ -16,6 +16,7 @@ import com.abin.checkrepeatsystem.teacher.mapper.ReviewRecordMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
 import com.abin.checkrepeatsystem.common.utils.ReviewAttachUtils;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -63,6 +64,9 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
     @Resource
     private ReviewAttachUtils reviewAttachUtils;
+
+    @Resource
+    private PaperStatusLogMapper paperStatusLogMapper;
 
     // 批量审核最大数量（从配置文件获取）
     @Value("${review.batch.max-count}")
@@ -195,6 +199,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 // 3.4 更新论文状态（3-审核通过，4-审核不通过）
                 PaperInfo updatePaper = new PaperInfo();
                 updatePaper.setId(paperId);
+                String oldStatus = paperInfo.getPaperStatus();
                 if (reviewStatus.equals(3)) { // 3-审核通过
                     // 审核通过，设置为完成状态
                     updatePaper.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
@@ -203,10 +208,14 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                     updatePaper.setPaperStatus(DictConstants.PaperStatus.REJECTED);
                 }
                 paperInfoMapper.updateById(updatePaper);
-
+                
                 successCount++;
-                log.info("论文审核成功：论文ID={}，审核结果={}，审核记录ID={}",
+                log.info("论文审核成功：论文 ID={}，审核结果={}，审核记录 ID={}",
                         paperId, reviewStatus.equals(DictConstants.PaperStatus.COMPLETED) ? "通过" : "不通过", reviewRecord.getId());
+                
+                // 3.5 记录论文状态变更日志（AUDITING → COMPLETED/REJECTED）
+                recordPaperStatusLog(paperId, oldStatus, updatePaper.getPaperStatus(), 
+                    reviewStatus.equals(3) ? "导师审核通过" : "导师审核不通过");
 
             } catch (Exception e) {
                 log.error("论文审核失败（论文ID：{}）：", paperId, e);
@@ -369,7 +378,27 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
     // ------------------------------ 私有辅助方法 ------------------------------
     /**
-     * 批量转换PaperInfo列表为ReviewResultDTO列表（减少SQL查询次数）
+     * 记录论文状态变更日志
+     */
+    private void recordPaperStatusLog(Long paperId, String oldStatus, String newStatus, String reason) {
+        try {
+            com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog statusLog = 
+                new com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog();
+            statusLog.setPaperId(paperId);
+            statusLog.setOldStatus(Integer.parseInt(oldStatus));
+            statusLog.setNewStatus(Integer.parseInt(newStatus));
+            statusLog.setStatusReason(reason);
+            UserBusinessInfoUtils.setAuditField(statusLog, true);
+            paperStatusLogMapper.insert(statusLog);
+            log.info("论文状态日志记录成功 - 论文 ID: {}, {} -> {}, 原因：{}", paperId, oldStatus, newStatus, reason);
+        } catch (Exception e) {
+            log.error("论文状态日志记录失败 - 论文 ID: {}", paperId, e);
+            // 日志记录失败不影响主流程，仅警告
+        }
+    }
+        
+    /**
+     * 批量转换 PaperInfo 列表为 ReviewResultDTO 列表（减少 SQL 查询次数）
      */
     private List<ReviewResultDTO> convertToReviewResultDTOList(List<PaperInfo> paperList) {
         // 1. 批量查询关联数据（学生、任务、报告、审核记录）

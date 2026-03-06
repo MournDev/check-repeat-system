@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
@@ -191,7 +192,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
 
             // 构建消息对象
             SystemMessage message = new SystemMessage();
-            message.setSenderId(studentId);
+            // 使用当前登录用户ID
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+            message.setSenderId(currentUserId);
             message.setReceiverId(advisorId);
             message.setMessageType("PRIVATE");
             message.setContentType("TEXT");

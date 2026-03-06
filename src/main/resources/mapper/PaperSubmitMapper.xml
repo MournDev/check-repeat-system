@@ -49,33 +49,55 @@
     </select>
     <select id="selectAdvisorTaskList" resultType="com.abin.checkrepeatsystem.user.vo.PaperAdvisorTaskVO">
         SELECT
-        ps.id AS paperId,
-        ps.paper_title AS paperTitle,
-        ps.paper_type AS paperType,
-        ps.submit_status AS submitStatus,
-        -- 状态描述：1=待指导，2=指导中，3=指导完成
-        CASE ps.submit_status
-        WHEN 1 THEN '待指导'
-        WHEN 2 THEN '指导中'
-        WHEN 3 THEN '指导完成'
-        ELSE '其他' END AS submitStatusDesc,
-        ps.student_id AS studentId,
-        su.real_name AS studentName, -- 关联学生表获取姓名
-        su.username AS studentNo, -- 假设 username 存储学号
-        ps.submit_time AS submitTime,
-        ps.advisor_assign_time AS advisorAssignTime,
-        ps.advisor_suggestion AS advisorSuggestion,
-        ps.advisor_score AS advisorScore
+        pi.id          AS paperId,
+        pi.paper_title AS paperTitle,
+        pi.paper_type  AS paperType,
+        -- paper_info 中论文状态映射到 submitStatus：auditing=2待审核、completed=3已完成、others=1待处理
+        CASE pi.paper_status
+            WHEN 'auditing'   THEN 2
+            WHEN 'completed'  THEN 3
+            WHEN 'rejected'   THEN 4
+            ELSE 1
+        END AS submitStatus,
+        CASE pi.paper_status
+            WHEN 'auditing'   THEN '待审核'
+            WHEN 'completed'  THEN '导师指导完成'
+            WHEN 'rejected'   THEN '已驳回'
+            ELSE '待处理'
+        END AS submitStatusDesc,
+        pi.student_id  AS id,
+        su.real_name   AS userName,
+        pi.major_id    AS majorId,
+        pi.teacher_id  AS advisorId,
+        pi.submit_time AS submitTime,
+        pi.allocation_time AS advisorAssignTime,
+        tu.real_name   AS advisorName
         FROM paper_submit ps
-        -- 关联 sys_user 表（学生信息）：ps.student_id = su.id
-        LEFT JOIN sys_user su ON ps.student_id = su.id AND su.is_deleted = 0
+        -- 关联论文表（获取论文状态等）
+        INNER JOIN paper_info pi ON ps.paper_id = pi.id AND pi.is_deleted = 0
+        -- 关联学生表
+        LEFT JOIN sys_user su ON pi.student_id = su.id AND su.is_deleted = 0
+        -- 关联导师表
+        LEFT JOIN sys_user tu ON pi.teacher_id = tu.id AND tu.is_deleted = 0
         WHERE
-        ps.advisor_id = #{advisorId} -- 筛选当前教师的任务
-        AND ps.is_deleted = 0 -- 过滤已删除的论文
+        pi.teacher_id = #{advisorId}
+        AND ps.is_deleted = 0
         <if test="status != null">
-            AND ps.submit_status = #{status} -- 可选：按状态筛选
+            AND (
+                CASE pi.paper_status
+                    WHEN 'auditing'  THEN 2
+                    WHEN 'completed' THEN 3
+                    WHEN 'rejected'  THEN 4
+                    ELSE 1
+                END
+            ) = #{status}
         </if>
-        ORDER BY ps.advisor_assign_time DESC -- 按分配时间倒序（最新任务在前）
+        -- 取每篇论文最新一次提交记录
+        AND ps.submit_version = (
+            SELECT MAX(ps2.submit_version) FROM paper_submit ps2
+            WHERE ps2.paper_id = ps.paper_id AND ps2.is_deleted = 0
+        )
+        ORDER BY pi.allocation_time DESC
     </select>
 
 

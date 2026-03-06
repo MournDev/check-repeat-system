@@ -14,6 +14,7 @@ import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.PostConstruct;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -38,6 +39,46 @@ public class FileService {
 
     @Value("${kkfileview.base-url}")
     private String kkfileviewUrl;
+    
+    /**
+     * 初始化上传路径，确保目录存在
+     */
+    @PostConstruct
+    private void init() {
+        try {
+            // 如果是 Windows 环境且路径为 Unix 风格，转换为 Windows 路径
+            if (System.getProperty("os.name").toLowerCase().contains("win") && 
+                (uploadPath.startsWith("/") || uploadPath.startsWith("data"))) {
+                // 使用用户主目录下的临时上传目录
+                String userHome = System.getProperty("user.home");
+                uploadPath = Paths.get(userHome, "check-repeat-system", "upload").toString();
+                log.info("检测到 Windows 环境，使用上传路径：{}", uploadPath);
+            }
+            
+            // 创建上传根目录
+            File uploadDir = new File(uploadPath);
+            if (!uploadDir.exists()) {
+                boolean created = uploadDir.mkdirs();
+                if (created) {
+                    log.info("创建上传目录成功：{}", uploadPath);
+                } else {
+                    log.warn("创建上传目录失败：{}", uploadPath);
+                }
+            } else {
+                log.info("上传目录已存在：{}", uploadPath);
+            }
+            
+            // 验证目录是否可写
+            if (!uploadDir.canWrite()) {
+                log.error("上传目录不可写：{}", uploadPath);
+                throw new RuntimeException("上传目录不可写：" + uploadPath);
+            }
+            
+        } catch (Exception e) {
+            log.error("初始化上传路径失败", e);
+            throw new RuntimeException("初始化上传路径失败：" + e.getMessage());
+        }
+    }
 
     @Autowired
     private FileInfoMapper fileInfoMapper;

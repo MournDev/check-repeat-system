@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.service.FileService;
+import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.mapper.PendingReviewMapper;
@@ -353,9 +354,12 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     public Result<Map<String, Object>> sendReminder(String teacherId, SendReminderDTO reminderDTO) {
         Map<String, Object> result = new HashMap<>();
         try {
-            log.info("发送提醒消息: teacherId={}, studentIds={}, message={}", 
+            log.info("发送提醒消息：teacherId={}, studentIds={}, message={}", 
                     teacherId, reminderDTO.getStudentIds(), reminderDTO.getMessage());
-
+                
+            // 获取当前登录用户ID（而不是使用传入的 teacherId）
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+    
             int successCount = 0;
             int failedCount = 0;
 
@@ -364,7 +368,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                 try {
                     // 创建系统消息
                     SystemMessage message = new SystemMessage();
-                    message.setSenderId(Long.parseLong(teacherId));
+                    message.setSenderId(currentUserId); // 使用当前登录用户ID
                     message.setReceiverId(Long.parseLong(studentId));
                     message.setTitle("论文审核提醒");
                     message.setContent(reminderDTO.getMessage());
@@ -433,8 +437,11 @@ public class PendingReviewServiceImpl implements PendingReviewService {
      */
     private Result<Map<String, Object>> sendInstantMessage(String teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
         try {
+            // 使用当前登录用户ID，而不是参数中的 teacherId
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+            
             InstantMessage message = new InstantMessage();
-            message.setSenderId(Long.parseLong(teacherId));
+            message.setSenderId(currentUserId);
             message.setReceiverId(Long.parseLong(contactDTO.getStudentId()));
             message.setContent(contactDTO.getMessage());
             message.setMessageType("PRIVATE");
@@ -464,8 +471,11 @@ public class PendingReviewServiceImpl implements PendingReviewService {
      */
     private Result<Map<String, Object>> sendSystemMessage(String teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
         try {
+            // 使用当前登录用户ID
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+            
             SystemMessage message = new SystemMessage();
-            message.setSenderId(Long.parseLong(teacherId));
+            message.setSenderId(currentUserId);
             message.setReceiverId(Long.parseLong(contactDTO.getStudentId()));
             message.setTitle("论文指导反馈");
             message.setContent(contactDTO.getMessage());
@@ -764,8 +774,11 @@ public class PendingReviewServiceImpl implements PendingReviewService {
      */
     private void sendDelegateNotification(DelegateReviewDTO delegateDTO, PaperInfo paperInfo, SysUser delegateTeacher) {
         try {
+            // 使用当前登录用户ID
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+            
             SystemMessage message = new SystemMessage();
-            message.setSenderId(0L); // 系统发送
+            message.setSenderId(currentUserId); // 使用当前登录用户而非硬编码 0
             message.setReceiverId(Long.parseLong(delegateDTO.getDelegateTeacherId()));
             message.setTitle("论文审核委托通知");
             message.setContent(String.format("您收到一篇论文《%s》的审核委托，请及时处理。委托原因：%s", 
@@ -878,7 +891,9 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                     paperInfo.getPaperTitle(), 
                     delegateDTO.getReason()));
             message.setMessageType("BUSINESS");
-            message.setSenderId(Long.parseLong(teacherId));
+            // 使用当前登录用户ID
+            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+            message.setSenderId(currentUserId);
             message.setReceiverId(Long.parseLong(delegateDTO.getDelegateTeacherId()));
             message.setRelatedId(Long.parseLong(delegateDTO.getPaperId()));
             message.setRelatedType("paper");

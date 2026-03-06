@@ -61,12 +61,6 @@ public class InfoServiceImpl implements InfoService {
     @Value("${minio.endpoint}")
     private String minioEndpoint;
 
-    @Value("${avatar.storage.base-path}")
-    private String avatarBasePath;
-
-    @Value("${avatar.access.url-prefix}")
-    private String avatarUrlPrefix;
-
     @Value("${spring.mail.username}")
     private String fromEmail;
 

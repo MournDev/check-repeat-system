@@ -59,4 +59,14 @@ public interface AdminPaperService {
      * 校内查重检测
      */
     Result<String> schoolInternalCheckPaper(Long paperId);
+    
+    /**
+     * 批量校内查重检测
+     */
+    Result<String> batchSchoolInternalCheckPaper(List<Long> paperIds);
+    
+    /**
+     * 批量第三方查重检测
+     */
+    Result<String> batchThirdPartyCheckPaper(List<Long> paperIds);
 }
