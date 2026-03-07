@@ -28,10 +28,12 @@ public class CheckTask extends BaseEntity {
     private Long paperId;
 
     /**
-     * 对应的论文文件ID（关联file_info.id）
+     * 对应的论文文件 ID（关联 file_info.id）
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     @TableField("file_id")
-    private String fileId;
+    @NotNull(message = "文件 ID 不能为空")
+    private Long fileId;
     /**
      * 任务编号（唯一，如：CHECK20240512001）
      */

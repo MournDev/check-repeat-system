@@ -128,11 +128,11 @@ public class StudentMessageController {
      */
     @GetMapping("/attachment/{attachmentId}")
     @ApiOperation("下载附件")
-    public void downloadAttachment(@PathVariable String attachmentId, HttpServletResponse response) {
+    public void downloadAttachment(@PathVariable Long attachmentId, HttpServletResponse response) {
         try {
             Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("下载附件 - 学生ID: {}, 附件ID: {}", studentId, attachmentId);
-            
+            log.info("下载附件 - 学生 ID: {}, 附件 ID: {}", studentId, attachmentId);
+                
             studentMessageService.downloadAttachment(attachmentId, studentId, response);
         } catch (Exception e) {
             log.error("下载附件失败 - 附件ID: {}", attachmentId, e);
@@ -234,11 +234,11 @@ public class StudentMessageController {
      */
     @GetMapping("/shared-file/{fileId}")
     @ApiOperation("下载共享文件")
-    public void downloadSharedFile(@PathVariable String fileId, HttpServletResponse response) {
+    public void downloadSharedFile(@PathVariable Long fileId, HttpServletResponse response) {
         try {
             Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("下载共享文件 - 学生ID: {}, 文件ID: {}", studentId, fileId);
-            
+            log.info("下载共享文件 - 学生 ID: {}, 文件 ID: {}", studentId, fileId);
+                
             studentMessageService.downloadSharedFile(fileId, studentId, response);
         } catch (Exception e) {
             log.error("下载共享文件失败 - 文件ID: {}", fileId, e);

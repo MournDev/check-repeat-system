@@ -3,6 +3,7 @@ package com.abin.checkrepeatsystem.common.utils;
 import cn.hutool.core.lang.TypeReference;
 import com.abin.checkrepeatsystem.common.Exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.nio.file.Paths;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +34,9 @@ public class ReportContentProcessor {
     private PaperInfoMapper paperInfoMapper;
 
     @Resource
+    private FileInfoMapper fileInfoMapper;
+
+    @Resource
     private SysUserMapper sysUserMapper;
 
 
@@ -39,6 +44,10 @@ public class ReportContentProcessor {
     // 在线预览单段最大长度（从配置文件获取）
     @Value("${report.preview.max-paragraph-length}")
     private int maxParagraphLength;
+
+    // 文件上传基础路径
+    @Value("${file.upload.base-path}")
+    private String uploadBasePath;
 
     // 段落分割符（适配中文文本：句号/问号/感叹号后换行）
     private static final String PARAGRAPH_SEPARATOR = "[。？！；]";
@@ -74,9 +83,18 @@ public class ReportContentProcessor {
     }
 
     /**
-     * 从论文文件提取纯文本（适配doc/docx/pdf）
+     * 从论文文件提取纯文本（适配 doc/docx/pdf）
      */
-    private String extractPaperText(String filePath) {
+    private String extractPaperText(Long fileId) {
+        // 根据 fileId 查询文件信息
+        FileInfo fileInfo = fileInfoMapper.selectById(fileId);
+        if (fileInfo == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
+        }
+            
+        // 使用存储路径构建完整文件路径
+        String filePath = Paths.get(uploadBasePath, fileInfo.getStoragePath()).toString();
+            
         // 复用之前开发的文本提取逻辑（Apache Tika）
         try {
             return TikaTextExtractor.extractTextFromFile(filePath); // 之前开发的工具类，此处简化

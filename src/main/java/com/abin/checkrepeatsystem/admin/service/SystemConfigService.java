@@ -50,4 +50,14 @@ public interface SystemConfigService {
      * 刷新配置缓存
      */
     void refreshConfigCache();
+    
+    /**
+     * 获取时间节点配置
+     */
+    com.abin.checkrepeatsystem.student.dto.DeadlinesDTO getDeadlines();
+    
+    /**
+     * 更新时间节点配置
+     */
+    void updateDeadlines(com.abin.checkrepeatsystem.student.dto.DeadlinesDTO deadlines);
 }

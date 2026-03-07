@@ -115,10 +115,10 @@ public class PaperInfo extends BaseEntity implements Serializable {
     private String paperAbstract;
 
     /**
-     * 文件ID
+     * 文件 ID
      */
     @TableField("file_id")
-    private String fileId;
+    private Long fileId;
 
     /**
      * 文件MD5值

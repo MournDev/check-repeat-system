@@ -8,7 +8,7 @@ public interface FilePreviewService {
     /**
      * 直接文件预览
      */
-    ResponseEntity<Resource> directPreview(String fileId);
+    ResponseEntity<Resource> directPreview(Long fileId);
 
     /**
      * KKFileView代理预览（通过URL）
@@ -18,7 +18,7 @@ public interface FilePreviewService {
     /**
      * 智能预览（自动选择预览方式）
      */
-    ResponseEntity<?> smartPreview(String fileId);
+    ResponseEntity<?> smartPreview(Long fileId);
 
     /**
      * 智能预览报告

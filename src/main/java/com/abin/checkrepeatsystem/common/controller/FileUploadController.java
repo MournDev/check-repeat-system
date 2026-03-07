@@ -23,10 +23,8 @@ import org.springframework.core.io.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.awt.print.Paper;
 import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -74,11 +72,11 @@ public class FileUploadController {
     @PostMapping("/upload")
     public Result<FileUploadResponse> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(required = false) String userId
+            @RequestParam(required = false) Long userId
             ) {
 
         try {
-            log.info("文件上传请求 - 文件名: {},",
+            log.info("文件上传请求 - 文件名：{},",
                     file.getOriginalFilename());
 
             // 1. 文件基础校验
@@ -87,7 +85,7 @@ public class FileUploadController {
                 return Result.error(ResultCode.PARAM_ERROR, validationResult.getMessage());
             }
 
-            // 2. 获取文件字节数组并计算文件MD5（用于秒传和校验）
+            // 2. 获取文件字节数组并计算文件 MD5（用于秒传和校验）
             byte[] fileBytes = file.getBytes();
             String fileMd5 = fileService.calculateFileMd5FromBytes(fileBytes);
 
@@ -95,24 +93,24 @@ public class FileUploadController {
             // 3. 检查是否已存在相同文件（秒传功能）
             FileInfo existingFile = fileService.getByMd5(fileMd5);
             if (existingFile != null) {
-                log.info("文件已存在，使用秒传 - 文件ID: {}", existingFile.getId());
+                log.info("文件已存在，使用秒传 - 文件 ID: {}", existingFile.getId());
                 FileUploadResponse response = buildFileUploadResponse(existingFile, true);
                 return Result.success("文件上传成功（秒传）", response);
             }
 
             // 4. 执行文件上传
-            String fileId = fileService.uploadFile(file, userId);
+            Long fileId = fileService.uploadFile(file, userId);
 
             // 5. 获取文件信息
             FileInfo fileInfo = fileService.getById(fileId);
             FileUploadResponse response = buildFileUploadResponse(fileInfo, false);
 
-            log.info("文件上传成功 - 文件ID: {}, 文件名: {}", fileId, file.getOriginalFilename());
+            log.info("文件上传成功 - 文件 ID: {}, 文件名：{}", fileId, file.getOriginalFilename());
             return Result.success("文件上传成功", response);
 
         } catch (Exception e) {
-            log.error("文件上传失败 - 文件名: {}", file.getOriginalFilename(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "文件上传失败: " + e.getMessage());
+            log.error("文件上传失败 - 文件名：{}", file.getOriginalFilename(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "文件上传失败：" + e.getMessage());
         }
     }
 
@@ -139,7 +137,7 @@ public class FileUploadController {
      * 获取文件信息
      */
     @GetMapping("/info")
-    public Result<FileInfo> getFileInfo(@RequestParam String fileId) {
+    public Result<FileInfo> getFileInfo(@RequestParam Long fileId) {
         try {
             FileInfo fileInfo = fileService.getById(fileId);
             if (fileInfo == null) {
@@ -157,7 +155,7 @@ public class FileUploadController {
      */
     @GetMapping("/download/{fileId}/{fileName}")
     public ResponseEntity<Resource> downloadFile(
-            @PathVariable String fileId,
+            @PathVariable Long fileId,
             @PathVariable(required = false) String fileName,
             HttpServletRequest request) {
 
@@ -262,7 +260,7 @@ public class FileUploadController {
      * 自动根据文件类型选择最佳预览方式
      */
     @GetMapping("/smartPreview")
-    public ResponseEntity<?> smartPreview(@RequestParam String fileId) {
+    public ResponseEntity<?> smartPreview(@RequestParam Long fileId) {
         log.info("接收智能预览请求 - fileId: {}", fileId);
         return filePreviewService.smartPreview(fileId);
     }
@@ -271,7 +269,7 @@ public class FileUploadController {
      */
     private FileUploadResponse buildFileUploadResponse(FileInfo fileInfo, boolean isFastUpload) {
         FileUploadResponse response = new FileUploadResponse();
-        response.setFileId(fileInfo.getId().toString());
+        response.setFileId(fileInfo.getId());
         response.setFileName(fileInfo.getOriginalFilename());
         response.setFileSize(fileInfo.getFileSize());
         response.setFileSizeDesc(fileInfo.getFileSizeDesc());

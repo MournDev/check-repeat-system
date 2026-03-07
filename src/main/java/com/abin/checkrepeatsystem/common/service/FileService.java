@@ -98,33 +98,33 @@ public class FileService {
     /**
      * 上传文件 - 改进版本
      */
-    public String uploadFile(MultipartFile file, String userId) {
+    public Long uploadFile(MultipartFile file, Long userId) {
         String originalFilename = file.getOriginalFilename();
-        log.info("开始处理文件上传 - 文件名: {}, 用户ID: {}", originalFilename, userId);
+        log.info("开始处理文件上传 - 文件名：{}, 用户 ID: {}", originalFilename, userId);
 
         try {
-            // 1. 生成文件ID
-            String fileId = generateFileId();
+            // 1. 生成文件 ID
+            Long fileId = generateFileId();
 
-            // 2. 计算文件MD5（使用字节数组方式，避免依赖临时文件）
+            // 2. 计算文件 MD5（使用字节数组方式，避免依赖临时文件）
             byte[] fileBytes = file.getBytes();
             String fileMd5 = calculateFileMd5FromBytes(fileBytes);
 
             // 3. 保存文件到磁盘
-            String filePath = saveFileToDisk(file, fileId, userId);
+            String filePath = saveFileToDisk(file, fileId, String.valueOf(userId));
 
             // 4. 保存文件基本信息到数据库（先不统计字数）
-            FileInfo fileInfo = saveBasicFileInfo(file, fileId, fileMd5, filePath, userId);
+            FileInfo fileInfo = saveBasicFileInfo(file, fileId, fileMd5, filePath, String.valueOf(userId));
 
             // 5. 异步统计字数并更新数据库
             asyncCountAndUpdateWordsFromBytes(fileBytes, fileInfo);
 
-            log.info("文件上传成功 - 文件ID: {}, 文件名: {}, 用户ID: {}", fileId, originalFilename, userId);
+            log.info("文件上传成功 - 文件 ID: {}, 文件名：{}, 用户 ID: {}", fileId, originalFilename, userId);
             return fileId;
 
         } catch (Exception e) {
-            log.error("文件上传失败 - 文件名: {}, 用户ID: {}", originalFilename, userId, e);
-            throw new RuntimeException("文件上传失败: " + e.getMessage());
+            log.error("文件上传失败 - 文件名：{}, 用户 ID: {}", originalFilename, userId, e);
+            throw new RuntimeException("文件上传失败：" + e.getMessage());
         }
     }
 
@@ -147,11 +147,11 @@ public class FileService {
 
                 fileInfoMapper.updateById(updateInfo);
 
-                log.info("异步字数统计完成 - 文件ID: {}, 文件名: {}, 字数: {}",
+                log.info("异步字数统计完成 - 文件 ID: {}, 文件名: {}, 字数: {}",
                         fileInfo.getId(), fileInfo.getOriginalFilename(), wordCount);
 
             } catch (Exception e) {
-                log.warn("异步字数统计失败 - 文件ID: {}, 文件名: {}",
+                log.warn("异步字数统计失败 - 文件 ID: {}, 文件名: {}",
                         fileInfo.getId(), fileInfo.getOriginalFilename(), e);
 
                 // 失败时设置字数为0
@@ -189,10 +189,10 @@ public class FileService {
     }
 
     /**
-     * 生成文件ID
+     * 生成文件 ID
      */
-    private String generateFileId() {
-        return String.valueOf(System.currentTimeMillis());
+    private Long generateFileId() {
+        return System.currentTimeMillis();
     }
 
     /**
@@ -219,15 +219,15 @@ public class FileService {
     /**
      * 保存文件到磁盘
      */
-    private String saveFileToDisk(MultipartFile file, String fileId, String userId) throws IOException {
+    private String saveFileToDisk(MultipartFile file, Long fileId, String userId) throws IOException {
         // 生成文件存储路径
         String datePath = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
-
+    
         // 清理文件名中的非法字符
         String safeFilename = file.getOriginalFilename()
-                .replaceAll("[<>:\"|?*]", "_") // Windows非法字符
+                .replaceAll("[<>:\"|?*]", "_") // Windows 非法字符
                 .replaceAll("[/\\\\]", "_");   // 路径分隔符
-
+    
         String fileName = fileId + "_" + safeFilename;
         String relativePath = Paths.get(userId, datePath, fileName).toString();
         String fullPath = Paths.get(uploadPath, relativePath).toString();
@@ -254,10 +254,10 @@ public class FileService {
     /**
      * 保存基本文件信息到数据库（不包含字数统计）
      */
-    private FileInfo saveBasicFileInfo(MultipartFile file, String fileId, String fileMd5,
+    private FileInfo saveBasicFileInfo(MultipartFile file, Long fileId, String fileMd5,
                                        String filePath, String userId) throws IOException {
         FileInfo fileInfo = new FileInfo();
-        fileInfo.setId(Long.valueOf(fileId));
+        fileInfo.setId(fileId);
         fileInfo.setOriginalFilename(file.getOriginalFilename());
         fileInfo.setFileSize(file.getSize());
         fileInfo.setFileSizeDesc(formatFileSize(file.getSize()));
@@ -278,7 +278,7 @@ public class FileService {
             fileInfo.setWordCount(wordCount);
             fileInfoMapper.updateById(fileInfo);
         } catch (Exception e) {
-            log.warn("文件字数统计失败 - 文件ID: {}", fileId, e);
+            log.warn("文件字数统计失败 - 文件 ID: {}", fileId, e);
             fileInfo.setWordCount(0);
             fileInfoMapper.updateById(fileInfo);
         }
@@ -410,10 +410,10 @@ public class FileService {
     }
 
     /**
-     * 根据文件ID获取文件信息
+     * 根据文件 ID 获取文件信息
      */
-    public FileInfo getById(String fileId) {
-        return fileInfoMapper.selectById(Long.valueOf(fileId));
+    public FileInfo getById(Long fileId) {
+        return fileInfoMapper.selectById(fileId);
     }
 
     /**
@@ -428,28 +428,28 @@ public class FileService {
     /**
      * 删除文件
      */
-    public boolean deleteFile(String fileId) {
+    public boolean deleteFile(Long fileId) {
         try {
             FileInfo fileInfo = getById(fileId);
             if (fileInfo != null) {
                 // 删除磁盘文件
                 String fullPath = Paths.get(uploadPath, fileInfo.getStoragePath()).toString();
                 boolean deleted = Files.deleteIfExists(Paths.get(fullPath));
-
+    
                 if (deleted) {
-                    log.debug("磁盘文件删除成功: {}", fullPath);
+                    log.debug("磁盘文件删除成功：{}", fullPath);
                 }
-
+    
                 // 删除数据库记录
-                int rows = fileInfoMapper.deleteById(Long.valueOf(fileId));
+                int rows = fileInfoMapper.deleteById(fileId);
                 if (rows > 0) {
-                    log.debug("数据库记录删除成功 - 文件ID: {}", fileId);
+                    log.debug("数据库记录删除成功 - 文件 ID: {}", fileId);
                     return true;
                 }
             }
             return false;
         } catch (Exception e) {
-            log.error("删除文件失败 - 文件ID: {}", fileId, e);
+            log.error("删除文件失败 - 文件 ID: {}", fileId, e);
             return false;
         }
     }

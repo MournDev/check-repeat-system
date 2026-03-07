@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.student.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -17,6 +18,7 @@ public class PaperVersionDTO {
     private Boolean isCurrent;
     private BigDecimal similarityRate;
     private Integer wordCount;
-    private String fileId;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long fileId;
     private String changes; // 主要修改内容
 }

@@ -268,26 +268,66 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     public void refreshConfigCache() {
         try {
             log.info("开始刷新系统配置缓存");
-            
+                
             // 1. 清除配置缓存
             clearConfigurationCache();
-            
+                
             // 2. 重新加载数据库配置
             reloadDatabaseConfigurations();
-            
+                
             // 3. 刷新应用上下文中的配置
             refreshApplicationContext();
-            
+                
             // 4. 重新初始化相关服务
             reinitializeServices();
-            
+                
             // 5. 更新系统监控配置
             updateMonitoringConfig();
-            
+                
             log.info("配置缓存刷新成功");
         } catch (Exception e) {
-            log.error("刷新配置缓存失败: {}", e.getMessage(), e);
-            throw new RuntimeException("刷新配置缓存失败: " + e.getMessage(), e);
+            log.error("刷新配置缓存失败：{}", e.getMessage(), e);
+            throw new RuntimeException("刷新配置缓存失败：" + e.getMessage(), e);
+        }
+    }
+        
+    @Override
+    public com.abin.checkrepeatsystem.student.dto.DeadlinesDTO getDeadlines() {
+        // 直接调用 StudentDashboardService 的方法（已实现从数据库读取）
+        // 这里为了简化，直接复用逻辑
+        return new com.abin.checkrepeatsystem.student.service.Impl.StudentDashboardService()
+            .getDeadlines();
+    }
+        
+    @Override
+    public void updateDeadlines(com.abin.checkrepeatsystem.student.dto.DeadlinesDTO deadlines) {
+        try {
+            log.info("开始更新时间节点配置");
+                
+            // 更新提交截止日期
+            if (deadlines.getSubmissionDeadline() != null) {
+                saveConfig("submission_deadline", deadlines.getSubmissionDeadline(), "论文提交截止日期");
+            }
+                
+            // 更新审核截止日期
+            if (deadlines.getReviewDeadline() != null) {
+                saveConfig("review_deadline", deadlines.getReviewDeadline(), "审核截止日期");
+            }
+                
+            // 更新答辩时间
+            if (deadlines.getDefenseDate() != null) {
+                saveConfig("defense_date", deadlines.getDefenseDate(), "答辩时间");
+            }
+                
+            // 更新预计毕业时间
+            if (deadlines.getGraduationDate() != null) {
+                saveConfig("graduation_date", deadlines.getGraduationDate(), "预计毕业时间");
+            }
+                
+            log.info("时间节点配置更新成功");
+        } catch (Exception e) {
+            log.error("更新时间节点配置失败", e);
+            throw new RuntimeException("更新时间节点配置失败：" + e.getMessage(), e);
         }
     }
     

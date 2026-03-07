@@ -54,6 +54,9 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             Page<PaperInfo> paperPage = new Page<>(page, size);
             LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
             
+            // 【新增】默认排除已撤回的论文（除非明确指定要包含）
+            wrapper.ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN);
+            
             // 状态筛选
             if (paperStatus != null && !paperStatus.isEmpty()) {
                 wrapper.eq(PaperInfo::getPaperStatus, paperStatus);
@@ -298,7 +301,7 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             }
             
             // 检查是否有文件
-            if (paperInfo.getFileId() == null || paperInfo.getFileId().isEmpty()) {
+            if (paperInfo.getFileId() == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文文件不存在");
             }
             

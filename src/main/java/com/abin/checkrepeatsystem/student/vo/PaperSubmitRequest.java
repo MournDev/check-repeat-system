@@ -25,11 +25,11 @@ public class PaperSubmitRequest {
 
     @NotBlank(message = "论文摘要不能为空")
     private String paperAbstract;
-
-    @NotBlank(message = "文件ID不能为空")
-    private String fileId; // 文件ID
-
-    @NotBlank(message = "文件MD5不能为空")
+        
+    @NotNull(message = "文件 ID 不能为空")
+    private Long fileId; // 文件 ID
+        
+    @NotBlank(message = "文件 MD5 不能为空")
     private String fileMd5;
 
 }

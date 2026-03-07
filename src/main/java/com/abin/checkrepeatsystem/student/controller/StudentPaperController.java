@@ -9,6 +9,7 @@ import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
+import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import com.abin.checkrepeatsystem.student.service.StudentReviewService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
@@ -50,6 +51,9 @@ public class StudentPaperController {
 
     @Resource
     private StudentReviewService studentReviewService;
+
+    @Resource
+    private PaperInfoMapper paperInfoMapper;
 
     @Resource
     private FileService fileService;
@@ -113,7 +117,7 @@ public class StudentPaperController {
                 request.getMajorId() != null &&
                 StringUtils.hasText(request.getPaperType()) &&
                 StringUtils.hasText(request.getPaperAbstract()) &&
-                StringUtils.hasText(request.getFileId()); // 必须提供文件ID
+                request.getFileId() != null; // 必须提供文件 ID
     }
 
     /**
@@ -177,8 +181,8 @@ public class StudentPaperController {
                         "当前论文状态为【" + statusLabel + "】，不允许删除");
             }
             // 先删除附件
-            String fileId = paperInfo.getFileId();
-            if (StringUtils.hasText(fileId)) {
+            Long fileId = paperInfo.getFileId();
+            if (fileId != null) {
                 fileService.deleteFile(fileId);
             }
             // 2. 调用服务层执行删除
@@ -196,9 +200,9 @@ public class StudentPaperController {
         }
     }
     @DeleteMapping("/delete/file")
-    public Result<String> deleteFile(@RequestParam String fileId) {
-        if (fileId== null|| fileId.isEmpty()){
-            return Result.error(ResultCode.PARAM_ERROR, "文件ID不能为空");
+    public Result<String> deleteFile(@RequestParam Long fileId) {
+        if (fileId == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "文件 ID 不能为空");
         }
         boolean deleteSuccess = fileService.deleteFile(fileId);
         if (!deleteSuccess) {
@@ -233,20 +237,65 @@ public class StudentPaperController {
      */
     @PostMapping("/{paperId}/withdraw")
     @OperationLog(type = "student_paper_withdraw", description = "学生撤回论文", recordResult = true)
-    public Result<String> withdrawPaper(@PathVariable Long paperId, @RequestBody PaperWithdrawRequest request) {
+    public Result<String> withdrawPaper(
+        @PathVariable Long paperId, 
+        @RequestBody @Valid PaperWithdrawRequest request
+    ) {
         try {
             Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("撤回论文请求 - 学生ID: {}, 论文ID: {}, 原因: {}", studentId, paperId, request.getReason());
-            
-            boolean success = paperInfoService.withdrawPaper(paperId, studentId, request.getReason());
+            log.info("撤回论文请求 - 学生 ID: {}, 论文 ID: {}, 原因类型：{}, 详细描述：{}", 
+                studentId, paperId, request.getWithdrawReasonType(), request.getReasonDetail());
+                
+            boolean success = paperInfoService.withdrawPaper(paperId, studentId, 
+                String.format("[%s] %s", request.getWithdrawReasonType(), request.getReasonDetail() != null ? request.getReasonDetail() : ""));
             if (success) {
                 return Result.success("论文撤回成功");
             } else {
                 return Result.error(ResultCode.BUSINESS_NO_SAFE, "论文撤回失败");
             }
         } catch (Exception e) {
-            log.error("论文撤回失败 - 论文ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文撤回失败: " + e.getMessage());
+            log.error("论文撤回失败 - 论文 ID: {}", paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "论文撤回失败：" + e.getMessage());
+        }
+    }
+    
+    /**
+     * 撤回后重新提交论文接口
+     */
+    @PostMapping("/{paperId}/resubmit-after-withdraw")
+    @OperationLog(type = "student_paper_resubmit", description = "撤回后重新提交", recordResult = true)
+    public Result<PaperInfo> resubmitAfterWithdraw(
+        @PathVariable Long paperId,
+        @RequestBody @Valid PaperReSubmitAfterWithdrawRequest request
+    ) {
+        try {
+            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("撤回后重新提交请求 - 学生 ID: {}, 论文 ID: {}", studentId, paperId);
+            
+            // 验证论文状态必须是 WITHDRAWN
+            PaperInfo paper = paperInfoMapper.selectById(paperId);
+            if (paper == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
+            }
+            
+            if (!DictConstants.PaperStatus.WITHDRAWN.equals(paper.getPaperStatus())) {
+                return Result.error(ResultCode.PARAM_ERROR, "只有已撤回的论文才能重新提交，当前状态：" + paper.getPaperStatus());
+            }
+            
+            // 验证论文归属
+            if (!paper.getStudentId().equals(studentId)) {
+                return Result.error(ResultCode.RESOURCE_NO_PERMISSION, "无权操作他人论文");
+            }
+            
+            // 调用服务层重新提交
+            PaperInfo updatedPaper = paperInfoService.resubmitAfterWithdraw(paperId, request, studentId);
+            return Result.success("重新提交成功", updatedPaper);
+        } catch (BusinessException e) {
+            log.error("撤回后重新提交失败 - 论文 ID: {}", paperId, e);
+            return Result.error(ResultCode.BUSINESS_NO_SAFE, e.getMessage());
+        } catch (Exception e) {
+            log.error("撤回后重新提交失败 - 论文 ID: {}", paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "重新提交失败：" + e.getMessage());
         }
     }
     

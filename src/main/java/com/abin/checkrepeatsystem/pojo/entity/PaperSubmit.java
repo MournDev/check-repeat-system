@@ -42,11 +42,11 @@ public class PaperSubmit extends BaseEntity {
     private Integer submitVersion;
 
     /**
-     * 文件ID（非空，标识“论文提交文件”）
+     * 文件 ID（非空，标识“论文提交文件”）
      */
-    @NotNull(message = "文件ID不能为空")
+    @NotNull(message = "文件 ID 不能为空")
     @TableField("file_id")
-    private String fileId;
+    private Long fileId;
 
     /**
      * 文件MD5码（非空，用于校验文件完整性）

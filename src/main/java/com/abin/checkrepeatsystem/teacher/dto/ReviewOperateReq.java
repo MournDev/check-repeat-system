@@ -29,8 +29,15 @@ public class ReviewOperateReq {
     /**
      * 审核意见（富文本，可为空）
      */
-    @Size(max = 2000, message = "审核意见长度不能超过2000字符")
+    @Size(max = 2000, message = "审核意见长度不能超过 2000 字符")
     private String reviewOpinion; // 前端传参：reviewOpinion=xxx（富文本内容）
+    
+    /**
+     * 建议修改点（JSON 格式，可选）
+     * 示例：[{"type":"format","desc":"格式不规范"},{"type":"content","desc":"第三章内容不够充实"}]
+     */
+    @Size(max = 1000, message = "建议修改点数量不能超过 10 条")
+    private String suggestedModifications; // 前端传参：JSON 字符串
 
     /**
      * 审核附件（可选，如修改建议文档）

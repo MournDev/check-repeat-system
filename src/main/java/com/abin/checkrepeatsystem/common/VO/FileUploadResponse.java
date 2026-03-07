@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.common.VO;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import java.time.LocalDateTime;
 
@@ -9,9 +10,10 @@ import java.time.LocalDateTime;
 @Data
 public class FileUploadResponse {
     /**
-     * 文件ID
+     * 文件 ID
      */
-    private String fileId;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long fileId;
 
     /**
      * 原始文件名

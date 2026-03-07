@@ -76,9 +76,9 @@ public class TeacherPaperPreviewController {
             }
 
             // 4. 验证文件存在性
-            String fileId = paperInfo.getFileId();
-            if (fileId == null || fileId.isEmpty()) {
-                log.warn("论文文件不存在 - 论文ID: {}", paperId);
+            Long fileId = paperInfo.getFileId();
+            if (fileId == null) {
+                log.warn("论文文件不存在 - 论文 ID: {}", paperId);
                 return ResponseEntity.notFound().build();
             }
 
@@ -129,7 +129,7 @@ public class TeacherPaperPreviewController {
             previewInfo.setPaperStatus(paperInfo.getPaperStatus());
             previewInfo.setSubmitTime(paperInfo.getSubmitTime());
             previewInfo.setFileId(paperInfo.getFileId());
-            previewInfo.setHasFile(paperInfo.getFileId() != null && !paperInfo.getFileId().isEmpty());
+            previewInfo.setHasFile(paperInfo.getFileId() != null);
             
             // 4. 补充文件详细信息（如果文件存在）
             if (previewInfo.getHasFile()) {
@@ -180,7 +180,7 @@ public class TeacherPaperPreviewController {
         private String studentNo;
         private String paperStatus;
         private java.time.LocalDateTime submitTime;
-        private String fileId;
+        private Long fileId;
         private Boolean hasFile;
         private String fileName;
         private Long fileSize;
@@ -189,7 +189,7 @@ public class TeacherPaperPreviewController {
         private Integer wordCount;
         private java.time.LocalDateTime uploadTime;
 
-        // Getters and Setters
+
         public Long getPaperId() { return paperId; }
         public void setPaperId(Long paperId) { this.paperId = paperId; }
         
@@ -211,8 +211,8 @@ public class TeacherPaperPreviewController {
         public java.time.LocalDateTime getSubmitTime() { return submitTime; }
         public void setSubmitTime(java.time.LocalDateTime submitTime) { this.submitTime = submitTime; }
         
-        public String getFileId() { return fileId; }
-        public void setFileId(String fileId) { this.fileId = fileId; }
+        public Long getFileId() { return fileId; }
+        public void setFileId(Long fileId) { this.fileId = fileId; }
         
         public Boolean getHasFile() { return hasFile; }
         public void setHasFile(Boolean hasFile) { this.hasFile = hasFile; }

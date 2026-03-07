@@ -70,7 +70,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     }
 
     @Override
-    public ResponseEntity<Resource> directPreview(String fileId) {
+    public ResponseEntity<Resource> directPreview(Long fileId) {
         try {
             FileInfo fileInfo = fileService.getById(fileId);
             if (fileInfo == null) {
@@ -149,7 +149,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
 
 
     @Override
-    public ResponseEntity<?> smartPreview(String fileId) {
+    public ResponseEntity<?> smartPreview(Long fileId) {
         try {
             // 1. 获取文件信息
             FileInfo fileInfo = fileService.getById(fileId);
@@ -335,9 +335,9 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     }
 
     /**
-     * 代理请求到KKFileView
+     * 代理请求到 KKFileView
      */
-    private ResponseEntity<?> proxyToKKFileView(String fileId, FileInfo fileInfo) {
+    private ResponseEntity<?> proxyToKKFileView(Long fileId, FileInfo fileInfo) {
         try {
             // 1. 构建文件访问URL（包含文件名）
             String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
@@ -381,9 +381,9 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     }
 
     /**
-     * 构建文件下载URL
+     * 构建文件下载 URL
      */
-    private String buildFileDownloadUrl(String fileId) {
+    private String buildFileDownloadUrl(Long fileId) {
         try {
             FileInfo fileInfo = fileService.getById(fileId);
             // 使用宿主机的IP地址，而不是localhost

@@ -80,6 +80,28 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             Long totalPapers = paperInfoMapper.selectCount(null);
             stats.put("totalPapers", totalPapers);
             
+            // 【新增】有效论文数（排除已撤回）
+            Long validPapers = paperInfoMapper.selectCount(
+                new LambdaQueryWrapper<PaperInfo>()
+                    .ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
+                    .eq(PaperInfo::getIsDeleted, 0)
+            );
+            stats.put("validPapers", validPapers);
+            
+            // 【新增】撤回论文统计
+            Long withdrawnPapers = paperInfoMapper.selectCount(
+                new LambdaQueryWrapper<PaperInfo>()
+                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
+                    .eq(PaperInfo::getIsDeleted, 0)
+            );
+            stats.put("withdrawnPapers", withdrawnPapers);
+            
+            // 【新增】撤回率计算
+            if (totalPapers > 0) {
+                Double withdrawalRate = withdrawnPapers.doubleValue() / totalPapers * 100;
+                stats.put("withdrawalRate", String.format("%.2f%%", withdrawalRate));
+            }
+            
             // 不同状态论文统计
             Long pendingPapers = paperInfoMapper.selectCount(new LambdaQueryWrapper<PaperInfo>()
                     .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.PENDING));

@@ -124,6 +124,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         Integer reviewStatus = operateReq.getReviewStatus();
         String reviewOpinion = operateReq.getReviewOpinion();
         MultipartFile reviewAttach = operateReq.getReviewAttach();
+        String suggestedModifications = operateReq.getSuggestedModifications(); // 【新增】获取建议修改点
 
         // 1. 基础校验
         // 校验批量数量
@@ -188,6 +189,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 reviewRecord.setTeacherId(currentTeacherId);
                 reviewRecord.setReviewStatus(reviewStatus);
                 reviewRecord.setReviewOpinion(cleanedOpinion);
+                reviewRecord.setSuggestedModifications(suggestedModifications);
                 // 填充附件信息（若有）
                 if (attachInfo != null) {
                     reviewRecord.setReviewAttach(attachInfo.getAttachPath());

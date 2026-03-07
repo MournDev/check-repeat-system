@@ -302,9 +302,9 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                     studentId, file.getOriginalFilename(), file.getSize());
             
             // 使用文件服务上传文件
-            String fileId = fileService.uploadFile(file, studentId.toString());
-            
-            //构建响应VO
+            Long fileId = fileService.uploadFile(file, studentId);
+                        
+            //构建响应 VO
             com.abin.checkrepeatsystem.student.dto.FileUploadVO fileVO = 
                 new com.abin.checkrepeatsystem.student.dto.FileUploadVO();
             fileVO.setId(fileId);
@@ -324,10 +324,10 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
     }
 
     @Override
-    public void downloadAttachment(String attachmentId, Long studentId, HttpServletResponse response) {
+    public void downloadAttachment(Long attachmentId, Long studentId, HttpServletResponse response) {
         try {
-            log.info("下载附件 -学生ID: {}, 附件ID: {}", studentId, attachmentId);
-            
+            log.info("下载附件 - 学生 ID: {}, 附件 ID: {}", studentId, attachmentId);
+                
             // 获取文件信息
             FileInfo fileInfo = fileService.getById(attachmentId);
             if (fileInfo != null && StringUtils.hasText(fileInfo.getStoragePath())) {
@@ -511,10 +511,10 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
     }
 
     @Override
-    public void downloadSharedFile(String fileId, Long studentId, HttpServletResponse response) {
+    public void downloadSharedFile(Long fileId, Long studentId, HttpServletResponse response) {
         try {
-            log.info("下载共享文件 - 学生ID: {}, 文件ID: {}", studentId, fileId);
-            
+            log.info("下载共享文件 - 学生 ID: {}, 文件 ID: {}", studentId, fileId);
+                
             //复附件下载逻辑
             downloadAttachment(fileId, studentId, response);
             

@@ -40,7 +40,7 @@ public interface StudentMessageService {
     /**
      * 下载附件
      */
-    void downloadAttachment(String attachmentId, Long studentId, HttpServletResponse response);
+    void downloadAttachment(Long attachmentId, Long studentId, HttpServletResponse response);
 
     /**
      *清空消息
@@ -60,7 +60,7 @@ public interface StudentMessageService {
     /**
      * 下载共享文件
      */
-    void downloadSharedFile(String fileId, Long studentId, HttpServletResponse response);
+    void downloadSharedFile(Long fileId, Long studentId, HttpServletResponse response);
 
     /**
      *标消息已读

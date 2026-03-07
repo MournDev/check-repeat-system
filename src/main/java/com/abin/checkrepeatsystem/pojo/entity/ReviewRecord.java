@@ -41,6 +41,13 @@ public class ReviewRecord extends BaseEntity {
     private String reviewOpinion;
 
     /**
+     * 建议修改点（JSON 格式存储具体修改建议，可为空）
+     * 示例：[{"type":"format","desc":"格式不规范"},{"type":"content","desc":"第三章内容不够充实"}]
+     */
+    @TableField("suggested_modifications")
+    private String suggestedModifications;
+
+    /**
      * 审核附件路径（如教师添加的修改建议文档，可为空）
      */
     private String reviewAttach;

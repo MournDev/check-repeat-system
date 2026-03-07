@@ -12,6 +12,7 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentManagementService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -373,7 +374,7 @@ public class TeacherStudentManagementController {
                 latestPaper.getSimilarityRate().doubleValue() : 0.0);
             
             // 4. 获取文件详细信息
-            if (latestPaper.getFileId() != null && !latestPaper.getFileId().isEmpty()) {
+            if (latestPaper.getFileId() != null) {
                 try {
                     FileInfo fileInfo = fileService.getById(latestPaper.getFileId());
                     if (fileInfo != null) {
@@ -401,7 +402,8 @@ public class TeacherStudentManagementController {
     public static class StudentPaperInfoDTO {
         private Long paperId;
         private String paperTitle;
-        private String fileId;
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
+        private Long fileId;
         private String fileName;
         private String fileSize;
         private String submitTime;
@@ -415,8 +417,8 @@ public class TeacherStudentManagementController {
         public String getPaperTitle() { return paperTitle; }
         public void setPaperTitle(String paperTitle) { this.paperTitle = paperTitle; }
         
-        public String getFileId() { return fileId; }
-        public void setFileId(String fileId) { this.fileId = fileId; }
+        public Long getFileId() { return fileId; }
+        public void setFileId(Long fileId) { this.fileId = fileId; }
         
         public String getFileName() { return fileName; }
         public void setFileName(String fileName) { this.fileName = fileName; }

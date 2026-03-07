@@ -184,7 +184,7 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
         paperInfo.setAllocationType(DictConstants.AllocationType.MANUAL);//手动指定
         paperInfo.setAllocationStatus(DictConstants.AllocationStatus.PENDING);//待确认
         paperInfo.setAllocationTime(LocalDateTime.now());
-        paperInfo.setPaperStatus(DictConstants.PaperStatus.PENDING);//待分配
+        paperInfo.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);//已分配，等待学生确认
         // 更新老师任务数
         advisor.setCurrentAdvisorCount(advisor.getCurrentAdvisorCount() + 1);
         sysUserMapper.updateById(advisor);

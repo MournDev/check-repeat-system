@@ -100,9 +100,10 @@ public class StudentListDTO {
     private Integer wordCount;
     
     /**
-     * 论文文件ID
+     * 论文文件 ID
      */
-    private String fileId;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long fileId;
 
 
 }

@@ -43,7 +43,7 @@ public interface PaperInfoService extends IService<PaperInfo> {
      */
     PaperInfo submitPaperByFileId(String subjectCode, String paperTitle, String paperAbstract,
                                   Long collegeId, Long majorId, String paperType,
-                                  String fileId, String fileMd5, Long studentId);
+                                  Long fileId, String fileMd5, Long studentId);
     
     /**
      * 完整的论文提交流程（包含文件上传和信息录入）
@@ -78,13 +78,22 @@ public interface PaperInfoService extends IService<PaperInfo> {
     
     /**
      * 申请修改已通过论文接口
-     * @param paperId 论文ID
-     * @param studentId 学生ID
+     * @param paperId 论文 ID
+     * @param studentId 学生 ID
      * @param reason 修改原因
      * @return 申请结果
      */
     boolean requestPaperModification(Long paperId, Long studentId, String reason);
-    
+        
+    /**
+     * 撤回后重新提交论文
+     * @param paperId 论文 ID
+     * @param request 重新提交请求
+     * @param studentId 学生 ID
+     * @return 更新后的论文信息
+     */
+    PaperInfo resubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId);
+        
     /**
      * 批量下载论文接口
      * @param paperIds 论文ID列表

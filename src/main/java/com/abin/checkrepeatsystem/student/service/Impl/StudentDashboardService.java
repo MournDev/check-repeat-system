@@ -1,11 +1,13 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
+import com.abin.checkrepeatsystem.admin.mapper.SystemConfigMapper;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.abin.checkrepeatsystem.student.dto.*;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
@@ -27,18 +29,21 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class StudentDashboardService {
-
+    
     @Resource
     private PaperInfoMapper paperInfoMapper;
-
+    
     @Resource
     private FileInfoMapper fileInfoMapper;
-
+    
     @Resource
     private CheckTaskMapper checkTaskMapper;
-
+    
     @Resource
     private SysUserMapper sysUserMapper;
+    
+    @Resource
+    private SystemConfigMapper systemConfigMapper;
 
     public StudentDashboardStatsDTO getDashboardStats(Long studentId) {
         StudentDashboardStatsDTO stats = new StudentDashboardStatsDTO();
@@ -233,17 +238,64 @@ public class StudentDashboardService {
     }
     
     /**
-     * 获取时间节点信息
+     * 获取时间节点信息（从数据库读取系统配置）
      */
     public DeadlinesDTO getDeadlines() {
         DeadlinesDTO deadlines = new DeadlinesDTO();
         
-        // 从系统配置或数据库获取时间节点
-        // 这里使用模拟数据，实际应该从配置表获取
-        deadlines.setSubmissionDeadline("2025-03-15");
-        deadlines.setReviewDeadline("2025-03-30");
-        deadlines.setDefenseDate("2025-04-15");
-        deadlines.setGraduationDate("2025-06-30");
+        try {
+            // 从 system_config 表读取时间节点配置
+            // 提交截止日期
+            SystemConfig submissionConfig = systemConfigMapper.selectByConfigKey("submission_deadline");
+            if (submissionConfig != null) {
+                deadlines.setSubmissionDeadline(submissionConfig.getConfigValue());
+            } else {
+                // 如果数据库没有配置，使用默认值
+                deadlines.setSubmissionDeadline("2026-03-20");
+                log.warn("未找到论文提交截止日期配置，使用默认值：{}", deadlines.getSubmissionDeadline());
+            }
+            
+            // 审核截止日期
+            SystemConfig reviewConfig = systemConfigMapper.selectByConfigKey("review_deadline");
+            if (reviewConfig != null) {
+                deadlines.setReviewDeadline(reviewConfig.getConfigValue());
+            } else {
+                deadlines.setReviewDeadline("2026-04-10");
+                log.warn("未找到审核截止日期配置，使用默认值：{}", deadlines.getReviewDeadline());
+            }
+            
+            // 答辩时间
+            SystemConfig defenseConfig = systemConfigMapper.selectByConfigKey("defense_date");
+            if (defenseConfig != null) {
+                deadlines.setDefenseDate(defenseConfig.getConfigValue());
+            } else {
+                deadlines.setDefenseDate("2026-05-15");
+                log.warn("未找到答辩时间配置，使用默认值：{}", deadlines.getDefenseDate());
+            }
+            
+            // 预计毕业时间
+            SystemConfig graduationConfig = systemConfigMapper.selectByConfigKey("graduation_date");
+            if (graduationConfig != null) {
+                deadlines.setGraduationDate(graduationConfig.getConfigValue());
+            } else {
+                deadlines.setGraduationDate("2026-06-30");
+                log.warn("未找到预计毕业时间配置，使用默认值：{}", deadlines.getGraduationDate());
+            }
+            
+            log.info("时间节点配置加载成功：提交截止={}, 审核截止={}, 答辩={}, 毕业={}",
+                deadlines.getSubmissionDeadline(),
+                deadlines.getReviewDeadline(),
+                deadlines.getDefenseDate(),
+                deadlines.getGraduationDate());
+                
+        } catch (Exception e) {
+            log.error("读取时间节点配置失败，使用默认值", e);
+            // 出现异常时使用默认值
+            deadlines.setSubmissionDeadline("2026-03-20");
+            deadlines.setReviewDeadline("2026-04-10");
+            deadlines.setDefenseDate("2026-05-15");
+            deadlines.setGraduationDate("2026-06-30");
+        }
         
         return deadlines;
     }

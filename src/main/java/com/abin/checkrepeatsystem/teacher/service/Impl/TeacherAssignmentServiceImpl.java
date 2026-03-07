@@ -51,6 +51,7 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
             PaperInfo updatePaper = new PaperInfo();
             updatePaper.setId(paperId);
             updatePaper.setAllocationStatus(DictConstants.AllocationStatus.CONFIRMED);
+            updatePaper.setPaperStatus(DictConstants.PaperStatus.CHECKING);  // 进入待查重状态
             updatePaper.setConfirmTime(LocalDateTime.now());
             updatePaper.setUpdateTime(LocalDateTime.now());
             paperInfoMapper.updateById(updatePaper);
@@ -100,6 +101,7 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
             PaperInfo updatePaper = new PaperInfo();
             updatePaper.setId(paperId);
             updatePaper.setAllocationStatus(DictConstants.AllocationStatus.REJECTED);
+            updatePaper.setPaperStatus(DictConstants.PaperStatus.PENDING);  // 返回待分配状态，重新分配
             updatePaper.setUpdateTime(LocalDateTime.now());
             paperInfoMapper.updateById(updatePaper);
 

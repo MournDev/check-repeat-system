@@ -724,8 +724,8 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             contentDTO.setPaperId(paperId);
             contentDTO.setTitle(paperInfo.getPaperTitle());
 
-            // 3. 从文件系统获取论文内容（使用标准FileService方式）
-            if (paperInfo.getFileId() != null && !paperInfo.getFileId().isEmpty()) {
+            // 3. 从文件系统获取论文内容（使用标准 FileService 方式）
+            if (paperInfo.getFileId() != null) {
                 try {
                     // 使用FileService获取文件信息
                     FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
@@ -940,7 +940,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             }
             
             // 2. 检查文件是否存在
-            if (paperInfo.getFileId() == null || paperInfo.getFileId().isEmpty()) {
+            if (paperInfo.getFileId() == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文文件不存在");
             }
             
