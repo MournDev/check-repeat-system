@@ -82,7 +82,13 @@ public class InstantMessageServiceImpl implements InstantMessageService {
                 return Result.error(ResultCode.PARAM_ERROR, "用户ID不能为空");
             }
 
-            List<InstantMessage> conversations = instantMessageMapper.getConversations(userId);
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.and(w -> w.eq(InstantMessage::getSenderId, userId)
+                    .or().eq(InstantMessage::getReceiverId, userId))
+                    .eq(InstantMessage::getIsDeleted, 0)
+                    .orderByDesc(InstantMessage::getSentTime);
+
+            List<InstantMessage> conversations = instantMessageMapper.selectList(wrapper);
             
             log.debug("获取会话列表成功 - 用户ID: {}, 会话数量: {}", userId, conversations.size());
             return Result.success("获取会话列表成功", conversations);
@@ -104,7 +110,12 @@ public class InstantMessageServiceImpl implements InstantMessageService {
             pageSize = pageSize != null && pageSize > 0 ? pageSize : 10;
             
             Page<InstantMessage> page = new Page<>(pageNum, pageSize);
-            IPage<InstantMessage> resultPage = instantMessageMapper.getMessageHistory(conversationId, page);
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(InstantMessage::getConversationId, conversationId)
+                    .eq(InstantMessage::getIsDeleted, 0)
+                    .orderByAsc(InstantMessage::getSentTime);
+            
+            IPage<InstantMessage> resultPage = instantMessageMapper.selectPage(page, wrapper);
             
             log.debug("获取会话消息历史成功 - 会话ID: {}, 消息数量: {}", conversationId, resultPage.getTotal());
             return Result.success("获取消息历史成功", resultPage);
@@ -126,7 +137,16 @@ public class InstantMessageServiceImpl implements InstantMessageService {
             pageSize = pageSize != null && pageSize > 0 ? pageSize : 10;
             
             Page<InstantMessage> page = new Page<>(pageNum, pageSize);
-            IPage<InstantMessage> resultPage = instantMessageMapper.getPrivateMessages(senderId, receiverId, page);
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.and(w -> w.eq(InstantMessage::getSenderId, senderId)
+                    .eq(InstantMessage::getReceiverId, receiverId)
+                    .or().eq(InstantMessage::getSenderId, receiverId)
+                    .eq(InstantMessage::getReceiverId, senderId))
+                    .eq(InstantMessage::getMessageType, "PRIVATE")
+                    .eq(InstantMessage::getIsDeleted, 0)
+                    .orderByAsc(InstantMessage::getSentTime);
+            
+            IPage<InstantMessage> resultPage = instantMessageMapper.selectPage(page, wrapper);
             
             log.debug("获取私信历史成功 - 发送者: {}, 接收者: {}, 消息数量: {}", 
                     senderId, receiverId, resultPage.getTotal());
@@ -139,13 +159,18 @@ public class InstantMessageServiceImpl implements InstantMessageService {
     }
 
     @Override
-    public Result<Integer> getUnreadCount(Long userId) {
+    public Result<Long> getUnreadCount(Long userId) {
         try {
             if (userId == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "用户ID不能为空");
             }
 
-            Integer unreadCount = instantMessageMapper.getUnreadCount(userId);
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(InstantMessage::getReceiverId, userId)
+                    .ne(InstantMessage::getStatus, "READ")
+                    .eq(InstantMessage::getIsDeleted, 0);
+
+            Long unreadCount = instantMessageMapper.selectCount(wrapper);
             
             log.debug("获取未读消息数量成功 - 用户ID: {}, 未读数量: {}", userId, unreadCount);
             return Result.success("获取未读消息数量成功", unreadCount);
@@ -164,7 +189,23 @@ public class InstantMessageServiceImpl implements InstantMessageService {
                 return Result.error(ResultCode.PARAM_ERROR, "参数不能为空");
             }
 
-            int result = instantMessageMapper.batchMarkRead(messageIds, userId);
+            int result = 0;
+            for (Long messageId : messageIds) {
+                InstantMessage message = new InstantMessage();
+                message.setId(messageId);
+                message.setStatus("READ");
+                message.setReadTime(LocalDateTime.now());
+                message.setUpdateTime(LocalDateTime.now());
+                
+                // 验证消息所有权
+                LambdaQueryWrapper<InstantMessage> queryWrapper = new LambdaQueryWrapper<>();
+                queryWrapper.eq(InstantMessage::getId, messageId)
+                        .eq(InstantMessage::getReceiverId, userId);
+                
+                if (instantMessageMapper.selectCount(queryWrapper) > 0) {
+                    result += instantMessageMapper.updateById(message);
+                }
+            }
             
             if (result > 0) {
                 log.info("标记消息已读成功 - 用户ID: {}, 消息数量: {}", userId, result);

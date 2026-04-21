@@ -134,7 +134,8 @@ public class CheckTaskValidationService {
         // 只有以下状态允许发起查重
         return DictConstants.PaperStatus.ASSIGNED.equals(status) ||
                DictConstants.PaperStatus.PENDING.equals(status) ||
-               DictConstants.PaperStatus.CHECKING.equals(status); // 允许重新触发
+               DictConstants.PaperStatus.CHECKING.equals(status) || // 允许重新触发
+               DictConstants.PaperStatus.AUDITING.equals(status); // 允许审核中重新检测
     }
     
     /**

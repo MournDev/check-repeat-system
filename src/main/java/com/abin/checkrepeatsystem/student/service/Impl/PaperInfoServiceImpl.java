@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.constant.PaperNoticeConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.service.FileService;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.PaperAttachmentMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
@@ -22,6 +23,7 @@ import com.abin.checkrepeatsystem.user.service.AdvisorAssignService;
 import com.abin.checkrepeatsystem.user.service.Impl.InternalMessageNotificationService;
 import com.abin.checkrepeatsystem.user.service.Impl.NotificationFacadeService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
+import com.abin.checkrepeatsystem.user.service.PaperStatusLogService;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -40,6 +42,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import java.io.*;
@@ -95,6 +98,15 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
 
     @Resource
     private MessageService messageService;
+
+    @Resource
+    private PaperStatusLogService paperStatusLogService;
+
+    @Resource
+    private com.abin.checkrepeatsystem.student.mapper.MajorMapper majorMapper;
+    
+    @Resource
+    private com.abin.checkrepeatsystem.detection.service.PaperContentExtractor paperContentExtractor;
 
 
 
@@ -168,20 +180,36 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             }
 
             // 2. 验证论文状态
-            if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
-                log.warn("论文状态不允许删除 - 论文ID: {}, 状态: {}", paperId, paperInfo.getPaperStatus());
+            String paperStatus = paperInfo.getPaperStatus();
+            if (!DictConstants.PaperStatus.PENDING.equals(paperStatus) && !DictConstants.PaperStatus.WITHDRAWN.equals(paperStatus)) {
+                log.warn("论文状态不允许删除 - 论文ID: {}, 状态: {}", paperId, paperStatus);
                 return false;
             }
 
             // 3. 更新论文状态为已撤回,软删除
+            String oldStatus = paperInfo.getPaperStatus();
+            String newStatus = DictConstants.PaperStatus.WITHDRAWN;
+            
             PaperInfo updateInfo = new PaperInfo();
             updateInfo.setId(paperId);
-            updateInfo.setPaperStatus(DictConstants.PaperStatus.WITHDRAWN);
+            updateInfo.setPaperStatus(newStatus);
             updateInfo.setUpdateTime(LocalDateTime.now());
             updateInfo.setIsDeleted(1);
 
             int result = paperInfoMapper.updateById(updateInfo);
             boolean success = result > 0;
+            
+            if (success) {
+                // 记录状态变更日志
+                paperStatusLogService.recordStatusLog(
+                    paperId,
+                    getStatusValue(oldStatus),
+                    getStatusValue(newStatus),
+                    "学生删除论文",
+                    studentId,
+                    null
+                );
+            }
 
             if (success) {
                 // 4. 更新提交记录状态
@@ -206,7 +234,6 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      * 完整的论文提交流程（包含文件上传和信息录入）
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public PaperInfo submitPaper(MultipartFile multipartFile, String subjectCode, String paperTitle,
                                  String paperAbstract, Long collegeId, Long majorId, String paperType,
                                  Long studentId) {
@@ -218,8 +245,13 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             FileInfo uploadedFile = uploadPaperFile(multipartFile, studentId);
             
             // 2. 调用文件ID方式提交 - 修复参数类型
-            return submitPaperByFileId(subjectCode, paperTitle, paperAbstract, collegeId, majorId, 
+            PaperInfo paperInfo = submitPaperByFileId(subjectCode, paperTitle, paperAbstract, collegeId, majorId, 
                                      paperType, uploadedFile.getId(), uploadedFile.getMd5(), studentId);
+            
+            // 3. 异步处理论文后续流程：分配指导老师和触发查重
+            // 注意：submitPaperByFileId方法已经会调用asyncProcessPaperAfterSubmit，这里不需要重复调用
+            
+            return paperInfo;
             
         } catch (Exception e) {
             log.error("完整论文提交流程失败 - 学生ID: {}, 论文标题: {}", studentId, paperTitle, e);
@@ -256,7 +288,6 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      * 文件ID方式提交论文
      * 根据文件ID提交论文，不涉及文件上传
      */
-    @Transactional(rollbackFor = Exception.class)
     public PaperInfo submitPaperByFileId(String subjectCode,String paperTitle, String paperAbstract,
                                          Long collegeId, Long majorId, String paperType,
                                          Long fileId, String fileMd5, Long studentId) {
@@ -265,40 +296,12 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 studentId, paperTitle, fileId);
 
         try {
-            // 1. 验证文件信息
-            validateFileInfo(fileId, fileMd5);
-
-            // 2. 查找是否已存在该学生的论文（根据标题判断）
-            PaperInfo existingPaper = findExistingPaper(studentId, paperTitle);
-
-            PaperInfo paperInfo;
-            boolean isNewPaper = false;//是否为新论文
-            if (existingPaper != null) {
-                // 更新现有论文信息
-                paperInfo = updatePaperInfo(existingPaper, subjectCode, paperTitle, paperAbstract,
-                        collegeId, majorId, paperType, fileId, fileMd5);
-                log.info("更新现有论文 - 论文ID: {}", paperInfo.getId());
-            } else {
-                // 创建新论文信息
-                paperInfo = createPaperInfo(subjectCode,paperTitle, paperAbstract, collegeId,
-                        majorId, paperType, fileId, fileMd5, studentId);
-                log.info("创建新论文 - 论文ID: {}", paperInfo.getId());
-                isNewPaper = true;
-            }
-
-            // 3. 创建提交记录
-            createPaperSubmitRecord(paperInfo, fileId, fileMd5, studentId);
-
-//            // 4. 发送论文提交通知
-//            notificationFacadeService.sendPaperSubmittedNotice(
-//                    paperInfo.getId(),
-//                    paperInfo.getPaperTitle(),
-//                    studentId
-//            );
-            // 4. 发送论文提交成功通知
-            sendPaperSubmitSuccessNotification(paperInfo, studentId, isNewPaper);
-            // 5. 异步分配指导老师并触发查重
-            asyncAllocateTeacherAndCheck(paperInfo.getId(), studentId);
+            // 事务内处理核心业务
+            PaperInfo paperInfo = doSubmitPaperByFileId(subjectCode, paperTitle, paperAbstract,
+                    collegeId, majorId, paperType, fileId, fileMd5, studentId);
+            
+            // 事务外调用异步处理
+            asyncProcessPaperAfterSubmit(paperInfo.getId(), studentId);
 
             log.info("文件ID方式提交论文成功 - 论文ID: {}, 文件ID: {}", paperInfo.getId(), fileId);
             return paperInfo;
@@ -308,37 +311,141 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             throw new RuntimeException("论文提交失败: " + e.getMessage());
         }
     }
+    
     /**
-     * 异步分配指导老师并在分配成功后触发查重
+     * 实际执行文件ID方式提交论文的核心逻辑
      */
-    @Async
-    public void asyncAllocateTeacherAndCheck(Long paperSubmitId, Long studentId) {
-        try {
-            log.info("开始异步分配指导老师 - 论文ID: {}, 学生ID: {}", paperSubmitId, studentId);
+    @Transactional(rollbackFor = Exception.class)
+    protected PaperInfo doSubmitPaperByFileId(String subjectCode, String paperTitle, String paperAbstract,
+                                              Long collegeId, Long majorId, String paperType,
+                                              Long fileId, String fileMd5, Long studentId) {
+        // 1. 验证文件信息
+        validateFileInfo(fileId, fileMd5);
 
-            // 1. 分配指导老师
-            Result<Boolean> result = advisorAssignService.autoAssignAdvisor(paperSubmitId);
-            boolean allocationSuccess = result.isSuccess();
-            if (allocationSuccess) {
-                // 发送指导老师分配成功通知
-                sendAdvisorAllocatedNotification(paperSubmitId, studentId);
-                log.info("指导老师分配成功，开始触发查重 - 论文ID: {}", paperSubmitId);
-                // 2. 分配成功后触发查重
-                triggerCheckRepeat(paperSubmitId);
-            } else {
-                log.warn("指导老师分配失败，跳过查重流程 - 论文ID: {}", paperSubmitId);
-                // 发送指导老师分配失败通知
-                String errorMsg = result.getMessage();
-                sendAdvisorAllocateFailedNotification(paperSubmitId, studentId, errorMsg);
+        // 2. 查找是否已存在该学生的论文（根据标题判断）
+        PaperInfo existingPaper = findExistingPaper(studentId, paperTitle);
+
+        PaperInfo paperInfo;
+        boolean isNewPaper = false;//是否为新论文
+        if (existingPaper != null) {
+            // 更新现有论文信息
+            paperInfo = updatePaperInfo(existingPaper, subjectCode, paperTitle, paperAbstract,
+                    collegeId, majorId, paperType, fileId, fileMd5, studentId);
+            log.info("更新现有论文 - 论文ID: {}", paperInfo.getId());
+        } else {
+            // 创建新论文信息
+            paperInfo = createPaperInfo(subjectCode, paperTitle, paperAbstract, collegeId,
+                    majorId, paperType, fileId, fileMd5, studentId);
+            log.info("创建新论文 - 论文ID: {}", paperInfo.getId());
+            isNewPaper = true;
+        }
+
+        // 3. 创建提交记录
+        createPaperSubmitRecord(paperInfo, fileId, fileMd5, studentId);
+
+//        // 4. 发送论文提交通知
+//        notificationFacadeService.sendPaperSubmittedNotice(
+//                paperInfo.getId(),
+//                paperInfo.getPaperTitle(),
+//                studentId
+//        );
+        // 4. 发送论文提交成功通知
+        sendPaperSubmitSuccessNotification(paperInfo, studentId, isNewPaper);
+
+        return paperInfo;
+    }
+    /**
+     * 异步处理论文后续流程：分配指导老师和触发查重
+     */
+    @Async("asyncExecutor")
+    public void asyncProcessPaperAfterSubmit(Long paperSubmitId, Long studentId) {
+        try {
+            log.info("开始异步处理论文后续流程 - 论文ID: {}, 学生ID: {}", paperSubmitId, studentId);
+
+            // 存储学生信息到UserContextHolder，供异步线程使用
+            com.abin.checkrepeatsystem.pojo.entity.SysUser student = sysUserMapper.selectById(studentId);
+            if (student != null) {
+                UserContextHolder.setUser(student);
             }
 
-        } catch (BusinessException e) {
-            // 业务异常正常抛出，这样你就能看到具体的错误信息
-            log.error("异步分配指导老师业务异常 - 论文ID: {}, 错误: {}", paperSubmitId, e.getMessage());
-            throw e; // 重新抛出业务异常
+            // 并行处理：分配指导老师、提取内容和触发查重
+            CompletableFuture<Void> allocateTask = CompletableFuture.runAsync(() -> {
+                try {
+                    // 确保在子线程中也设置用户上下文
+                    if (student != null) {
+                        UserContextHolder.setUser(student);
+                    }
+                    
+                    // 1. 分配指导老师
+                    Result<Boolean> result = advisorAssignService.autoAssignAdvisor(paperSubmitId);
+                    boolean allocationSuccess = result.isSuccess();
+                    if (allocationSuccess) {
+                        // 发送指导老师分配成功通知
+                        sendAdvisorAllocatedNotification(paperSubmitId, studentId);
+                        log.info("指导老师分配成功 - 论文ID: {}", paperSubmitId);
+                    } else {
+                        log.warn("指导老师分配失败 - 论文ID: {}", paperSubmitId);
+                        // 发送指导老师分配失败通知
+                        String errorMsg = result.getMessage();
+                        sendAdvisorAllocateFailedNotification(paperSubmitId, studentId, errorMsg);
+                    }
+                } catch (Exception e) {
+                    log.error("分配指导老师异常 - 论文ID: {}", paperSubmitId, e);
+                } finally {
+                    // 清理用户上下文
+                    UserContextHolder.removeUser();
+                }
+            });
+
+            CompletableFuture<Void> extractContentTask = CompletableFuture.runAsync(() -> {
+                try {
+                    // 确保在子线程中也设置用户上下文
+                    if (student != null) {
+                        UserContextHolder.setUser(student);
+                    }
+                    
+                    // 2. 提取论文内容并存储到Minio
+                    log.info("开始提取论文内容 - 论文ID: {}", paperSubmitId);
+                    paperContentExtractor.extractRawContent(paperSubmitId);
+                    log.info("论文内容提取成功 - 论文ID: {}", paperSubmitId);
+                } catch (Exception e) {
+                    log.error("提取论文内容异常 - 论文ID: {}", paperSubmitId, e);
+                } finally {
+                    // 清理用户上下文
+                    UserContextHolder.removeUser();
+                }
+            });
+
+            CompletableFuture<Void> checkTask = CompletableFuture.runAsync(() -> {
+                try {
+                    // 确保在子线程中也设置用户上下文
+                    if (student != null) {
+                        UserContextHolder.setUser(student);
+                    }
+                    
+                    // 3. 触发查重
+                    log.info("开始触发查重 - 论文ID: {}", paperSubmitId);
+                    // 获取学生信息并传递给triggerCheckRepeat
+                    SysUser studentForCheck = sysUserMapper.selectById(studentId);
+                    triggerCheckRepeat(paperSubmitId, studentForCheck);
+                } catch (Exception e) {
+                    log.error("触发查重异常 - 论文ID: {}", paperSubmitId, e);
+                } finally {
+                    // 清理用户上下文
+                    UserContextHolder.removeUser();
+                }
+            });
+
+            // 等待三个任务完成
+            CompletableFuture.allOf(allocateTask, extractContentTask, checkTask).join();
+            log.info("论文后续流程处理完成 - 论文ID: {}", paperSubmitId);
+
         } catch (Exception e) {
-            log.error("异步分配指导老师并触发查重系统异常 - 论文ID: {}", paperSubmitId, e);
+            log.error("异步处理论文后续流程系统异常 - 论文ID: {}", paperSubmitId, e);
             // 系统异常可以继续捕获，不影响主流程
+        } finally {
+            // 清理UserContextHolder
+            UserContextHolder.removeUser();
         }
     }
 
@@ -366,6 +473,13 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             default:
                 return "未知状态";
         }
+    }
+
+    /**
+     * 获取状态值
+     */
+    private String getStatusValue(String status) {
+        return status;
     }
 
     /**
@@ -449,8 +563,11 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      */
     private PaperInfo updatePaperInfo(PaperInfo existingPaper, String  subjectCode,String paperTitle, String paperAbstract,
                                       Long collegeId, Long majorId, String paperType,
-                                      Long fileId, String fileMd5) {
+                                      Long fileId, String fileMd5, Long studentId) {
 
+        String oldStatus = existingPaper.getPaperStatus();
+        String newStatus = DictConstants.PaperStatus.PENDING; // 重置状态
+        
         existingPaper.setSubjectCode(subjectCode);
         existingPaper.setPaperTitle(paperTitle);
         existingPaper.setPaperAbstract(paperAbstract);
@@ -460,7 +577,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         existingPaper.setFileId(fileId);
         existingPaper.setFileMd5(fileMd5);
         existingPaper.setFilePath(fileInfoMapper.selectById(fileId).getStoragePath());
-        existingPaper.setPaperStatus(DictConstants.PaperStatus.PENDING); // 重置状态
+        existingPaper.setPaperStatus(newStatus);
         existingPaper.setWordCount(fileInfoMapper.selectById(fileId).getWordCount());//论文字数
         existingPaper.setSimilarityRate(BigDecimal.ZERO); // 重置相似度
         existingPaper.setSubmitTime(LocalDateTime.now());
@@ -470,6 +587,16 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         if (result <= 0) {
             throw new RuntimeException("更新论文信息失败");
         }
+        
+        // 记录状态变更日志
+        paperStatusLogService.recordStatusLog(
+            existingPaper.getId(),
+            getStatusValue(oldStatus),
+            getStatusValue(newStatus),
+            "学生重新提交论文",
+            studentId,
+            null
+        );
 
         return existingPaper;
     }
@@ -517,7 +644,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
     /**
      * 触发查重逻辑（增加重试机制）
      */
-    private void triggerCheckRepeat(Long paperId) {
+    private void triggerCheckRepeat(Long paperId, com.abin.checkrepeatsystem.pojo.entity.SysUser user) {
         int maxRetries = 3; // 最大重试次数
         int retryCount = 0;
         boolean success = false;
@@ -526,6 +653,11 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             try {
                 log.info("触发查重逻辑 - 论文 ID: {}, 尝试次数：{}", paperId, retryCount + 1);
     
+                // 设置用户信息到UserContextHolder
+                if (user != null) {
+                    UserContextHolder.setUser(user);
+                }
+                
                 // 这里调用查重服务
                 checkTaskService.createCheckTask(paperId);
                     
@@ -550,6 +682,9 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                         break;
                     }
                 }
+            } finally {
+                // 清理UserContextHolder
+                UserContextHolder.removeUser();
             }
         }
     }
@@ -616,7 +751,6 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
     /**
      * 查重失败后重置论文状态（独立方法，便于事务控制）
      */
-    @Transactional(rollbackFor = Exception.class)
     private void resetPaperStatusAfterCheckFailed(Long paperId, PaperInfo paperInfo) {
         try {
             PaperInfo updatePaper = new PaperInfo();
@@ -786,15 +920,28 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             }
                 
             // 5. 更新论文状态为已撤回
+            String oldStatus = paperInfo.getPaperStatus();
+            String newStatus = DictConstants.PaperStatus.WITHDRAWN;
+            
             PaperInfo updateInfo = new PaperInfo();
             updateInfo.setId(paperId);
-            updateInfo.setPaperStatus(DictConstants.PaperStatus.WITHDRAWN);
+            updateInfo.setPaperStatus(newStatus);
             updateInfo.setUpdateTime(LocalDateTime.now());
             
             int result = paperInfoMapper.updateById(updateInfo);
             boolean success = result > 0;
             
             if (success) {
+                // 记录状态变更日志
+                paperStatusLogService.recordStatusLog(
+                    paperId,
+                    getStatusValue(oldStatus),
+                    getStatusValue(newStatus),
+                    "学生撤回论文: " + reason,
+                    studentId,
+                    null
+                );
+                
                 // 5. 发送撤回成功通知
                 sendPaperWithdrawSuccessNotification(paperInfo, studentId, reason);
                 log.info("论文撤回成功 - 论文ID: {}", paperId);
@@ -812,56 +959,13 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      * 撤回后重新提交论文
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public PaperInfo resubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId) {
         try {
-            log.info("开始撤回后重新提交 - 论文 ID: {}, 学生 ID: {}", paperId, studentId);
+            // 事务内处理核心业务
+            PaperInfo updatedPaper = doResubmitAfterWithdraw(paperId, request, studentId);
             
-            // 1. 验证文件信息
-            FileInfo fileInfo = fileService.getById(request.getFileId());
-            if (fileInfo == null) {
-                throw new BusinessException(ResultCode.BUSINESS_NO_SAFE, "文件不存在或已被删除");
-            }
-            
-            // 2. 更新论文基本信息
-            PaperInfo updatePaper = new PaperInfo();
-            updatePaper.setId(paperId);
-            updatePaper.setPaperTitle(request.getPaperTitle());
-            updatePaper.setPaperAbstract(request.getPaperAbstract());
-            updatePaper.setFileId(request.getFileId());
-            updatePaper.setFileMd5(request.getFileMd5());
-
-            // 3. 获取当前版本号
-            Integer currentVersion = getCurrentVersion(paperId);
-            Integer newVersion = currentVersion+1;
-            // 4. 重置状态为待分配
-            updatePaper.setPaperStatus(DictConstants.PaperStatus.PENDING);
-            updatePaper.setUpdateTime(LocalDateTime.now());
-            
-            int updateResult = paperInfoMapper.updateById(updatePaper);
-            if (updateResult == 0) {
-                throw new BusinessException(ResultCode.SYSTEM_ERROR,"更新论文信息失败");
-            }
-            
-            // 5. 创建新的提交记录
-            PaperSubmit submitRecord = new PaperSubmit();
-            submitRecord.setPaperId(paperId);
-            submitRecord.setStudentId(studentId);
-            submitRecord.setSubmitVersion(newVersion);
-            submitRecord.setFileId(request.getFileId());
-            submitRecord.setFileMd5(request.getFileMd5());
-            submitRecord.setSubmitTime(LocalDateTime.now());
-            submitRecord.setRemark("撤回后重新提交");
-            int submitResult = paperSubmitMapper.insert(submitRecord);
-            if (submitResult == 0) {
-                throw new BusinessException(ResultCode.SYSTEM_ERROR,"创建提交记录失败");
-            }
-            
-            // 6. 异步分配导师并触发查重
-            asyncAllocateTeacherAndCheck(paperId, studentId);
-            
-            PaperInfo updatedPaper = paperInfoMapper.selectById(paperId);
-            log.info("撤回后重新提交成功 - 论文 ID: {}, 新版本号：{}", paperId, newVersion);
+            // 事务外调用异步处理
+            asyncProcessPaperAfterSubmit(paperId, studentId);
             
             return updatedPaper;
             
@@ -872,6 +976,72 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             log.error("撤回后重新提交失败 - 论文 ID: {}", paperId, e);
             throw new RuntimeException("重新提交失败：" + e.getMessage());
         }
+    }
+    
+    /**
+     * 实际执行撤回后重新提交的核心逻辑
+     */
+    @Transactional(rollbackFor = Exception.class)
+    protected PaperInfo doResubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId) {
+        log.info("开始撤回后重新提交 - 论文 ID: {}, 学生 ID: {}", paperId, studentId);
+        
+        // 1. 验证文件信息
+        FileInfo fileInfo = fileService.getById(request.getFileId());
+        if (fileInfo == null) {
+            throw new BusinessException(ResultCode.BUSINESS_NO_SAFE, "文件不存在或已被删除");
+        }
+        
+        // 2. 更新论文基本信息
+        PaperInfo updatePaper = new PaperInfo();
+        updatePaper.setId(paperId);
+        updatePaper.setPaperTitle(request.getPaperTitle());
+        updatePaper.setPaperAbstract(request.getPaperAbstract());
+        updatePaper.setFileId(request.getFileId());
+        updatePaper.setFileMd5(request.getFileMd5());
+
+        // 3. 获取当前版本号
+        Integer currentVersion = getCurrentVersion(paperId);
+        Integer newVersion = currentVersion+1;
+        
+        // 4. 重置状态为待分配
+        String oldStatus = "WITHDRAWN";
+        String newStatus = DictConstants.PaperStatus.PENDING;
+        updatePaper.setPaperStatus(newStatus);
+        updatePaper.setUpdateTime(LocalDateTime.now());
+        
+        int updateResult = paperInfoMapper.updateById(updatePaper);
+        if (updateResult == 0) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR,"更新论文信息失败");
+        }
+        
+        // 记录状态变更日志
+        paperStatusLogService.recordStatusLog(
+            paperId,
+            getStatusValue(oldStatus),
+            getStatusValue(newStatus),
+            "学生撤回后重新提交论文",
+            studentId,
+            null
+        );
+        
+        // 5. 创建新的提交记录
+        PaperSubmit submitRecord = new PaperSubmit();
+        submitRecord.setPaperId(paperId);
+        submitRecord.setStudentId(studentId);
+        submitRecord.setSubmitVersion(newVersion);
+        submitRecord.setFileId(request.getFileId());
+        submitRecord.setFileMd5(request.getFileMd5());
+        submitRecord.setSubmitTime(LocalDateTime.now());
+        submitRecord.setRemark("撤回后重新提交");
+        int submitResult = paperSubmitMapper.insert(submitRecord);
+        if (submitResult == 0) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR,"创建提交记录失败");
+        }
+        
+        PaperInfo updatedPaper = paperInfoMapper.selectById(paperId);
+        log.info("撤回后重新提交成功 - 论文 ID: {}, 新版本号：{}", paperId, newVersion);
+        
+        return updatedPaper;
     }
     
     /**
@@ -904,15 +1074,28 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             }
             
             // 4. 更新论文状态为待审核（申请修改状态）
+            String oldStatus = paperInfo.getPaperStatus();
+            String newStatus = DictConstants.PaperStatus.AUDITING; // 或者自定义一个申请修改状态
+            
             PaperInfo updateInfo = new PaperInfo();
             updateInfo.setId(paperId);
-            updateInfo.setPaperStatus(DictConstants.PaperStatus.AUDITING); // 或者自定义一个申请修改状态
+            updateInfo.setPaperStatus(newStatus);
             updateInfo.setUpdateTime(LocalDateTime.now());
             
             int result = paperInfoMapper.updateById(updateInfo);
             boolean success = result > 0;
             
             if (success) {
+                // 记录状态变更日志
+                paperStatusLogService.recordStatusLog(
+                    paperId,
+                    getStatusValue(oldStatus),
+                    getStatusValue(newStatus),
+                    "学生申请修改论文: " + reason,
+                    studentId,
+                    null
+                );
+                
                 // 5. 发送申请修改通知
                 sendPaperModifyRequestNotification(paperInfo, studentId, reason);
                 log.info("申请修改论文成功 - 论文ID: {}", paperId);
@@ -2092,5 +2275,249 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         if (avgImprovement >= 5) return "较快";
         if (avgImprovement >= 2) return "一般";
         return "较慢";
+    }
+    
+    /**
+     * 上传附件接口实现
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PaperAttachment uploadAttachment(Long paperId, MultipartFile file, String attachmentType, Long studentId) {
+        try {
+            log.info("开始上传附件 - 论文ID: {}, 附件类型: {}", paperId, attachmentType);
+            
+            // 1. 验证论文信息
+            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
+                throw new RuntimeException("论文不存在或无权限访问");
+            }
+            
+            // 2. 上传文件
+            Long fileId = fileService.uploadFile(file, studentId);
+            FileInfo fileInfo = fileInfoMapper.selectById(fileId);
+            if (fileInfo == null) {
+                throw new RuntimeException("文件上传失败");
+            }
+            
+            // 3. 创建附件记录
+            PaperAttachment attachment = new PaperAttachment();
+            attachment.setPaperId(paperId);
+            attachment.setStudentId(studentId);
+            attachment.setAdvisorId(paperInfo.getTeacherId());
+            attachment.setOriginalFilename(file.getOriginalFilename());
+            attachment.setStoragePath(fileInfo.getStoragePath());
+            attachment.setFileType(fileInfo.getFileType());
+            attachment.setFileSize(fileInfo.getFileSize());
+            attachment.setFileMd5(fileInfo.getMd5());
+            attachment.setAttachmentType(attachmentType);
+            attachment.setCreateBy(studentId);
+            attachment.setCreateTime(LocalDateTime.now());
+            
+            int result = paperAttachmentMapper.insert(attachment);
+            if (result <= 0) {
+                throw new RuntimeException("附件记录创建失败");
+            }
+            
+            log.info("附件上传成功 - 附件ID: {}, 论文ID: {}", attachment.getId(), paperId);
+            return attachment;
+            
+        } catch (Exception e) {
+            log.error("上传附件失败 - 论文ID: {}", paperId, e);
+            throw new RuntimeException("附件上传失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取论文附件列表实现
+     */
+    @Override
+    public List<PaperAttachment> getPaperAttachments(Long paperId, Long studentId) {
+        try {
+            log.info("获取论文附件列表 - 论文ID: {}, 学生ID: {}", paperId, studentId);
+            
+            // 1. 验证论文信息
+            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
+                throw new RuntimeException("论文不存在或无权限访问");
+            }
+            
+            // 2. 查询附件列表
+            List<PaperAttachment> attachments = paperAttachmentMapper.selectList(
+                new LambdaQueryWrapper<PaperAttachment>()
+                    .eq(PaperAttachment::getPaperId, paperId)
+                    .eq(PaperAttachment::getIsDeleted, 0)
+                    .orderByDesc(PaperAttachment::getCreateTime)
+            );
+            
+            // 3. 计算文件大小描述
+            for (PaperAttachment attachment : attachments) {
+                attachment.setFileSizeDesc(formatFileSize(attachment.getFileSize()));
+            }
+            
+            return attachments;
+            
+        } catch (Exception e) {
+            log.error("获取附件列表失败 - 论文ID: {}", paperId, e);
+            throw new RuntimeException("获取附件列表失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 删除附件接口实现
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean deleteAttachment(Long attachmentId, Long studentId) {
+        try {
+            log.info("开始删除附件 - 附件ID: {}, 学生ID: {}", attachmentId, studentId);
+            
+            // 1. 查询附件信息
+            PaperAttachment attachment = paperAttachmentMapper.selectById(attachmentId);
+            if (attachment == null || attachment.getIsDeleted() == 1) {
+                throw new RuntimeException("附件不存在");
+            }
+            
+            // 2. 验证权限
+            if (!attachment.getStudentId().equals(studentId)) {
+                throw new RuntimeException("无权限删除此附件");
+            }
+            
+            // 3. 删除附件记录（软删除）
+            int result = paperAttachmentMapper.deleteById(attachmentId);
+            boolean success = result > 0;
+            
+            if (success) {
+                log.info("附件删除成功 - 附件ID: {}", attachmentId);
+            }
+            
+            return success;
+            
+        } catch (Exception e) {
+            log.error("删除附件失败 - 附件ID: {}", attachmentId, e);
+            throw new RuntimeException("附件删除失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取专业列表接口实现
+     */
+    @Override
+    public List<com.abin.checkrepeatsystem.pojo.entity.Major> getMajorList() {
+        try {
+            log.info("获取专业列表");
+            // 从数据库中查询所有专业
+            List<com.abin.checkrepeatsystem.pojo.entity.Major> majorList = majorMapper.selectList(
+                new LambdaQueryWrapper<com.abin.checkrepeatsystem.pojo.entity.Major>()
+                    .eq(com.abin.checkrepeatsystem.pojo.entity.Major::getIsDeleted, 0)
+                    .orderByAsc(com.abin.checkrepeatsystem.pojo.entity.Major::getMajorName)
+            );
+            log.info("获取专业列表成功，共 {} 个专业", majorList.size());
+            return majorList;
+        } catch (Exception e) {
+            log.error("获取专业列表失败", e);
+            throw new RuntimeException("获取专业列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 更新论文信息接口实现
+     */
+    @Override
+    public PaperInfo updatePaper(Long paperId, com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest request, Long studentId) {
+        try {
+            // 事务内处理核心业务
+            PaperInfo paperInfo = doUpdatePaper(paperId, request, studentId);
+            
+            // 事务外调用异步处理
+            asyncProcessPaperAfterSubmit(paperId, studentId);
+
+            log.info("论文更新成功 - 论文ID: {}", paperId);
+            return paperInfo;
+
+        } catch (Exception e) {
+            log.error("更新论文失败 - 论文ID: {}", paperId, e);
+            throw new RuntimeException("更新论文失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 实际执行更新论文的核心逻辑
+     */
+    @Transactional(rollbackFor = Exception.class)
+    protected PaperInfo doUpdatePaper(Long paperId, com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest request, Long studentId) {
+        log.info("开始更新论文 - 论文ID: {}, 学生ID: {}, 请求参数: {}", paperId, studentId, request);
+
+        // 1. 验证论文信息
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null) {
+            throw new RuntimeException("论文不存在");
+        }
+
+        // 2. 验证论文归属
+        if (!paperInfo.getStudentId().equals(studentId)) {
+            throw new RuntimeException("无权限更新他人论文");
+        }
+
+        // 3. 验证论文状态：只有待处理状态的论文可以更新
+        if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
+            String statusLabel = getPaperStatusLabel(paperInfo.getPaperStatus());
+            throw new RuntimeException("当前论文状态为【" + statusLabel + "】，不允许更新");
+        }
+
+        // 4. 验证文件信息
+        validateFileInfo(request.getFileId(), request.getFileMd5());
+
+        // 5. 更新论文信息
+        String oldStatus = paperInfo.getPaperStatus();
+        String newStatus = DictConstants.PaperStatus.PENDING; // 保持待处理状态
+
+        paperInfo.setSubjectCode(request.getSubjectCode());
+        paperInfo.setPaperTitle(request.getPaperTitle());
+        paperInfo.setPaperAbstract(request.getPaperAbstract());
+        paperInfo.setCollegeId(request.getCollegeId());
+        paperInfo.setMajorId(request.getMajorId());
+        paperInfo.setPaperType(request.getPaperType());
+        paperInfo.setFileId(request.getFileId());
+        paperInfo.setFileMd5(request.getFileMd5());
+        paperInfo.setFilePath(fileInfoMapper.selectById(request.getFileId()).getStoragePath());
+        paperInfo.setWordCount(fileInfoMapper.selectById(request.getFileId()).getWordCount());
+        paperInfo.setUpdateTime(LocalDateTime.now());
+
+        int result = paperInfoMapper.updateById(paperInfo);
+        if (result <= 0) {
+            throw new RuntimeException("更新论文信息失败");
+        }
+
+        // 6. 记录状态变更日志
+        paperStatusLogService.recordStatusLog(
+            paperId,
+            getStatusValue(oldStatus),
+            getStatusValue(newStatus),
+            "学生更新论文信息",
+            studentId,
+            null
+        );
+
+        // 7. 创建新的提交记录
+        createPaperSubmitRecord(paperInfo, request.getFileId(), request.getFileMd5(), studentId);
+
+        return paperInfo;
+    }
+    /**
+     * 格式化文件大小
+     */
+    private String formatFileSize(Long fileSize) {
+        if (fileSize == null) {
+            return "0 B";
+        }
+        if (fileSize < 1024) {
+            return fileSize + " B";
+        } else if (fileSize < 1024 * 1024) {
+            return String.format("%.2f KB", fileSize / 1024.0);
+        } else if (fileSize < 1024 * 1024 * 1024) {
+            return String.format("%.2f MB", fileSize / (1024.0 * 1024.0));
+        } else {
+            return String.format("%.2f GB", fileSize / (1024.0 * 1024.0 * 1024.0));
+        }
     }
 }

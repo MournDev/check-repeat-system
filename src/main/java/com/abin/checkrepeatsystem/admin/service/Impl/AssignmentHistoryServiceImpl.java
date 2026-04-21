@@ -8,9 +8,13 @@ import com.abin.checkrepeatsystem.admin.dto.*;
 import com.abin.checkrepeatsystem.pojo.entity.TeacherAllocationRecord;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.user.mapper.TeacherAllocationRecordMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +27,8 @@ import java.time.format.DateTimeFormatter;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 
 /**
  * 分配记录管理服务实现类
@@ -39,6 +45,12 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
 
     @Resource
     private PaperInfoMapper paperInfoMapper;
+
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
+
+    @Resource
+    private StudentInfoService studentInfoService;
 
     @Override
     public Result<AssignmentHistoryStatsDTO> getAssignmentHistoryStats() {
@@ -455,8 +467,13 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             if (student != null) {
                 dto.setStudentName(student.getRealName());
                 dto.setStudentId(student.getUsername());
-                dto.setMajor(student.getMajor());
-                dto.setGrade(student.getGrade());
+                dto.setMajor(student.getMajorDisplayName());
+                
+                // 从StudentInfo表获取年级
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    dto.setGrade(studentInfo.getGrade());
+                }
             }
         }
         
@@ -465,8 +482,13 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             SysUser teacher = sysUserMapper.selectById(record.getTeacherId());
             if (teacher != null) {
                 dto.setTeacherName(teacher.getRealName());
-                dto.setTeacherTitle(teacher.getProfessionalTitle());
-                dto.setDepartment(teacher.getCollegeName());
+                
+                // 从TeacherInfo表获取教师详情
+                TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+                if (teacherInfo != null) {
+                    dto.setTeacherTitle(teacherInfo.getProfessionalTitle());
+                    dto.setDepartment(teacherInfo.getCollegeName());
+                }
             }
         }
         
@@ -504,10 +526,16 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
         AvailableTeacherDTO dto = new AvailableTeacherDTO();
         dto.setId(teacher.getId().toString());
         dto.setName(teacher.getRealName());
-        dto.setTitle(teacher.getProfessionalTitle());
-        dto.setDepartment(teacher.getCollegeName());
-        dto.setCurrentLoad(teacher.getCurrentAdvisorCount());
-        dto.setMaxLoad(teacher.getMaxReviewCount());
+        
+        // 从TeacherInfo表获取教师详情
+        TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+        if (teacherInfo != null) {
+            dto.setTitle(teacherInfo.getProfessionalTitle());
+            dto.setDepartment(teacherInfo.getCollegeName());
+            dto.setCurrentLoad(teacherInfo.getCurrentAdvisorCount());
+            dto.setMaxLoad(teacherInfo.getMaxReviewCount());
+        }
+        
         return dto;
     }
 
@@ -524,8 +552,13 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             if (student != null) {
                 vo.setStudentName(student.getRealName());
                 vo.setStudentId(student.getUsername());
-                vo.setMajor(student.getMajor());
-                vo.setGrade(student.getGrade());
+                vo.setMajor(student.getMajorDisplayName());
+                
+                // 从StudentInfo表获取年级
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    vo.setGrade(studentInfo.getGrade());
+                }
             }
         }
         
@@ -534,8 +567,13 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             SysUser teacher = sysUserMapper.selectById(record.getTeacherId());
             if (teacher != null) {
                 vo.setTeacherName(teacher.getRealName());
-                vo.setTeacherTitle(teacher.getProfessionalTitle());
-                vo.setDepartment(teacher.getCollegeName());
+                
+                // 从TeacherInfo表获取教师详情
+                TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+                if (teacherInfo != null) {
+                    vo.setTeacherTitle(teacherInfo.getProfessionalTitle());
+                    vo.setDepartment(teacherInfo.getCollegeName());
+                }
             }
         }
         
@@ -572,11 +610,10 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
      */
     private Long getCurrentOperatorId() {
         try {
-            // 这里应该从Security上下文获取当前用户ID
-            return 1L; // 临时返回管理员ID
+            return UserBusinessInfoUtils.getCurrentUserId();
         } catch (Exception e) {
-            log.warn("获取当前操作人ID失败，使用默认值: {}", e.getMessage());
-            return 1L;
+            log.warn("获取当前用户ID失败，使用默认管理员ID。错误信息: {}", e.getMessage());
+            return 1L; // 失败时返回默认管理员ID
         }
     }
 }

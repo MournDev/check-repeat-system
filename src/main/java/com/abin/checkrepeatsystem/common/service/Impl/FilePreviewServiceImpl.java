@@ -42,7 +42,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     @Autowired
     private CheckReportMapper checkReportMapper;
 
-    @Value("${app.host:192.168.1.149}")
+    @Value("${app.host:192.168.30.1}")
     private String serverHost;
 
     @Value("${server.port:8080}")
@@ -57,16 +57,9 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     @Value("${file.upload.base-path}")
     private String uploadBasePath;
 
-
-    private final RestTemplate restTemplate;
+    private static final RestTemplate restTemplate = createRestTemplate();
 
     public FilePreviewServiceImpl() {
-        this.restTemplate = new RestTemplate();
-        // 设置连接超时和读取超时
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(5000); // 5秒连接超时
-        requestFactory.setReadTimeout(30000);   // 30秒读取超时
-        restTemplate.setRequestFactory(requestFactory);
     }
 
     @Override
@@ -75,6 +68,11 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             FileInfo fileInfo = fileService.getById(fileId);
             if (fileInfo == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+            }
+
+            // 验证文件访问权限（这里可以根据实际业务逻辑实现权限验证）
+            if (!hasFileAccessPermission(fileInfo)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
             }
 
             String fileStoragePath = fileInfo.getStoragePath();
@@ -97,6 +95,16 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             log.error("直接预览失败 - fileId: {}", fileId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
+    }
+
+    /**
+     * 验证文件访问权限
+     */
+    private boolean hasFileAccessPermission(FileInfo fileInfo) {
+        // 这里可以根据实际业务逻辑实现权限验证
+        // 例如：检查当前用户是否为文件的所有者或具有访问权限
+        // 暂时返回true，后续需要根据实际业务逻辑实现
+        return true;
     }
 
     private String getContentType(File file, String originalFilename) {
@@ -198,9 +206,12 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     @Override
     public ResponseEntity<?> smartPreviewReport(String paperId) {
         try {
+            // 将paperId转换为Long类型
+            Long paperIdLong = Long.parseLong(paperId);
+            
             // 1. 查找最新的已完成查重任务
             LambdaQueryWrapper<CheckTask> taskQueryWrapper = new LambdaQueryWrapper<>();
-            taskQueryWrapper.eq(CheckTask::getPaperId, paperId)
+            taskQueryWrapper.eq(CheckTask::getPaperId, paperIdLong)
                     .eq(CheckTask::getIsDeleted, 0)
                     .eq(CheckTask::getCheckStatus, "completed")
                     .orderByDesc(CheckTask::getCreateTime)
@@ -223,6 +234,12 @@ public class FilePreviewServiceImpl implements FilePreviewService {
 
             // 3. 获取报告文件信息
             String reportPath = checkReport.getReportPath();
+            if (reportPath == null || reportPath.isEmpty()) {
+                log.error("报告文件路径为空 - reportId: {}", checkReport.getId());
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body("报告文件路径为空");
+            }
+            
             File reportFile = new File(reportPath);
             if (!reportFile.exists()) {
                 log.error("报告文件不存在 - path: {}", reportPath);
@@ -243,22 +260,32 @@ public class FilePreviewServiceImpl implements FilePreviewService {
                 return directPreviewReport(reportPath, fileName);
             }
 
-            // 可直接预览的文档类型：PDF、文本
-            if (isDirectPreviewFile(fileExtension)) {
-                log.info("可直接预览的报告文档 - paperId: {}", paperId);
+            // PDF文件：使用KKFileView预览
+            if ("pdf".equals(fileExtension)) {
+                log.info("PDF报告使用KKFileView预览 - paperId: {}", paperId);
+                return proxyReportToKKFileView(checkReport.getId(), fileName);
+            }
+
+            // 文本类型：直接返回文件流
+            if (Arrays.asList("txt", "html", "htm", "xml", "json").contains(fileExtension)) {
+                log.info("文本报告直接预览 - paperId: {}", paperId);
                 return directPreviewReport(reportPath, fileName);
             }
 
             // Office文档类型：使用KKFileView
             if (isOfficeFile(fileExtension)) {
                 log.info("Office报告文档使用KKFileView预览 - paperId: {}", paperId);
-                return proxyReportToKKFileView(reportPath, fileName);
+                return proxyReportToKKFileView(checkReport.getId(), fileName);
             }
 
             // 其他类型：尝试直接预览
             log.info("其他类型报告文件尝试直接预览 - paperId: {}", paperId);
             return directPreviewReport(reportPath, fileName);
 
+        } catch (NumberFormatException e) {
+            log.error("论文ID格式错误 - paperId: {}", paperId, e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("论文ID格式错误");
         } catch (Exception e) {
             log.error("智能预览查重报告失败 - paperId: {}", paperId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -294,10 +321,14 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     /**
      * 代理报告到KKFileView预览
      */
-    private ResponseEntity<?> proxyReportToKKFileView(String reportPath, String fileName) {
+    private ResponseEntity<?> proxyReportToKKFileView(Long reportId, String fileName) {
         try {
-            // 构建文件访问URL
-            String fileUrl = "file://" + reportPath;
+            // 构建文件访问URL（使用HTTP URL）
+            String fileUrl = String.format("http://%s:%s%s/api/file/downloadReport/%s",
+                    serverHost,
+                    serverPort,
+                    appContext,
+                    reportId);
 
             // Base64编码（URL安全）
             String encodedUrl = Base64.getUrlEncoder().encodeToString(fileUrl.getBytes(StandardCharsets.UTF_8));
@@ -328,7 +359,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             headers.setLocation(URI.create(kkFileViewPreviewUrl));
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
         } catch (Exception e) {
-            log.error("代理报告到KKFileView失败 - path: {}", reportPath, e);
+            log.error("代理报告到KKFileView失败 - reportId: {}", reportId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("预览失败: " + e.getMessage());
         }
@@ -339,6 +370,11 @@ public class FilePreviewServiceImpl implements FilePreviewService {
      */
     private ResponseEntity<?> proxyToKKFileView(Long fileId, FileInfo fileInfo) {
         try {
+            // 验证文件访问权限
+            if (!hasFileAccessPermission(fileInfo)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无权限访问该文件");
+            }
+
             // 1. 构建文件访问URL（包含文件名）
             String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
                     serverHost,
@@ -350,7 +386,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             log.info("构建KKFileView文件URL: {}", fileUrl);
 
             // 2. Base64编码（URL安全）
-            String encodedUrl = Base64.getUrlEncoder().encodeToString(fileUrl.getBytes());
+            String encodedUrl = Base64.getUrlEncoder().encodeToString(fileUrl.getBytes(StandardCharsets.UTF_8));
 
             // 3. 构建KKFileView预览URL
             String kkFileViewPreviewUrl = String.format("%s/onlinePreview?url=%s",
@@ -386,10 +422,11 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     private String buildFileDownloadUrl(Long fileId) {
         try {
             FileInfo fileInfo = fileService.getById(fileId);
-            // 使用宿主机的IP地址，而不是localhost
+            // 使用宿主机的IP地址，而不是localhost，包含完整的上下文路径和API路径
             String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
                     serverHost,
                     serverPort,
+                    appContext,
                     fileId,
                     URLEncoder.encode(fileInfo.getOriginalFilename(), StandardCharsets.UTF_8));
 
@@ -444,7 +481,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     /**
      * 创建配置好的RestTemplate
      */
-    private RestTemplate createRestTemplate() {
+    private static RestTemplate createRestTemplate() {
         RestTemplate restTemplate = new RestTemplate();
 
         // 设置连接超时

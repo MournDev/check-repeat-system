@@ -11,7 +11,8 @@ import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,8 +28,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/users")
 @PreAuthorize("hasAuthority('ADMIN')")
-@Slf4j
 public class AdminUserController {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminUserController.class);
 
     @Resource
     private AdminUserService adminUserService;

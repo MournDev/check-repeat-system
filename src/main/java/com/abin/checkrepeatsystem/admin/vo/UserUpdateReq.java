@@ -16,6 +16,5 @@ public class UserUpdateReq {
     private String grade;
     private String className;
     
-    @NotNull(message = "状态不能为空")
     private Integer status;
 }

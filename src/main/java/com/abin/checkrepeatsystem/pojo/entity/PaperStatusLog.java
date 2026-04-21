@@ -30,14 +30,14 @@ public class PaperStatusLog extends BaseEntity {
      */
     @NotNull(message = "变更前状态不能为空")
     @TableField("old_status")
-    private Integer oldStatus;
+    private String oldStatus;
 
     /**
      * 变更后状态（非空，如1-已提交）
      */
     @NotNull(message = "变更后状态不能为空")
     @TableField("new_status")
-    private Integer newStatus;
+    private String newStatus;
 
     /**
      * 状态变更原因（非空，最大500字符）

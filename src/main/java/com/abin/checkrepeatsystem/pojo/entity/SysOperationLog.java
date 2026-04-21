@@ -1,6 +1,5 @@
 package com.abin.checkrepeatsystem.pojo.entity;
 
-import com.abin.checkrepeatsystem.pojo.entity.BaseEntity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -11,12 +10,6 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode(callSuper = true)
 @TableName("sys_operation_log")
 public class SysOperationLog extends BaseEntity {
-
-    /**
-     * 日志ID
-     */
-    @TableId(value = "id", type = IdType.ASSIGN_ID)
-    private Long id;
 
     /**
      * 操作类型（如：user_login、admin_user_create等）
@@ -49,6 +42,30 @@ public class SysOperationLog extends BaseEntity {
     private String userName;
 
     /**
+     * 操作用户类型
+     */
+    @TableField("user_type")
+    private String userType;
+
+    /**
+     * 操作对象
+     */
+    @TableField("target")
+    private String target;
+
+    /**
+     * 操作状态（1成功，0失败）
+     */
+    @TableField("status")
+    private Integer status;
+
+    /**
+     * 详细信息
+     */
+    @TableField("details")
+    private String details;
+
+    /**
      * 操作用户IP地址
      */
     @TableField("ip_address")
@@ -59,36 +76,4 @@ public class SysOperationLog extends BaseEntity {
      */
     @TableField("operation_time")
     private LocalDateTime operationTime;
-
-    /**
-     * 是否删除（0-未删除，1-已删除）
-     */
-    @TableLogic
-    @TableField("is_deleted")
-    private Integer isDeleted;
-
-    /**
-     * 创建时间
-     */
-    @TableField(value = "create_time", fill = FieldFill.INSERT)
-    private LocalDateTime createTime;
-
-    /**
-     * 更新时间
-     */
-    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updateTime;
-    
-    // 添加审计字段
-    /**
-     * 创建人ID
-     */
-    @TableField("created_by")
-    private Long createdBy;
-
-    /**
-     * 更新人ID
-     */
-    @TableField("updated_by")
-    private Long updatedBy;
 }

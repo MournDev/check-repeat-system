@@ -3,7 +3,9 @@ package com.abin.checkrepeatsystem.user.service.Impl;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.common.utils.IKAnalyzerUtils;
+import com.abin.checkrepeatsystem.common.utils.SpringContextUtil;
 import com.abin.checkrepeatsystem.common.utils.TextSimilarityUtils;
+import com.abin.checkrepeatsystem.detection.service.PaperContentExtractor;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.vo.CheckResult;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
@@ -16,6 +18,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -61,18 +64,35 @@ public class LocalCheckEngine implements CheckEngine {
         double maxSimilarity = 0.0;
         String mostSimilarPaperTitle = "";
         BigInteger mostSimilarSimHash = BigInteger.ZERO;
+        List<CheckResult.SimilarPaper> similarPapers = new ArrayList<>();
 
         // 3. 遍历论文信息，逐一比对
         for (PaperInfo paper : paperList) {
             try {
-                // 从MinIO读取库中论文内容
-                String libraryContent = paperContentMinioService.readPaperContent(paper.getContentPath());
+                String libraryContent = null;
+                // 检查contentPath是否为空，如果为空则尝试提取内容
+                if (paper.getContentPath() == null || paper.getContentPath().isEmpty()) {
+                    // 尝试提取内容并存储到Minio
+                    try {
+                        PaperContentExtractor extractor = SpringContextUtil.getBean(PaperContentExtractor.class);
+                        libraryContent = extractor.extractRawContent(paper.getId());
+                    } catch (Exception e) {
+                        log.warn("提取论文内容失败（ID：{}）：", paper.getId(), e);
+                        continue;
+                    }
+                } else {
+                    // 从MinIO读取库中论文内容
+                    libraryContent = paperContentMinioService.readPaperContent(paper.getContentPath());
+                }
                 if (libraryContent == null || libraryContent.isEmpty()) {
                     continue;
                 }
                 
                 // 预处理库中论文（使用MinIO中的内容进行分词）
-                String segmentedLibraryText = paperContentMinioService.readSegmentedText(paper.getSegmentedPath());
+                String segmentedLibraryText = null;
+                if (paper.getSegmentedPath() != null && !paper.getSegmentedPath().isEmpty()) {
+                    segmentedLibraryText = paperContentMinioService.readSegmentedText(paper.getSegmentedPath());
+                }
                 if (segmentedLibraryText == null || segmentedLibraryText.isEmpty()) {
                     // 如果MinIO中没有分词结果，则实时处理
                     segmentedLibraryText = IKAnalyzerUtils.segmentToString(libraryContent);
@@ -90,7 +110,16 @@ public class LocalCheckEngine implements CheckEngine {
                 // 3.2 余弦相似度精细计算
                 double similarity = textSimilarityUtils.calculateCosineSimilarity(segmentedTargetText, segmentedLibraryText);
 
-                // 3.3 记录最高相似度
+                // 3.3 记录相似度高于阈值的论文
+                if (similarity > 0.05) { // 相似度高于5%的论文
+                    CheckResult.SimilarPaper similarPaper = new CheckResult.SimilarPaper();
+                    similarPaper.setPaperId(paper.getId());
+                    similarPaper.setPaperTitle(paper.getPaperTitle());
+                    similarPaper.setSimilarity(BigDecimal.valueOf(similarity * 100).setScale(2, BigDecimal.ROUND_HALF_UP));
+                    similarPapers.add(similarPaper);
+                }
+
+                // 3.4 记录最高相似度
                 if (similarity > maxSimilarity) {
                     maxSimilarity = similarity;
                     mostSimilarPaperTitle = paper.getPaperTitle(); // 替代 getTitle()
@@ -116,6 +145,7 @@ public class LocalCheckEngine implements CheckEngine {
                 paperList.size()
         ));
         result.setSuccess(true);
+        result.setSimilarPapers(similarPapers);
 
         return result;
     }

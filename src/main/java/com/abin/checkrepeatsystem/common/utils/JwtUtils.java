@@ -154,5 +154,27 @@ public class JwtUtils {
         return parts.length == 3; // JWT 应由三部分组成
     }
 
+    /**
+     * 从token中提取用户类型
+     */
+    public String extractUserType(String token) {
+        String roleCode = extractRoleCode(token);
+        if (roleCode == null) {
+            return "unknown";
+        }
+        
+        // 根据角色编码返回对应的用户类型
+        switch (roleCode) {
+            case "STUDENT":
+                return "student";
+            case "TEACHER":
+                return "teacher";
+            case "ADMIN":
+                return "admin";
+            default:
+                return "unknown";
+        }
+    }
+
 
 }

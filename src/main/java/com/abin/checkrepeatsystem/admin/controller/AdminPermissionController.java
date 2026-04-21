@@ -4,14 +4,17 @@ import com.abin.checkrepeatsystem.admin.service.AdminPermissionService;
 import com.abin.checkrepeatsystem.admin.vo.RoleCreateReq;
 import com.abin.checkrepeatsystem.admin.vo.RoleUpdateReq;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.SysRole;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Map;
@@ -23,8 +26,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin")
 @PreAuthorize("hasAuthority('ADMIN')")
-@Slf4j
 public class AdminPermissionController {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminPermissionController.class);
 
     @Resource
     private AdminPermissionService adminPermissionService;
@@ -32,6 +36,7 @@ public class AdminPermissionController {
     /**
      * 获取角色列表
      */
+    @OperationLog(type = "role_list", description = "获取角色列表")
     @GetMapping("/roles/list")
     public Result<List<SysRole>> getRoleList() {
         log.info("接收获取角色列表请求");
@@ -46,6 +51,7 @@ public class AdminPermissionController {
     /**
      * 创建角色
      */
+    @OperationLog(type = "role_create", description = "创建角色", recordResult = true)
     @PostMapping("/roles/create")
     public Result<Map<String, Object>> createRole(@Valid @RequestBody RoleCreateReq createReq) {
         log.info("接收创建角色请求: roleName={}", createReq.getRoleName());
@@ -60,6 +66,7 @@ public class AdminPermissionController {
     /**
      * 更新角色
      */
+    @OperationLog(type = "role_update", description = "更新角色", recordResult = true)
     @PutMapping("/roles/{roleId}")
     public Result<String> updateRole(@PathVariable Long roleId,
                                      @Valid @RequestBody RoleUpdateReq updateReq) {
@@ -75,6 +82,7 @@ public class AdminPermissionController {
     /**
      * 删除角色
      */
+    @OperationLog(type = "role_delete", description = "删除角色", recordResult = true)
     @DeleteMapping("/roles/{roleId}")
     public Result<String> deleteRole(@PathVariable Long roleId) {
         log.info("接收删除角色请求: roleId={}", roleId);
@@ -89,6 +97,7 @@ public class AdminPermissionController {
     /**
      * 获取权限树
      */
+    @OperationLog(type = "permission_tree", description = "获取权限树")
     @GetMapping("/permissions/tree")
     public Result<List<Map<String, Object>>> getPermissionTree() {
         log.info("接收获取权限树请求");
@@ -103,6 +112,7 @@ public class AdminPermissionController {
     /**
      * 分配用户角色
      */
+    @OperationLog(type = "user_assign_role", description = "分配用户角色", recordResult = true)
     @PostMapping("/users/{userId}/assign-role")
     public Result<String> assignUserRole(@PathVariable Long userId,
                                          @RequestBody Map<String, Long> requestBody) {

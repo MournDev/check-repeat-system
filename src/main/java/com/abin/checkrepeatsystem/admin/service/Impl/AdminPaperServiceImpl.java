@@ -9,10 +9,12 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.detection.service.EnhancedSimilarityDetectionService;
 import com.abin.checkrepeatsystem.detection.dto.SimilarityDetectionResult;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +46,9 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     
     @Resource
     private EnhancedSimilarityDetectionService detectionService;
+    
+    @Resource
+    private StudentInfoService studentInfoService;
 
     @Override
     public Result<Page<PaperInfo>> getPaperList(Integer page, Integer size, String paperStatus, 
@@ -238,8 +243,20 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             // 总论文数
             Long totalPapers = paperInfoMapper.selectCount(
                 new LambdaQueryWrapper<PaperInfo>().eq(PaperInfo::getIsDeleted, 0));
-            stats.put("totalPapers", totalPapers);
-            
+            Long withdraw = paperInfoMapper.selectCount(
+                    new LambdaQueryWrapper<PaperInfo>().eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
+                            .eq(PaperInfo::getIsDeleted, 0));
+            stats.put("totalPapers", totalPapers- withdraw);
+
+            // 已查重
+            Long checked = paperInfoMapper.selectCount(
+                    new LambdaQueryWrapper<PaperInfo>().eq(
+                            PaperInfo::getCheckCompleted, 1)
+                            .ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
+                    .eq(PaperInfo::getIsDeleted, 0)
+            );
+            stats.put("checked", checked);
+
             // 各状态论文数
             Map<String, Long> statusStats = new HashMap<>();
             statusStats.put("pending", paperInfoMapper.selectCount(
@@ -459,9 +476,14 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             if (student != null) {
                 paper.setStudentName(student.getRealName());
                 paper.setStudentUsername(student.getUsername());
-                paper.setStudentGrade(student.getGrade());
-                paper.setStudentMajor(student.getMajor());
-                paper.setStudentCollege(student.getCollegeName());
+                
+                // 从StudentInfo表获取学生信息
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    paper.setStudentGrade(studentInfo.getGrade());
+                    paper.setStudentMajor(studentInfo.getMajor());
+                    paper.setStudentCollege(studentInfo.getCollegeName());
+                }
             }
         }
         

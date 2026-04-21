@@ -43,7 +43,7 @@ public class PaperReviewHistoryDTO {
         /**
          * 审核状态（1-通过，2-不通过，3-修改后通过）
          */
-        private Integer reviewStatus;
+        private String reviewStatus;
         
         /**
          * 审核意见

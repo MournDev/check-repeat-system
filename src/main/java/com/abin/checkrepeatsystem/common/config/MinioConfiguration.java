@@ -6,7 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Configuration
+@Slf4j
 public class MinioConfiguration {
 
     @Autowired
@@ -14,10 +17,17 @@ public class MinioConfiguration {
 
     @Bean
     public MinioClient minioClient() {
-        return new MinioClient.Builder()
+        log.info("创建MinioClient - endpoint: {}, accessKey: {}, secretKey: {}", 
+                minioProp.getEndpoint(), 
+                minioProp.getAccessKey(), 
+                minioProp.getSecretKey() != null ? "****" : "null");
+                
+        MinioClient client = new MinioClient.Builder()
                 .endpoint(minioProp.getEndpoint())
                 .credentials(minioProp.getAccessKey(), minioProp.getSecretKey())
-                .region("us-east-1")
                 .build();
+        
+        log.info("MinioClient创建成功");
+        return client;
     }
 }

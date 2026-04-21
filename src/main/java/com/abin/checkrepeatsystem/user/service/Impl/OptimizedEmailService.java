@@ -14,13 +14,20 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 系统内邮箱通知服务（替代短信，无第三方依赖）
+ * 优化的邮件服务
+ * 解决QQ邮箱连接慢的问题：
+ * 1. 延迟初始化（首次发送时才建立连接）
+ * 2. 连接池管理
+ * 3. 异步发送
  */
-@Service
+@Service("optimizedEmailService")
 @Slf4j
-public class EmailService {
+public class OptimizedEmailService {
 
     // 从配置文件注入系统发送邮箱账号
     @Value("${spring.mail.username}")
@@ -34,18 +41,71 @@ public class EmailService {
     @Value("${spring.notice.email.content-footer}")
     private String emailContentFooter;
 
-
     @Resource
     private JavaMailSender javaMailSender;
 
     @Resource
     private NoticeLogService noticeLogService;
 
+    // 邮件发送线程池
+    private final ExecutorService emailExecutor;
+
+    // 延迟初始化标志
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
+
+    // 初始化锁
+    private final Object initLock = new Object();
+
+    public OptimizedEmailService() {
+        // 创建邮件发送线程池
+        int corePoolSize = 2;
+        int maxPoolSize = 5;
+        long keepAliveTime = 60L;
+        TimeUnit unit = TimeUnit.SECONDS;
+        BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(20);
+        ThreadFactory threadFactory = new ThreadFactory() {
+            private final AtomicInteger counter = new AtomicInteger(1);
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "email-sender-" + counter.getAndIncrement());
+                t.setDaemon(true);
+                return t;
+            }
+        };
+        RejectedExecutionHandler handler = new ThreadPoolExecutor.CallerRunsPolicy();
+
+        this.emailExecutor = new ThreadPoolExecutor(
+                corePoolSize, maxPoolSize, keepAliveTime, unit, workQueue, threadFactory, handler);
+    }
+
     /**
-     * 发送系统通知邮件（带日志记录）
+     * 延迟初始化邮件服务
+     */
+    private void ensureInitialized() {
+        if (!initialized.get()) {
+            synchronized (initLock) {
+                if (!initialized.get()) {
+                    try {
+                        log.info("开始初始化邮件服务...");
+                        // 这里可以添加一些初始化逻辑，比如测试连接
+                        // 但不要在这里建立实际连接，让第一次发送时自动建立
+                        initialized.set(true);
+                        log.info("邮件服务初始化完成");
+                    } catch (Exception e) {
+                        log.warn("邮件服务初始化失败，将在发送时重试: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 发送系统通知邮件（带日志记录）- 同步
      */
     public boolean sendNoticeEmail(String toEmail, String subject, String content,
                                    String noticeType, Long relatedId, String relatedType) {
+        ensureInitialized();
+
         if (!StringUtils.hasText(toEmail) || !StringUtils.hasText(subject) || !StringUtils.hasText(content)) {
             log.error("发送邮件失败：参数为空（toEmail={}, subject={}", toEmail, subject);
             noticeLogService.saveNoticeLog(toEmail, subject, content, noticeType,
@@ -56,16 +116,7 @@ public class EmailService {
         String fullSubject = emailSubjectPrefix + subject;
 
         try {
-            MimeMessage mimeMessage = javaMailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-
-            helper.setFrom(systemEmail);
-            helper.setTo(toEmail);
-            helper.setSubject(fullSubject);
-
-            String fullContent = buildEmailContent(content);
-            helper.setText(fullContent, true);
-
+            MimeMessage mimeMessage = createMimeMessage(toEmail, fullSubject, content);
             javaMailSender.send(mimeMessage);
             log.info("邮件发送成功：toEmail={}, subject={}", toEmail, subject);
 
@@ -86,6 +137,16 @@ public class EmailService {
     }
 
     /**
+     * 发送系统通知邮件（带日志记录）- 异步
+     */
+    public CompletableFuture<Boolean> sendNoticeEmailAsync(String toEmail, String subject, String content,
+                                                           String noticeType, Long relatedId, String relatedType) {
+        return CompletableFuture.supplyAsync(() -> {
+            return sendNoticeEmail(toEmail, subject, content, noticeType, relatedId, relatedType);
+        }, emailExecutor);
+    }
+
+    /**
      * 发送任务完成通知邮件（带日志记录）
      */
     public boolean sendTaskCompletionEmail(String toEmail, NoticeType noticeType,
@@ -103,6 +164,33 @@ public class EmailService {
     }
 
     /**
+     * 发送任务完成通知邮件（异步）
+     */
+    public CompletableFuture<Boolean> sendTaskCompletionEmailAsync(String toEmail, NoticeType noticeType,
+                                                                  Map<String, Object> params, Long relatedId, String relatedType) {
+        return CompletableFuture.supplyAsync(() -> {
+            return sendTaskCompletionEmail(toEmail, noticeType, params, relatedId, relatedType);
+        }, emailExecutor);
+    }
+
+    /**
+     * 创建MimeMessage
+     */
+    private MimeMessage createMimeMessage(String toEmail, String subject, String content) throws MessagingException {
+        MimeMessage mimeMessage = javaMailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
+        helper.setFrom(systemEmail);
+        helper.setTo(toEmail);
+        helper.setSubject(subject);
+
+        String fullContent = buildEmailContent(content);
+        helper.setText(fullContent, true);
+
+        return mimeMessage;
+    }
+
+    /**
      * 构建邮件内容（支持HTML模板）
      */
     private String buildEmailContent(String coreContent) {
@@ -113,7 +201,7 @@ public class EmailService {
             <!DOCTYPE html>
             <html>
             <head>
-                <meta charset=\"UTF-8\">
+                <meta charset="UTF-8">
                 <style>
                     body { font-family: 'Microsoft YaHei', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                     .email-container { max-width: 600px; margin: 0 auto; background: #ffffff; }
@@ -130,11 +218,11 @@ public class EmailService {
                 </style>
             </head>
             <body>
-                <div class=\"email-container\">
-                    <div class=\"header\">
+                <div class="email-container">
+                    <div class="header">
                         <h1>论文查重系统通知</h1>
                     </div>
-                    <div class=\"content\">
+                    <div class="content">
             """);
 
         // 添加核心内容
@@ -143,7 +231,7 @@ public class EmailService {
         // 添加尾部
         content.append("""
                     </div>
-                    <div class=\"footer\">
+                    <div class="footer">
                         <p>此为系统自动发送邮件，请勿回复</p>
                         <p>如有问题，请联系系统管理员</p>
                         <p>© 2024 论文查重系统 版权所有</p>
@@ -451,5 +539,19 @@ public class EmailService {
      */
     public boolean sendNoticeEmail(String toEmail, String subject, String content) throws MessagingException {
         return sendNoticeEmail(toEmail, subject, content, "MANUAL", null, "USER");
+    }
+
+    /**
+     * 关闭线程池
+     */
+    public void shutdown() {
+        emailExecutor.shutdown();
+        try {
+            if (!emailExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                emailExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            emailExecutor.shutdownNow();
+        }
     }
 }

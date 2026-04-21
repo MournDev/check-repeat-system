@@ -1,13 +1,16 @@
 package com.abin.checkrepeatsystem.teacher.service.Impl;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.teacher.dto.BatchReviewDTO;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.mapper.TeacherDashboardMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherDashboardService;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -35,6 +38,9 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
     
     @Resource
     private SysUserService sysUserService;
+    
+    @Resource
+    private StudentInfoService studentInfoService;
 
     @Override
     public Result<Map<String, Object>> getDashboardStats(Long teacherId) {
@@ -105,15 +111,76 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 Map<String, Object> record = new HashMap<>();
                 record.put("id", paper.getId());
                 
+                // 顶层字段（方便前端直接使用）
+                record.put("paperId", paper.getId());
+                record.put("paperTitle", paper.getPaperTitle());
+                record.put("submitTime", paper.getSubmitTime());
+                record.put("version", paper.getFileId() != null ? 1 : 0);
+                
+                // 计算等待时间（天）
+                if (paper.getSubmitTime() != null) {
+                    LocalDateTime now = LocalDateTime.now();
+                    long days = java.time.Duration.between(paper.getSubmitTime(), now).toDays();
+                    record.put("waitingTime", (int) days);
+                } else {
+                    record.put("waitingTime", 0);
+                }
+                
+                // 计算优先级
+                Integer waitingDays = (Integer) record.get("waitingTime");
+                if (waitingDays >= 14) {
+                    record.put("priority", "urgent");
+                } else if (waitingDays >= 7) {
+                    record.put("priority", "high");
+                } else {
+                    record.put("priority", "normal");
+                }
+                
+                // 计算截止时间（默认7天后）
+                if (paper.getSubmitTime() != null) {
+                    record.put("deadline", paper.getSubmitTime().plusDays(7));
+                }
+                
                 // paperBaseInfo 对象
                 Map<String, Object> paperBaseInfo = new HashMap<>();
                 paperBaseInfo.put("paperId", paper.getId());
                 paperBaseInfo.put("paperTitle", paper.getPaperTitle());
+                paperBaseInfo.put("submitTime", paper.getSubmitTime());
                 
                 // 获取学生信息
                 SysUser student = sysUserService.getById(paper.getStudentId());
                 if (student != null) {
+                    record.put("studentName", student.getRealName());
+                    record.put("studentId", student.getId());
+                    record.put("studentNo", student.getUsername());
+                    record.put("email", student.getEmail());
+                    
                     paperBaseInfo.put("studentName", student.getRealName());
+                    paperBaseInfo.put("studentId", student.getId());
+                    paperBaseInfo.put("studentNo", student.getUsername());
+                    paperBaseInfo.put("email", student.getEmail());
+                    
+                    // 从StudentInfo表获取学生的学院信息
+                    StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                    if (studentInfo != null) {
+                        record.put("college", studentInfo.getCollegeName());
+                        paperBaseInfo.put("college", studentInfo.getCollegeName());
+                    } else {
+                        record.put("college", "未知学院");
+                        paperBaseInfo.put("college", "未知学院");
+                    }
+                } else {
+                    record.put("studentName", "未知学生");
+                    record.put("studentId", "");
+                    record.put("studentNo", "");
+                    record.put("email", "");
+                    record.put("college", "未知学院");
+                    
+                    paperBaseInfo.put("studentName", "未知学生");
+                    paperBaseInfo.put("studentId", "");
+                    paperBaseInfo.put("studentNo", "");
+                    paperBaseInfo.put("email", "");
+                    paperBaseInfo.put("college", "未知学院");
                 }
                 
                 record.put("paperBaseInfo", paperBaseInfo);
@@ -121,11 +188,16 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 // taskBaseInfo 对象
                 Map<String, Object> taskBaseInfo = new HashMap<>();
                 taskBaseInfo.put("checkEndTime", paper.getCheckTime());
+                taskBaseInfo.put("checkRate", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
                 record.put("taskBaseInfo", taskBaseInfo);
                 
-                // 版本号
-                record.put("version", paper.getFileId() != null ? 1 : 0);
+                // 相似度
+                record.put("similarity", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
                 
+                // 字数和页数（暂时设为默认值，实际应从文件中提取）
+                record.put("wordCount", paper.getWordCount());
+                record.put("pageCount", 0);
+
                 records.add(record);
             }
             
@@ -310,15 +382,62 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             // 论文状态分布数据
             List<Map<String, Object>> statusDistribution = teacherDashboardMapper.getPaperStatusDistribution(teacherId);
             
+            // 构建图表数据格式，与前端期望一致
+            Map<String, Object> chartData = new HashMap<>();
+            List<String> labels = new ArrayList<>();
+            List<Integer> values = new ArrayList<>();
+            List<String> colors = new ArrayList<>();
+            
+            // 状态颜色映射
+            Map<String, String> statusColorMap = new HashMap<>();
+            statusColorMap.put("已通过", "#67c23a");
+            statusColorMap.put("需修改", "#f56c6c");
+            statusColorMap.put("审核中", "#e6a23c");
+            statusColorMap.put("未提交", "#909399");
+            
+            if (statusDistribution != null) {
+                for (Map<String, Object> status : statusDistribution) {
+                    if (status != null) {
+                        String statusName = (String) status.get("statusName");
+                        Object countObj = status.get("count");
+                        Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
+                        labels.add(statusName);
+                        values.add(count);
+                        colors.add(statusColorMap.getOrDefault(statusName, "#909399"));
+                    }
+                }
+            }
+            
+            chartData.put("labels", labels);
+            chartData.put("values", values);
+            chartData.put("colors", colors);
+            
             // 各专业审核情况
             List<Map<String, Object>> majorReviewStats = teacherDashboardMapper.getMajorReviewStatistics(teacherId);
+            
+            // 转换为前端期望的格式
+            List<Map<String, Object>> collegeDistribution = new ArrayList<>();
+            if (majorReviewStats != null) {
+                for (Map<String, Object> major : majorReviewStats) {
+                    if (major != null) {
+                        Map<String, Object> collegeItem = new HashMap<>();
+                        String majorName = (String) major.get("majorName");
+                        Object countObj = major.get("count");
+                        Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
+                        collegeItem.put("label", majorName != null ? majorName : "未知专业");
+                        collegeItem.put("value", count);
+                        collegeDistribution.add(collegeItem);
+                    }
+                }
+            }
             
             // 时间趋势数据（近30天）
             List<Map<String, Object>> timeTrend = teacherDashboardMapper.getTimeTrendStatistics(teacherId);
             
-            statistics.put("statusDistribution", statusDistribution);
-            statistics.put("majorReviewStats", majorReviewStats);
+            statistics.put("chartData", chartData);
+            statistics.put("collegeDistribution", collegeDistribution);
             statistics.put("timeTrend", timeTrend);
+            statistics.put("statusDistribution", statusDistribution);
             
             log.debug("教师{}获取审核统计成功", teacherId);
             return Result.success("获取审核进度统计成功", statistics);
@@ -409,14 +528,19 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             
             for (SysUser student : resultPage.getRecords()) {
                 Map<String, Object> record = new HashMap<>();
-                record.put("studentId", student.getId());
+                record.put("studentId", student.getUsername());
                 record.put("studentName", student.getRealName());
                 record.put("username", student.getUsername());
-                record.put("major", student.getMajor());
-                record.put("grade", student.getGrade());
-                record.put("college", student.getCollegeName());
+                record.put("major", student.getMajorDisplayName());
+                record.put("college", student.getCollegeDisplayName());
                 record.put("email", student.getEmail());
                 record.put("phone", student.getPhone());
+                
+                // 从StudentInfo表获取学生年级信息
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    record.put("grade", studentInfo.getGrade());
+                }
                 
                 records.add(record);
             }

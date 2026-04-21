@@ -24,10 +24,9 @@ public class StudentDashboardController {
 
     // 获取仪表盘统计数据
     @GetMapping("/stats")
-    public Result<StudentDashboardStatsDTO> getDashboardStats(
-            @RequestHeader("Authorization") String token) {
+    public Result<StudentDashboardStatsDTO> getDashboardStats() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             StudentDashboardStatsDTO stats = dashboardService.getDashboardStats(studentId);
             return Result.success(stats);
         } catch (Exception e) {
@@ -38,10 +37,9 @@ public class StudentDashboardController {
 
     // 获取最新论文信息
     @GetMapping("/latest-paper")
-    public Result<LatestPaperDTO> getLatestPaper(
-            @RequestHeader("Authorization") String token) {
+    public Result<LatestPaperDTO> getLatestPaper() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             LatestPaperDTO paper = dashboardService.getLatestPaper(studentId);
             return Result.success(paper);
         } catch (Exception e) {
@@ -53,10 +51,16 @@ public class StudentDashboardController {
     // 获取导师信息
     @GetMapping("/advisor")
     public Result<AdvisorInfoDTO> getAdvisorInfo(
-            @RequestHeader("Authorization") String token) {
+            @RequestParam(required = false) Long studentId) {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
-            AdvisorInfoDTO advisor = dashboardService.getAdvisorInfo(studentId);
+            Long userId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
+            // 如果提供了 studentId，且当前用户是教师或管理员，则使用提供的 studentId
+            // 否则使用当前用户的 ID（学生）
+            Long targetStudentId = studentId;
+            if (targetStudentId == null) {
+                targetStudentId = userId;
+            }
+            AdvisorInfoDTO advisor = dashboardService.getAdvisorInfo(targetStudentId);
             return Result.success(advisor);
         } catch (Exception e) {
             log.error("获取导师信息失败", e);
@@ -79,10 +83,9 @@ public class StudentDashboardController {
 
     // 获取能力评估雷达图数据
     @GetMapping("/ability-radar")
-    public Result<AbilityRadarDTO> getAbilityRadar(
-            @RequestHeader("Authorization") String token) {
+    public Result<AbilityRadarDTO> getAbilityRadar() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             AbilityRadarDTO radar = dashboardService.getAbilityRadar(studentId);
             return Result.success(radar);
         } catch (Exception e) {
@@ -93,10 +96,9 @@ public class StudentDashboardController {
 
     // 获取相似度变化趋势
     @GetMapping("/similarity-trend")
-    public Result<SimilarityTrendDTO> getSimilarityTrend(
-            @RequestHeader("Authorization") String token) {
+    public Result<SimilarityTrendDTO> getSimilarityTrend() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             SimilarityTrendDTO trend = dashboardService.getSimilarityTrend(studentId);
             return Result.success(trend);
         } catch (Exception e) {
@@ -107,10 +109,9 @@ public class StudentDashboardController {
 
     // 获取专业对比数据
     @GetMapping("/major-comparison")
-    public Result<MajorComparisonDTO> getMajorComparison(
-            @RequestHeader("Authorization") String token) {
+    public Result<MajorComparisonDTO> getMajorComparison() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             MajorComparisonDTO comparison = dashboardService.getMajorComparison(studentId);
             return Result.success(comparison);
         } catch (Exception e) {
@@ -121,10 +122,9 @@ public class StudentDashboardController {
 
     // 获取待办事项列表
     @GetMapping("/todo-list")
-    public Result<List<TodoItemDTO>> getTodoList(
-            @RequestHeader("Authorization") String token) {
+    public Result<List<TodoItemDTO>> getTodoList() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             List<TodoItemDTO> todoList = dashboardService.getTodoList(studentId);
             return Result.success(todoList);
         } catch (Exception e) {
@@ -136,10 +136,9 @@ public class StudentDashboardController {
     // 获取通知消息列表
     @GetMapping("/notifications")
     public Result<List<NotificationDTO>> getNotifications(
-            @RequestHeader("Authorization") String token,
             @RequestParam(defaultValue = "5") Integer limit) {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             List<NotificationDTO> notifications = dashboardService.getNotifications(studentId, limit);
             return Result.success(notifications);
         } catch (Exception e) {
@@ -150,10 +149,9 @@ public class StudentDashboardController {
 
     // 获取论文处理进度
     @GetMapping("/progress-tracking")
-    public Result<ProgressTrackingDTO> getProgressTracking(
-            @RequestHeader("Authorization") String token) {
+    public Result<ProgressTrackingDTO> getProgressTracking() {
         try {
-            Long studentId = JwtUtil.getUserIdFromToken(token);
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
             ProgressTrackingDTO progress = dashboardService.getProgressTracking(studentId);
             return Result.success(progress);
         } catch (Exception e) {

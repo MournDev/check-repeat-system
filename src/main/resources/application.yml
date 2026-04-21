@@ -11,18 +11,24 @@ server:
 
 # 预览服务
 kkfileview:
-  base-url: ${KKFILEVIEW_BASE_URL:http://localhost:8080}
+  base-url: ${KKFILEVIEW_BASE_URL:http://192.168.30.140:8080}
 
 # 对象存储
 minio:
-  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-  accesskey: ${MINIO_ACCESSKEY:minioadmin}
-  secretkey: ${MINIO_SECRETKEY:minioadmin}
+  endpoint: ${MINIO_ENDPOINT:http://192.168.30.140:9000}
+  accesskey: ${MINIO_ACCESSKEY:admin}
+  secretkey: ${MINIO_SECRETKEY:12345678}
   bucket:
     main: check-repeat-system
     avatar: avatar
     report: report-bucket
     paper_content: paper-content
+
+# # Jasypt 配置
+# jasypt:
+#   encryptor:
+#     password: ${JASYPT_ENCRYPTOR_PASSWORD:defaultEncryptionPassword}
+#     algorithm: PBEWithMD5AndDES
 
 spring:
   application:
@@ -156,7 +162,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: never

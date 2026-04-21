@@ -28,7 +28,7 @@ public class BatchCheckTaskController {
      * @return 批量结果（成功/失败列表、预估时间等）
      */
     @PostMapping("/batch-create")
-    @PreAuthorize("hasRole('STUDENT')")
+    @PreAuthorize("hasAuthority('STUDENT')")
     public Result<BatchCheckResultDTO> batchCreate(@RequestBody BatchCheckRequestDTO request) {
         return batchCheckTaskService.batchCreateCheckTasks(request);
     }

@@ -4,6 +4,8 @@ import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
 import com.abin.checkrepeatsystem.mapper.SysRoleMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysRole;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
@@ -28,9 +30,26 @@ public class UserBusinessInfoUtils {
      * @return 登录用户实体
      */
     public static SysUser getCurrentSysUser() {
-        String username = AuthInfoUtils.getCurrentUsername();
-        UserDetailsServiceImpl userDetailsService = SpringContextUtil.getBean(UserDetailsServiceImpl.class);
-        return userDetailsService.findSysUserByUsername(username);
+        // 先从UserContextHolder获取（适用于异步线程）
+        SysUser user = UserContextHolder.getUser();
+        if (user != null) {
+            return user;
+        }
+        
+        // 再从SecurityContextHolder获取（适用于同步线程）
+        try {
+            String username = AuthInfoUtils.getCurrentUsername();
+            UserDetailsServiceImpl userDetailsService = SpringContextUtil.getBean(UserDetailsServiceImpl.class);
+            SysUser sysUser = userDetailsService.findSysUserByUsername(username);
+            if (sysUser != null) {
+                return sysUser;
+            }
+        } catch (Exception e) {
+            log.error("获取用户信息失败", e);
+        }
+        
+        // 前端操作都是登录后进行的，用户信息应该始终存在
+        throw new RuntimeException("用户未登录或认证已失效，请重新登录");
     }
 
     /**
@@ -95,7 +114,17 @@ public class UserBusinessInfoUtils {
      */
     public static String getCurrentUserMajor() {
         SysUser currentUser = getCurrentSysUser();
-        return currentUser.getMajor();
+        // 从StudentInfo表获取专业信息
+        try {
+            StudentInfoService studentInfoService = SpringContextUtil.getBean(StudentInfoService.class);
+            StudentInfo studentInfo = studentInfoService.getByUserId(currentUser.getId());
+            if (studentInfo != null) {
+                return studentInfo.getMajor();
+            }
+        } catch (Exception e) {
+            log.warn("获取学生专业信息失败", e);
+        }
+        return null;
     }
 
     /**
@@ -104,7 +133,17 @@ public class UserBusinessInfoUtils {
      */
     public static String getCurrentUserClassName() {
         SysUser currentUser = getCurrentSysUser();
-        return currentUser.getClassName();
+        // 从StudentInfo表获取班级信息
+        try {
+            StudentInfoService studentInfoService = SpringContextUtil.getBean(StudentInfoService.class);
+            StudentInfo studentInfo = studentInfoService.getByUserId(currentUser.getId());
+            if (studentInfo != null) {
+                return studentInfo.getClassName();
+            }
+        } catch (Exception e) {
+            log.warn("获取学生班级信息失败", e);
+        }
+        return null;
     }
 
     /**
@@ -146,13 +185,13 @@ public class UserBusinessInfoUtils {
             Class<?> clazz = entity.getClass();
             if (isNew) {
                 // 设置创建人和创建时间
-                Field createdByField = getField(clazz, "createdBy");
+                Field createdByField = getField(clazz, "createBy");
                 if (createdByField != null) {
                     createdByField.setAccessible(true);
                     createdByField.set(entity, userId);
                 }
 
-                Field createdTimeField = getField(clazz, "createdTime");
+                Field createdTimeField = getField(clazz, "createTime");
                 if (createdTimeField != null) {
                     createdTimeField.setAccessible(true);
                     createdTimeField.set(entity, now);
@@ -160,13 +199,13 @@ public class UserBusinessInfoUtils {
             }
 
             // 设置更新人和更新时间
-            Field updatedByField = getField(clazz, "updatedBy");
+            Field updatedByField = getField(clazz, "updateBy");
             if (updatedByField != null) {
                 updatedByField.setAccessible(true);
                 updatedByField.set(entity, userId);
             }
 
-            Field updatedTimeField = getField(clazz, "updatedTime");
+            Field updatedTimeField = getField(clazz, "updateTime");
             if (updatedTimeField != null) {
                 updatedTimeField.setAccessible(true);
                 updatedTimeField.set(entity, now);

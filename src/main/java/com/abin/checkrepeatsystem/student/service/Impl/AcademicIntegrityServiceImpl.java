@@ -187,17 +187,9 @@ public class AcademicIntegrityServiceImpl implements AcademicIntegrityService {
                 return;
             }
             
-            // 2. 创建默认检查清单项
-            List<String> defaultItems = Arrays.asList(
-                "引用时标注作者和年份",
-                "使用引号标识直接引用",
-                "提供完整的参考文献",
-                "避免过度依赖单一来源",
-                "区分自己的观点和引用内容",
-                "使用文献管理工具",
-                "检查引用格式是否规范",
-                "确认所有引用都有对应文献"
-            );
+            // 2. 从数据库获取默认检查清单项
+            // 暂时使用空列表，后续从数据库获取
+            List<String> defaultItems = new ArrayList<>();
             
             for (int i = 0; i < defaultItems.size(); i++) {
                 AcademicChecklist item = new AcademicChecklist();
@@ -226,31 +218,14 @@ public class AcademicIntegrityServiceImpl implements AcademicIntegrityService {
         PersonalAdviceDTO advice = new PersonalAdviceDTO();
         advice.setVersion(1);
         
-        // 默认高风险区域
-        PersonalAdviceDTO.HighRiskAreaDTO defaultArea = new PersonalAdviceDTO.HighRiskAreaDTO();
-        defaultArea.setSection("文献综述");
-        defaultArea.setSimilarity(25.0);
-        defaultArea.setIssue("相似度偏高");
-        defaultArea.setSuggestion("建议重新梳理文献脉络，增加个人观点表达，减少直接引用");
+        // 从数据库获取默认高风险区域
+        advice.setHighRiskAreas(new ArrayList<>());
         
-        advice.setHighRiskAreas(Arrays.asList(defaultArea));
+        // 从数据库获取默认良好方面
+        advice.setGoodAspects(new ArrayList<>());
         
-        // 默认良好方面
-        PersonalAdviceDTO.GoodAspectDTO defaultGood = new PersonalAdviceDTO.GoodAspectDTO();
-        defaultGood.setSection("研究方法");
-        defaultGood.setSimilarity(5.0);
-        defaultGood.setStrength("原创性较好");
-        defaultGood.setEncouragement("继续保持独立思考和创新精神");
-        
-        advice.setGoodAspects(Arrays.asList(defaultGood));
-        
-        // 默认通用建议
-        advice.setGeneralTips(Arrays.asList(
-            "养成及时记录参考文献的习惯",
-            "学会用自己的语言表述他人观点",
-            "定期使用查重工具自查",
-            "参加学术写作培训课程"
-        ));
+        // 从数据库获取默认通用建议
+        advice.setGeneralTips(new ArrayList<>());
         
         return advice;
     }
@@ -259,114 +234,36 @@ public class AcademicIntegrityServiceImpl implements AcademicIntegrityService {
      * 分析高风险区域
      */
     private List<PersonalAdviceDTO.HighRiskAreaDTO> analyzeHighRiskAreas(double similarity) {
-        List<PersonalAdviceDTO.HighRiskAreaDTO> areas = new ArrayList<>();
-        Random random = new Random();
-        
-        // 根据相似度生成不同的风险区域
-        if (similarity > 30) {
-            // 高相似度时，多个高风险区域
-            String[] sections = {"文献综述", "理论框架", "研究现状"};
-            for (String section : sections) {
-                PersonalAdviceDTO.HighRiskAreaDTO area = new PersonalAdviceDTO.HighRiskAreaDTO();
-                area.setSection(section);
-                area.setSimilarity(25.0 + random.nextDouble() * 15); // 25-40%
-                area.setIssue("相似度过高");
-                area.setSuggestion("建议重新组织语言表达，增加原创性内容");
-                areas.add(area);
-            }
-        } else if (similarity > 20) {
-            // 中等相似度时，1-2个风险区域
-            PersonalAdviceDTO.HighRiskAreaDTO area = new PersonalAdviceDTO.HighRiskAreaDTO();
-            area.setSection("文献综述");
-            area.setSimilarity(20.0 + random.nextDouble() * 15); // 20-35%
-            area.setIssue("相似度偏高");
-            area.setSuggestion("建议完善引用标注，优化段落表达");
-            areas.add(area);
-        }
-        
-        return areas;
+        // 从数据库获取高风险区域数据
+        // 暂时返回空列表，后续从数据库获取
+        return new ArrayList<>();
     }
     
     /**
      * 识别表现良好的方面
      */
     private List<PersonalAdviceDTO.GoodAspectDTO> identifyGoodAspects(double similarity) {
-        List<PersonalAdviceDTO.GoodAspectDTO> aspects = new ArrayList<>();
-        Random random = new Random();
-        
-        String[] goodSections = {"研究方法", "数据分析", "结论"};
-        for (String section : goodSections) {
-            PersonalAdviceDTO.GoodAspectDTO aspect = new PersonalAdviceDTO.GoodAspectDTO();
-            aspect.setSection(section);
-            aspect.setSimilarity(5.0 + random.nextDouble() * 10); // 5-15%
-            aspect.setStrength("原创性较好");
-            aspect.setEncouragement("继续保持独立思考和严谨态度");
-            aspects.add(aspect);
-        }
-        
-        return aspects;
+        // 从数据库获取表现良好的方面
+        // 暂时返回空列表，后续从数据库获取
+        return new ArrayList<>();
     }
     
     /**
      * 生成通用改进建议
      */
     private List<String> generateGeneralTips(double similarity) {
-        List<String> tips = new ArrayList<>();
-        
-        tips.add("养成及时记录参考文献的习惯");
-        tips.add("学会用自己的语言表述他人观点");
-        
-        if (similarity > 25) {
-            tips.add("重点修改高相似度章节，重新组织语言");
-            tips.add("增加原创性分析和批判性思考");
-        } else {
-            tips.add("继续保持良好的学术写作习惯");
-            tips.add("定期使用查重工具进行自查");
-        }
-        
-        tips.add("参加学术写作培训课程");
-        tips.add("向导师请教具体的修改建议");
-        
-        return tips;
+        // 从数据库获取通用改进建议
+        // 暂时返回空列表，后续从数据库获取
+        return new ArrayList<>();
     }
     
     /**
-     * 获取所有学术资源（模拟数据）
+     * 获取所有学术资源
      */
     private List<AcademicResourceDTO> getAllAcademicResources() {
-        List<AcademicResourceDTO> resources = new ArrayList<>();
-        
-        // 图书资源
-        resources.add(createResource(1L, "《学术写作规范手册》", "book", 
-            "详细介绍学术写作的各项规范和标准", "/resources/handbook.pdf", "writing"));
-        resources.add(createResource(2L, "《文献检索与利用》", "book", 
-            "系统介绍文献检索方法和技巧", "/resources/literature-search.pdf", "research"));
-        
-        // 在线资源
-        resources.add(createResource(3L, "学校图书馆引用格式指南", "online", 
-            "官方发布的各类引用格式标准", "https://library.university.edu/citation", "general"));
-        resources.add(createResource(4L, "学术诚信政策解读", "online", 
-            "详细解读学校的学术诚信相关政策", "https://academic-integrity.university.edu", "policy"));
-        
-        // 视频教程
-        resources.add(createResource(5L, "EndNote文献管理软件教程", "video", 
-            "从入门到精通的文献管理软件使用教程", "/videos/endnote-tutorial.mp4", "tools"));
-        resources.add(createResource(6L, "学术写作技巧系列课程", "video", 
-            "涵盖选题、文献综述、论文结构等完整写作指导", "/videos/academic-writing-series.mp4", "writing"));
-        
-        // 文档资料
-        resources.add(createResource(7L, "查重系统使用说明", "document", 
-            "详细的操作指南和注意事项", "/documents/plagiarism-check-guide.docx", "tools"));
-        resources.add(createResource(8L, "常见引用格式模板", "document", 
-            "APA、MLA、Chicago等主流格式的模板文件", "/documents/citation-templates.zip", "writing"));
-        
-        // 课程资源
-        resources.add(createResource(9L, "学术道德与规范课程", "course", 
-            "系统的学术诚信教育在线课程", "https://mooc.university.edu/academic-integrity", "ethics"));
-        resources.add(createResource(10L, "研究生学术写作工作坊", "course", 
-            "面向研究生的学术写作实践课程", "https://workshop.university.edu/grad-writing", "advanced"));
-        
-        return resources;
+        // 从数据库获取学术资源
+        // 暂时返回空列表，后续从数据库获取
+        return new ArrayList<>();
     }
     
     /**

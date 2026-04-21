@@ -21,10 +21,10 @@ public class ReviewOperateReq {
     private List<Long> paperIds; // 前端传参：paperIds=1546278765432123459,1546278765432123460
 
     /**
-     * 审核状态（3-审核通过，4-审核不通过）
+     * 审核状态（completed-审核通过，rejected-审核不通过）
      */
     @NotNull(message = "请指定审核结果（通过/不通过）")
-    private Integer reviewStatus; // 前端传参：reviewStatus=3
+    private String reviewStatus; // 前端传参：reviewStatus=completed 或 rejected
 
     /**
      * 审核意见（富文本，可为空）

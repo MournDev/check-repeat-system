@@ -11,7 +11,6 @@ import java.time.LocalDateTime;
 /**
  * 操作日志Excel导出VO
  */
-@Data
 public class OperationLogExcelVO {
 
     @ExcelProperty(value = "ID", index = 0)
@@ -43,4 +42,52 @@ public class OperationLogExcelVO {
     @ColumnWidth(25)
     @ContentStyle(horizontalAlignment = HorizontalAlignmentEnum.CENTER)
     private LocalDateTime operationTime;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getOperationType() {
+        return operationType;
+    }
+
+    public void setOperationType(String operationType) {
+        this.operationType = operationType;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
+    }
+
+    public LocalDateTime getOperationTime() {
+        return operationTime;
+    }
+
+    public void setOperationTime(LocalDateTime operationTime) {
+        this.operationTime = operationTime;
+    }
 }

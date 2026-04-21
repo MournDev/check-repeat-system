@@ -15,6 +15,7 @@ import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -61,6 +62,46 @@ public class FileUploadController {
 
     @Value("${file.upload.base-path}")
     private String uploadBasePath;
+    
+    /**
+     * 初始化上传路径，确保目录存在
+     */
+    @PostConstruct
+    private void init() {
+        try {
+            // 如果是 Windows 环境且路径为 Unix 风格，转换为 Windows 路径
+            if (System.getProperty("os.name").toLowerCase().contains("win") && 
+                (uploadBasePath.startsWith("/") || uploadBasePath.startsWith("data"))) {
+                // 使用用户主目录下的临时上传目录
+                String userHome = System.getProperty("user.home");
+                uploadBasePath = Paths.get(userHome, "check-repeat-system", "upload").toString();
+                log.info("检测到 Windows 环境，使用上传路径：{}", uploadBasePath);
+            }
+            
+            // 创建上传根目录
+            File uploadDir = new File(uploadBasePath);
+            if (!uploadDir.exists()) {
+                boolean created = uploadDir.mkdirs();
+                if (created) {
+                    log.info("创建上传目录成功：{}", uploadBasePath);
+                } else {
+                    log.warn("创建上传目录失败：{}", uploadBasePath);
+                }
+            } else {
+                log.info("上传目录已存在：{}", uploadBasePath);
+            }
+            
+            // 验证目录是否可写
+            if (!uploadDir.canWrite()) {
+                log.error("上传目录不可写：{}", uploadBasePath);
+                throw new RuntimeException("上传目录不可写：" + uploadBasePath);
+            }
+            
+        } catch (Exception e) {
+            log.error("初始化上传路径失败", e);
+            throw new RuntimeException("初始化上传路径失败：" + e.getMessage());
+        }
+    }
 
     @Autowired
     private FilePreviewService filePreviewService;
@@ -171,10 +212,27 @@ public class FileUploadController {
             String actualFileName = (fileName != null && !fileName.trim().isEmpty()) ?
                     fileName : fileInfo.getOriginalFilename();
 
-            String fileStoragePath = uploadBasePath + fileInfo.getStoragePath();
+            // 3. 构建文件存储路径
+            String storagePath = fileInfo.getStoragePath();
+            // 处理路径格式，确保在Windows环境下正确
+            // 移除所有可能的前缀和多余的反斜杠
+            // 移除 /data/upload/ 或 data/upload 前缀
+            storagePath = storagePath.replace("/data/upload/", "");
+            storagePath = storagePath.replace("\\data\\upload\\", "");
+            // 移除所有开头的反斜杠和斜杠
+            while (storagePath.startsWith("\\") || storagePath.startsWith("/")) {
+                storagePath = storagePath.substring(1);
+            }
+            // 移除路径中的多余反斜杠
+            storagePath = storagePath.replace("\\\\", "\\");
+            // 构建完整的文件路径
+            String fileStoragePath = uploadBasePath + File.separator + storagePath;
+            // 标准化路径分隔符
+            fileStoragePath = fileStoragePath.replace("\\", File.separator);
+            fileStoragePath = fileStoragePath.replace("/", File.separator);
             File file = new File(fileStoragePath);
 
-            // 3. 日志打印
+            // 4. 日志打印
             log.info("文件下载请求 - fileId: {}, 文件名: {}, 存储路径: {}",
                     fileId, actualFileName, fileStoragePath);
 
@@ -183,16 +241,16 @@ public class FileUploadController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
 
-            // 4. 构建Resource对象
+            // 5. 构建Resource对象
             Resource resource = new FileSystemResource(file);
 
-            // 5. 获取Content-Type
+            // 6. 获取Content-Type
             String contentType = getContentType(file, actualFileName);
             if (contentType == null) {
                 contentType = "application/octet-stream";
             }
 
-            // 6. 设置响应头
+            // 7. 设置响应头
             String encodedFileName = URLEncoder.encode(actualFileName, StandardCharsets.UTF_8);
 
             return ResponseEntity.ok()
@@ -342,6 +400,27 @@ public class FileUploadController {
         } catch (Exception e) {
             log.error("下载报告失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * 删除文件接口
+     */
+    @DeleteMapping("/delete/file")
+    public Result<Void> deleteFile(@RequestParam Long fileId) {
+        try {
+            log.info("文件删除请求 - fileId: {}", fileId);
+            boolean deleted = fileService.deleteFile(fileId);
+            if (deleted) {
+                log.info("文件删除成功 - fileId: {}", fileId);
+                return Result.success("文件删除成功");
+            } else {
+                log.warn("文件删除失败 - fileId: {}", fileId);
+                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在或删除失败");
+            }
+        } catch (Exception e) {
+            log.error("文件删除异常 - fileId: {}", fileId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "文件删除失败：" + e.getMessage());
         }
     }
 }

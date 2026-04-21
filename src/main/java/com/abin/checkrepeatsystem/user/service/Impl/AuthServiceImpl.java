@@ -1,7 +1,9 @@
 package com.abin.checkrepeatsystem.user.service.Impl;
 
 
+import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.HttpIpUtils;
 import com.abin.checkrepeatsystem.common.utils.IpLocationUtils;
@@ -16,8 +18,10 @@ import com.abin.checkrepeatsystem.pojo.dto.RegisterReq;
 import com.abin.checkrepeatsystem.pojo.entity.SysRole;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.abin.checkrepeatsystem.user.service.AuthService;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.user.vo.RefreshTokenVO;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -65,6 +69,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Resource
     private SysLoginLogMapper sysLoginLogMapper;
+
+    @Resource
+    private StudentInfoService studentInfoService;
+
+    @Resource
+    SysOperationLogMapper sysOperationLogMapper;
 
     /**
      * 用户注册（事务保证：确保用户插入成功，避免脏数据）
@@ -131,6 +141,27 @@ public class AuthServiceImpl implements AuthService {
             log.warn("用户登录失败：用户名={}，原因=用户名或密码错误", loginReq.getUsername());
             recordLoginLog(null, loginReq.getUsername(), loginIp, loginLocation,
                     loginDevice, 0, "用户名或密码错误");
+            // 记录登录失败操作日志
+            try {
+                com.abin.checkrepeatsystem.pojo.entity.SysOperationLog operationLog = new com.abin.checkrepeatsystem.pojo.entity.SysOperationLog();
+                operationLog.setOperationType("user_login");
+                operationLog.setDescription("用户登录失败");
+                operationLog.setUserId(null);
+                operationLog.setUserName(loginReq.getUsername());
+                operationLog.setUserType("unknown");
+                operationLog.setTarget("AuthServiceImpl.login");
+                operationLog.setStatus(0);
+                operationLog.setIpAddress(loginIp);
+                operationLog.setRequestParams("{\"username\":\"" + loginReq.getUsername() + "\"}");
+                operationLog.setDetails("{\"error\":\"用户名或密码错误\"}");
+                operationLog.setOperationTime(LocalDateTime.now());
+                operationLog.setCreateTime(LocalDateTime.now());
+                operationLog.setUpdateTime(LocalDateTime.now());
+                operationLog.setIsDeleted(0);
+                sysOperationLogMapper.insert(operationLog);
+            } catch (Exception ex) {
+                log.warn("记录登录失败操作日志失败", ex);
+            }
             return Result.error(ResultCode.PARAM_ERROR, "用户名或密码错误");
         }
 
@@ -190,9 +221,6 @@ public class AuthServiceImpl implements AuthService {
         loginVO.setRoleCode(sysRole.getRoleCode());
         loginVO.setUsername(sysUser.getUsername());
         loginVO.setRealName(sysUser.getRealName());
-        loginVO.setMajor(sysUser.getMajor());
-        loginVO.setGrade(sysUser.getGrade());
-        loginVO.setClassName(sysUser.getClassName());
         loginVO.setPhone(sysUser.getPhone());
         loginVO.setEmail(sysUser.getEmail());
         loginVO.setEmailVerified(sysUser.getEmailVerified());
@@ -200,7 +228,17 @@ public class AuthServiceImpl implements AuthService {
         loginVO.setExpireTime(jwtUtils.getExpirationDate(jwtToken).getTime()); // 令牌过期时间
         loginVO.setAvatar(sysUser.getAvatar());
         loginVO.setLastLoginTime(sysUser.getLastLoginTime()); // 最后登录时间
-
+        
+        // 如果是学生用户，从StudentInfo表获取学生特有信息
+        if ("STUDENT".equals(sysUser.getUserType())) {
+            StudentInfo studentInfo = studentInfoService.getByUserId(sysUser.getId());
+            if (studentInfo != null) {
+                loginVO.setMajor(studentInfo.getMajor());
+                loginVO.setGrade(studentInfo.getGrade());
+                loginVO.setClassName(studentInfo.getClassName());
+                loginVO.setCollegeName(studentInfo.getCollegeName());
+            }
+        }
 
         log.info("用户登录成功：用户名={}，角色={}，令牌过期时间={}",
                 loginReq.getUsername(), sysRole.getRoleCode(), loginVO.getExpireTime());

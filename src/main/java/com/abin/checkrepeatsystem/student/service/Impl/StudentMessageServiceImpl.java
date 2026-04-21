@@ -2,6 +2,9 @@ package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.common.websocket.WebSocketMessage;
+import com.abin.checkrepeatsystem.common.websocket.WebSocketMessageType;
+import com.abin.checkrepeatsystem.common.websocket.WebSocketSender;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.dto.ChatExportDTO;
 import com.abin.checkrepeatsystem.student.dto.MessageSendDTO;
@@ -12,12 +15,14 @@ import com.abin.checkrepeatsystem.student.vo.MessageSessionVO;
 import com.abin.checkrepeatsystem.student.vo.MessageVO;
 import com.abin.checkrepeatsystem.student.vo.SharedFileVO;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
-import com.abin.checkrepeatsystem.user.service.Impl.UserQueryService;
-import com.abin.checkrepeatsystem.user.service.ConversationService;
+import com.abin.checkrepeatsystem.user.mapper.ConversationMapper;
+import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
 import com.abin.checkrepeatsystem.user.mapper.InstantMessageMapper;
+import com.abin.checkrepeatsystem.user.service.ConversationService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -44,46 +49,138 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 @Slf4j
 @Service
-public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo> implements StudentMessageService {
+public class StudentMessageServiceImpl implements StudentMessageService {
 
     @Resource
     private InstantMessageMapper instantMessageMapper;
+
+    @Resource
+    private FileService fileService;
+    
+    @Resource
+    private SysUserMapper sysUserMapper;
+    
+    @Resource
+    private PaperInfoMapper paperInfoMapper;
+
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
     
     @Resource
     private ConversationService conversationService;
     
     @Resource
-    private FileService fileService;
+    private ConversationMemberMapper conversationMemberMapper;
     
     @Resource
-    private UserQueryService userQueryService;
-    
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private ConversationMapper conversationMapper;
     
     @Value("${file.upload.base-path}")
     private String uploadBasePath;
     
+    @Resource
+    private WebSocketSender webSocketSender;
+    
     /**
-     * 生成师生之间的唯一会话 ID
-     * 规则：使用两个用户 ID 的组合哈希，确保同一个导师和学生只有一个会话
-     * 
-     * @param userId1 用户 ID 1（学生或导师）
-     * @param userId2 用户 ID 2（导师或学生）
-     * @return 唯一的会话 ID
+     * 获取已存在的会话
      */
-    private Long generateConversationId(Long userId1, Long userId2) {
-        // 确保顺序一致：较小的 ID 在前，避免 (1,2) 和 (2,1) 生成不同的 ID
-        Long minId = Math.min(userId1, userId2);
-        Long maxId = Math.max(userId1, userId2);
+    private Conversation getExistingConversation(Long studentId, Long teacherId) {
+        // 先查询 conversation_members 表，看看是否已经存在一个会话，其中包含了指定的学生和教师
+        LambdaQueryWrapper<ConversationMember> memberWrapper1 = new LambdaQueryWrapper<>();
+        memberWrapper1.eq(ConversationMember::getUserId, studentId);
+        List<ConversationMember> studentMembers = conversationMemberMapper.selectList(memberWrapper1);
         
-        // 使用 MurmurHash 或简单拼接后取哈希
-        // 格式："conv_{minId}_{maxId}" 的哈希值
-        String key = "conv_" + minId + "_" + maxId;
+        for (ConversationMember studentMember : studentMembers) {
+            Long conversationId = studentMember.getConversationId();
+            LambdaQueryWrapper<ConversationMember> memberWrapper2 = new LambdaQueryWrapper<>();
+            memberWrapper2.eq(ConversationMember::getConversationId, conversationId)
+                         .eq(ConversationMember::getUserId, teacherId);
+            Long count = conversationMemberMapper.selectCount(memberWrapper2);
+            if (count > 0) {
+                // 找到一个包含学生和教师的会话
+                return conversationMapper.selectById(conversationId);
+            }
+        }
         
-        // 使用 MurmurHash3 或简单的字符串哈希（取绝对值确保为正）
-        // 注意：实际生产环境建议使用更稳定的哈希算法
-        return (long) Math.abs(key.hashCode() & 0x7FFFFFFF); // 确保为正数
+        // 如果没有找到，再查询消息表
+        LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+        wrapper.and(w -> w
+                .eq(InstantMessage::getSenderId, studentId)
+                .eq(InstantMessage::getReceiverId, teacherId))
+            .or(w -> w
+                .eq(InstantMessage::getSenderId, teacherId)
+                .eq(InstantMessage::getReceiverId, studentId))
+            .eq(InstantMessage::getIsDeleted, 0)
+            .orderByDesc(InstantMessage::getSentTime);
+        
+        // 使用分页查询获取第一条记录
+        Page<InstantMessage> page = new Page<>(1, 1);
+        IPage<InstantMessage> result = instantMessageMapper.selectPage(page, wrapper);
+        
+        if (result.getRecords() == null || result.getRecords().isEmpty()) {
+            return null;
+        }
+        
+        InstantMessage message = result.getRecords().get(0);
+        if (message.getConversationId() == null) {
+            return null;
+        }
+        
+        return conversationMapper.selectById(message.getConversationId());
+    }
+    
+    /**
+     * 构建会话VO
+     */
+    private MessageSessionVO buildSessionVO(Conversation conversation, Long studentId, Long teacherId, String teacherName) {
+        MessageSessionVO session = new MessageSessionVO();
+        session.setId(conversation.getId());
+        session.setName("与" + teacherName + "的会话");
+        session.setType("PRIVATE");
+        
+        SysUser teacher = sysUserMapper.selectById(teacherId);
+        List<MessageSessionVO.SessionMemberVO> members = new ArrayList<>();
+        
+        SysUser student = sysUserMapper.selectById(studentId);
+        String studentName = student != null ? student.getRealName() : "未知用户";
+        
+        if (teacher != null) {
+            MessageSessionVO.SessionMemberVO teacherMember = new MessageSessionVO.SessionMemberVO();
+            teacherMember.setUserId(teacher.getId());
+            teacherMember.setUserName(teacher.getRealName());
+            teacherMember.setUserRole("TEACHER");
+            teacherMember.setAvatar(teacher.getAvatar());
+            members.add(teacherMember);
+            
+            MessageSessionVO.SessionMemberVO studentMember = new MessageSessionVO.SessionMemberVO();
+            studentMember.setUserId(studentId);
+            studentMember.setUserName(studentName);
+            studentMember.setUserRole("STUDENT");
+            studentMember.setAvatar(student != null ? student.getAvatar() : "");
+            members.add(studentMember);
+            
+            session.setMembers(members);
+        }
+        
+        InstantMessage lastMessage = getLastMessage(studentId, teacherId);
+        if (lastMessage != null) {
+            session.setLastMessage(lastMessage.getContent());
+            session.setLastTime(lastMessage.getSentTime() != null ? 
+                lastMessage.getSentTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : "");
+        } else {
+            session.setLastMessage("暂无消息");
+            session.setLastTime(null);
+        }
+        
+        session.setUnreadCount(getUnreadMessageCount(studentId, teacherId));
+        
+        if (!members.isEmpty() && members.get(0).getAvatar() != null) {
+            session.setAvatar(members.get(0).getAvatar());
+        } else {
+            session.setAvatar(null);
+        }
+        
+        return session;
     }
     
     /**
@@ -101,9 +198,17 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                .or()
                .eq(InstantMessage::getSenderId, userId2)
                .eq(InstantMessage::getReceiverId, userId1)
-               .last("LIMIT 1"); // 只需要一条记录
+               .orderByDesc(InstantMessage::getSentTime);
         
-        InstantMessage message = instantMessageMapper.selectOne(wrapper);
+        // 使用分页查询获取第一条记录
+        Page<InstantMessage> page = new Page<>(1, 1);
+        IPage<InstantMessage> result = instantMessageMapper.selectPage(page, wrapper);
+        
+        if (result.getRecords() == null || result.getRecords().isEmpty()) {
+            return null;
+        }
+        
+        InstantMessage message = result.getRecords().get(0);
         return message != null ? message.getConversationId() : null;
     }
 
@@ -117,7 +222,7 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
             paperWrapper.eq(PaperInfo::getStudentId, studentId)
                        .eq(PaperInfo::getIsDeleted, 0)
                        .isNotNull(PaperInfo::getTeacherId);
-            List<PaperInfo> papers = this.list(paperWrapper);
+            List<PaperInfo> papers = paperInfoMapper.selectList(paperWrapper);
                 
             // 2. 去重：同一个导师只创建一个会话（不管有多少篇论文）
             Map<Long, String> teacherMap = new LinkedHashMap<>(); // teacherId -> teacherName
@@ -135,66 +240,73 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
             for (Map.Entry<Long, String> entry : teacherMap.entrySet()) {
                 Long teacherId = entry.getKey();
                 String teacherName = entry.getValue();
-                    
-                // 【关键】生成独立的会话 ID（不依赖论文 ID）
-                Long conversationId = generateConversationId(studentId, teacherId);
-                log.info("生成会话 - 学生 ID: {}, 导师 ID: {}, 会话 ID: {}", studentId, teacherId, conversationId);
-                    
-                MessageSessionVO session = new MessageSessionVO();
-                session.setId(conversationId); // ✅ 使用独立会话 ID
-                session.setName("与" + teacherName + "的会话");
-                session.setType("PRIVATE");
                 
-                // 获取导师信息
-                SysUser teacher = sysUserMapper.selectById(teacherId);
-                List<MessageSessionVO.SessionMemberVO> members = new ArrayList<>();
+                // 检查是否已存在该师生的会话
+                Conversation existingConversation = getExistingConversation(studentId, teacherId);
+                
+                if (existingConversation != null) {
+                    log.info("会话已存在 - 学生 ID: {}, 导师 ID: {}, 会话 ID: {}", studentId, teacherId, existingConversation.getId());
                     
-                // 获取当前学生信息
-                SysUser student = sysUserMapper.selectById(studentId);
-                String studentName = student != null ? student.getRealName() : "未知用户";
+                    MessageSessionVO session = buildSessionVO(existingConversation, studentId, teacherId, teacherName);
+                    sessions.add(session);
+                } else {
+                    log.info("创建新会话 - 学生 ID: {}, 导师 ID: {}", studentId, teacherId);
                     
-                if (teacher != null) {
-                    MessageSessionVO.SessionMemberVO teacherMember = new MessageSessionVO.SessionMemberVO();
-                    teacherMember.setUserId(teacher.getId());
-                    teacherMember.setUserName(teacher.getRealName());
-                    teacherMember.setUserRole("TEACHER");
-                    teacherMember.setAvatar(teacher.getAvatar());
-                    members.add(teacherMember);
-                        
-                    MessageSessionVO.SessionMemberVO studentMember = new MessageSessionVO.SessionMemberVO();
+                    // 创建会话（ID、审计字段、软删除字段均由MyBatis-Plus自动维护）
+                    Conversation conversation = new Conversation();
+                    conversation.setName("与" + teacherName + "的会话");
+                    conversation.setType("PRIVATE");
+                    conversation.setCreatorId(studentId);
+                    conversation.setLastActiveTime(LocalDateTime.now());
+                    conversation.setLastMessageTime(LocalDateTime.now());
+                    
+                    // 保存会话（自动生成雪花ID和审计字段）
+                    conversationMapper.insert(conversation);
+                    Long conversationId = conversation.getId();
+                    log.info("会话创建成功 - 会话 ID: {}", conversationId);
+                    
+                    // 关联历史消息到新创建的会话
+                    associateHistoricalMessages(conversationId, studentId, teacherId);
+                    
+                    // 添加会话成员（审计字段由MyBatis-Plus自动填充）
+                    ConversationMember studentMember = new ConversationMember();
+                    studentMember.setConversationId(conversationId);
                     studentMember.setUserId(studentId);
-                    studentMember.setUserName(studentName);
-                    studentMember.setUserRole("STUDENT");
-                    studentMember.setAvatar(student != null ? student.getAvatar() : "");
-                    members.add(studentMember);
-                        
-                    session.setMembers(members);
+                    studentMember.setRole("MEMBER");
+                    studentMember.setJoinedAt(LocalDateTime.now());
+                    studentMember.setIsLeft(0);
+                    studentMember.setUnreadCount(0);
+                    conversationMemberMapper.insert(studentMember);
+                    
+                    ConversationMember teacherMember = new ConversationMember();
+                    teacherMember.setConversationId(conversationId);
+                    teacherMember.setUserId(teacherId);
+                    teacherMember.setRole("MEMBER");
+                    teacherMember.setJoinedAt(LocalDateTime.now());
+                    teacherMember.setIsLeft(0);
+                    teacherMember.setUnreadCount(0);
+                    conversationMemberMapper.insert(teacherMember);
+                    
+                    log.info("会话成员添加成功 - 学生 {}，导师 {}", studentId, teacherId);
+                    
+                    MessageSessionVO session = buildSessionVO(conversation, studentId, teacherId, teacherName);
+                    sessions.add(session);
                 }
-                    
-                // 【关键】获取最后一条消息（使用师生 ID，不再依赖论文）
-                InstantMessage lastMessage = getLastMessage(studentId, teacherId);
-                if (lastMessage != null) {
-                    session.setLastMessage(lastMessage.getContent());
-                    session.setLastTime(lastMessage.getSentTime() != null ? 
-                        lastMessage.getSentTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : "");
-                } else {
-                    session.setLastMessage("暂无消息");
-                    session.setLastTime(null);
-                }
-                    
-                // 【关键】获取未读消息数（使用师生 ID）
-                session.setUnreadCount(getUnreadMessageCount(studentId, teacherId));
-                    
-                // 设置会话头像为导师的头像 URL
-                if (!members.isEmpty() && members.get(0).getAvatar() != null) {
-                    session.setAvatar(members.get(0).getAvatar());
-                } else {
-                    session.setAvatar(null);
-                }
-                    
-                sessions.add(session);
             }
                         
+            // 按最后消息时间倒序排序，最新的会话在最上面
+            sessions.sort((s1, s2) -> {
+                if (s1.getLastTime() == null && s2.getLastTime() == null) {
+                    return 0;
+                } else if (s1.getLastTime() == null) {
+                    return 1; // 没有最后消息时间的会话排在后面
+                } else if (s2.getLastTime() == null) {
+                    return -1; // 有最后消息时间的会话排在前面
+                } else {
+                    return s2.getLastTime().compareTo(s1.getLastTime()); // 倒序排序
+                }
+            });
+            
             log.info("获取消息会话列表成功 - 学生 ID: {}, 会话数量：{}", studentId, sessions.size());
             return sessions;
             
@@ -211,18 +323,25 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                     studentId, sessionId, pageNum, pageSize);
             
             // 【关键】sessionId 现在是独立的会话 ID（conversation_id）
-            // 直接按 conversation_id 查询该会话的所有消息
-            LambdaQueryWrapper<InstantMessage> messageWrapper = new LambdaQueryWrapper<>();
-            messageWrapper
-                .eq(InstantMessage::getConversationId, sessionId) // ✅ 使用 conversation_id 查询
-                .eq(InstantMessage::getIsDeleted, 0)
-                .orderByDesc(InstantMessage::getSentTime);
-            
-            // 使用分页查询
+            // 使用 MyBatis-Plus 的标准方法获取消息
             Page<InstantMessage> messagePage = new Page<>(pageNum, pageSize);
-            Page<InstantMessage> dbPage = instantMessageMapper.selectPage(messagePage, messageWrapper);
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(InstantMessage::getConversationId, sessionId)
+                    .eq(InstantMessage::getIsDeleted, 0)
+                    .orderByAsc(InstantMessage::getSentTime);
             
-            //为VO
+            com.baomidou.mybatisplus.core.metadata.IPage<InstantMessage> dbPage = instantMessageMapper.selectPage(messagePage, wrapper);
+            
+            // 为每条消息设置发送者名称和头像
+            for (InstantMessage message : dbPage.getRecords()) {
+                SysUser sender = sysUserMapper.selectById(message.getSenderId());
+                if (sender != null) {
+                    message.setSenderName(sender.getRealName());
+                    message.setSenderAvatar(sender.getAvatar());
+                }
+            }
+            
+            // 转换为 VO
             List<MessageVO> messageVOs = dbPage.getRecords().stream()
                 .map(this::convertToMessageVO)
                 .collect(Collectors.toList());
@@ -249,9 +368,6 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                     
             log.info("发送消息 - 当前用户 ID: {}, 会话 ID: {},接收者 ID: {}", 
                     currentUserId, sendDTO.getSessionId(), sendDTO.getReceiverId());
-                    
-            // 【关键】确保 conversation_id 正确设置（使用前端传递的会话 ID）
-            // 前端传递的 sessionId 现在应该是真正的会话 ID（conversation_id）
             InstantMessage message = new InstantMessage();
             message.setSenderId(currentUserId); // 使用当前登录用户 ID
             message.setReceiverId(sendDTO.getReceiverId());
@@ -270,11 +386,20 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
             int result = instantMessageMapper.insert(message);
             
             if (result > 0) {
+                // 更新会话的最后消息信息
+                updateConversationLastMessage(sendDTO.getSessionId());
+                
                 //为 VO
                 MessageVO messageVO = new MessageVO();
                 messageVO.setId(message.getId());
-                messageVO.setSenderId(currentUserId); // 使用当前登录用户ID
-                messageVO.setSenderName("我");
+                messageVO.setSenderId(currentUserId); // 使用当前登录用户 ID
+                            
+                // 【修复】获取真实的学生姓名，而不是硬编码"我"
+                SysUser currentUser = sysUserMapper.selectById(currentUserId);
+                String realSenderName = currentUser != null ? currentUser.getRealName() : "未知用户";
+                messageVO.setSenderName(realSenderName); // ✅ 使用真实姓名
+                messageVO.setSenderAvatar(currentUser != null ? currentUser.getAvatar() : null); // ✅ 添加 senderAvatar 字段
+                            
                 messageVO.setSenderRole("STUDENT");
                 messageVO.setContent(sendDTO.getContent());
                 String sendTimeStr = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
@@ -282,8 +407,29 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                 messageVO.setFormattedTime(messageVO.getFormattedTime()); // 设置格式化时间
                 messageVO.setStatus("SENT");
                 messageVO.setMessageType(sendDTO.getMessageType());
+                            
+                // 【新增】设置 sender 字段，兼容前端判断
+                messageVO.setSender("student"); // ✅ 添加 sender 字段
+                messageVO.setSessionId(sendDTO.getSessionId()); // ✅ 添加 sessionId 字段
                 
-                log.info("消息发送成功 -消息ID: {}", message.getId());
+                // 【WebSocket推送】发送消息后，通过WebSocket推送新消息给接收者
+                try {
+                    WebSocketMessage wsMessage = new WebSocketMessage();
+                    wsMessage.setType(WebSocketMessageType.NEW_MESSAGE.getValue());
+                    wsMessage.setContent(messageVO);
+                    wsMessage.setTimestamp(System.currentTimeMillis());
+                    webSocketSender.sendToUser(sendDTO.getReceiverId(), wsMessage);
+                    log.info("WebSocket消息推送成功 - 接收者ID: {}", sendDTO.getReceiverId());
+                } catch (Exception e) {
+                    log.error("WebSocket消息推送失败 - 接收者ID: {}", sendDTO.getReceiverId(), e);
+                }
+                            
+                // 如果有附件，也设置到 VO 中
+                if (sendDTO.getAttachmentIds() != null && !sendDTO.getAttachmentIds().isEmpty()) {
+                    // TODO: 加载附件信息并设置到 messageVO
+                }
+                            
+                log.info("消息发送成功 - 消息ID: {}, 发送者：{}", message.getId(), realSenderName);
                 return messageVO;
             } else {
                 throw new RuntimeException("消息发送失败: 数据库插入返回值为 " + result);
@@ -529,61 +675,47 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
     public void markMessagesRead(Long studentId, Long sessionId) {
         try {
             log.info("标记消息已读 - 学生 ID: {}, 会话 ID: {}", studentId, sessionId);
-                    
-            // 【重构】sessionId 现在是独立的会话 ID（conversation_id）
-            // 不再依赖论文存在性，直接从消息表中查询该会话的消息
             
-            // 1. 验证会话是否存在（通过查询该会话的消息）
-            LambdaQueryWrapper<InstantMessage> checkWrapper = new LambdaQueryWrapper<>();
-            checkWrapper.eq(InstantMessage::getConversationId, sessionId)
-                       .last("LIMIT 1");
+            // 1. 获取会话信息
+            Conversation conversation = conversationMapper.selectById(sessionId);
+            if (conversation == null) {
+                log.warn("会话不存在 - 会话 ID: {}", sessionId);
+                return;
+            }
             
-            InstantMessage existMessage = instantMessageMapper.selectOne(checkWrapper);
-            if (existMessage == null) {
-                log.warn("会话不存在或没有消息 - 会话 ID: {}", sessionId);
-                    
-                // 【关键】即使会话不存在，也要尝试标记所有可能的未读消息为已读
-                // 这是为了处理"幽灵会话"的情况（前端显示但未实际存在）
-                LambdaQueryWrapper<InstantMessage> cleanupWrapper = new LambdaQueryWrapper<>();
-                cleanupWrapper
-                    .eq(InstantMessage::getReceiverId, studentId)
-                    .eq(InstantMessage::getStatus, "SENT") // 只处理未读消息
-                    .eq(InstantMessage::getIsDeleted, 0);
-                        
-                InstantMessage updateMessage = new InstantMessage();
-                updateMessage.setStatus("READ");
-                updateMessage.setReadTime(LocalDateTime.now());
-                updateMessage.setUpdateTime(LocalDateTime.now());
-                        
-                int cleanedCount = instantMessageMapper.update(updateMessage, cleanupWrapper);
-                if (cleanedCount > 0) {
-                    log.info("清理幽灵会话的未读消息 - 会话 ID: {}, 清理数量：{}", sessionId, cleanedCount);
+            // 2. 获取会话的所有成员
+            LambdaQueryWrapper<ConversationMember> memberWrapper = new LambdaQueryWrapper<>();
+            memberWrapper.eq(ConversationMember::getConversationId, sessionId);
+            List<ConversationMember> members = conversationMemberMapper.selectList(memberWrapper);
+            
+            // 3. 找到会话中的另一个用户（教师或学生）
+            Long otherUserId = null;
+            for (ConversationMember member : members) {
+                if (!member.getUserId().equals(studentId)) {
+                    otherUserId = member.getUserId();
+                    break;
                 }
-                    
-                return; // 幂等性处理
             }
             
-            // 2. 从历史消息中获取导师 ID（发送者或接收者）
-            Long teacherId = null;
-            if (existMessage.getSenderId().equals(studentId)) {
-                // 学生发送给导师的消息 → 接收者是导师
-                teacherId = existMessage.getReceiverId();
-            } else {
-                // 导师发送给学生的消息 → 发送者是导师
-                teacherId = existMessage.getSenderId();
+            if (otherUserId == null) {
+                log.warn("会话中没有其他成员 - 会话 ID: {}", sessionId);
+                return;
             }
             
-            log.info("从历史消息中获取导师 ID: {}", teacherId);
-                    
-            // 3. 将发送给学生的未读消息标记为已读
+            log.info("会话中的另一个用户 ID: {}", otherUserId);
+            
+            // 4. 将发送给学生的未读消息标记为已读（同时考虑 conversationId 和 senderId）
+            final Long finalOtherUserId = otherUserId;
             LambdaQueryWrapper<InstantMessage> readWrapper = new LambdaQueryWrapper<>();
-            readWrapper
-                .eq(InstantMessage::getReceiverId, studentId)
-                .eq(InstantMessage::getSenderId, teacherId)  // 导师发送的消息
-                .eq(InstantMessage::getStatus, "SENT") // 未读状态
-                .eq(InstantMessage::getIsDeleted, 0);
+            readWrapper.eq(InstantMessage::getReceiverId, studentId)
+                .eq(InstantMessage::getStatus, "SENT")
+                .eq(InstantMessage::getIsDeleted, 0)
+                .and(w -> w
+                    .eq(InstantMessage::getConversationId, sessionId)
+                    .or(w2 -> w2
+                        .eq(InstantMessage::getSenderId, finalOtherUserId)));
                 
-            log.info("查询条件 - receiverId: {}, senderId: {}, status: SENT", studentId, teacherId);
+            log.info("查询条件 - receiverId: {}, status: SENT, (conversationId: {} OR senderId: {})", studentId, sessionId, finalOtherUserId);
                     
             // 更新状态为已读
             InstantMessage updateMessage = new InstantMessage();
@@ -645,14 +777,14 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
     @Override
     public AdvisorInfoVO getAdvisorInfo(Long studentId) {
         try {
-            log.info("获取导师信息 - 学生ID: {}", studentId);
+            log.info("获取导师信息 - 学生 ID: {}", studentId);
             
             // 获取学生的论文信息
             LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
             paperWrapper.eq(PaperInfo::getStudentId, studentId)
                        .eq(PaperInfo::getIsDeleted, 0)
                        .isNotNull(PaperInfo::getTeacherId);
-            List<PaperInfo> papers = this.list(paperWrapper);
+            List<PaperInfo> papers = paperInfoMapper.selectList(paperWrapper);
             
             if (papers.isEmpty()) {
                 throw new RuntimeException("未找到指导老师信息");
@@ -666,34 +798,39 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                 throw new RuntimeException("导师信息不存在");
             }
             
-            //构建导师信息VO
+            //构建导师信息 VO
             AdvisorInfoVO advisorInfo = new AdvisorInfoVO();
             advisorInfo.setId(teacher.getId().toString());
             advisorInfo.setName(teacher.getRealName());
-            advisorInfo.setTitle(teacher.getProfessionalTitle() != null ? teacher.getProfessionalTitle() : "讲师");
-            advisorInfo.setResearchField(teacher.getResearchDirection());
             advisorInfo.setEmail(teacher.getEmail());
             advisorInfo.setPhone(teacher.getPhone());
-            advisorInfo.setOffice(teacher.getOffice());
-            advisorInfo.setOfficeHours(teacher.getOfficeHours());
             // 设置头像，如果数据库中没有则设为 null
             advisorInfo.setAvatar(teacher.getAvatar() != null && !teacher.getAvatar().trim().isEmpty() ? teacher.getAvatar() : null);
             advisorInfo.setBio(teacher.getIntroduce());
-            advisorInfo.setCollege(teacher.getCollegeName());
+            
+            // 从TeacherInfo表获取教师信息
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+            if (teacherInfo != null) {
+                advisorInfo.setTitle(teacherInfo.getProfessionalTitle() != null ? teacherInfo.getProfessionalTitle() : "讲师");
+                advisorInfo.setResearchField(teacherInfo.getResearchDirection());
+                advisorInfo.setOffice(teacherInfo.getOffice());
+                advisorInfo.setOfficeHours(teacherInfo.getOfficeHours());
+                advisorInfo.setCollege(teacherInfo.getCollegeName());
+            }
             
             //统计指导学生数
             LambdaQueryWrapper<PaperInfo> countWrapper = new LambdaQueryWrapper<>();
             countWrapper.eq(PaperInfo::getTeacherId, teacher.getId())
                        .eq(PaperInfo::getIsDeleted, 0);
-            int studentCount = Math.toIntExact(this.count(countWrapper));
+            int studentCount = Math.toIntExact(paperInfoMapper.selectCount(countWrapper));
             advisorInfo.setStudentCount(studentCount);
             
-            log.info("获取导师信息成功 -导师ID: {}", teacher.getId());
+            log.info("获取导师信息成功 -导师 ID: {}", teacher.getId());
             return advisorInfo;
             
         } catch (Exception e) {
             log.error("获取导师信息失败", e);
-            throw new RuntimeException("获取导师信息失败: " + e.getMessage());
+            throw new RuntimeException("获取导师信息失败：" + e.getMessage());
         }
     }
 
@@ -761,8 +898,28 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
         MessageVO messageVO = new MessageVO();
         messageVO.setId(message.getId());
         messageVO.setSenderId(message.getSenderId());
-        messageVO.setSenderName(message.getSenderName() != null ? message.getSenderName() : "未知用户");
-        messageVO.setSenderRole(message.getSenderId() != null ? "STUDENT" : "TEACHER"); //简化处理
+        
+        // 根据 senderId 查询用户信息
+        if (message.getSenderId() != null) {
+            SysUser sender = sysUserMapper.selectById(message.getSenderId());
+            if (sender != null) {
+                messageVO.setSenderName(sender.getRealName());
+                messageVO.setSenderRole(sender.getUserType() != null ? sender.getUserType() : "STUDENT");
+                messageVO.setSenderAvatar(sender.getAvatar());
+                messageVO.setSender(sender.getUserType() != null && sender.getUserType().equals("TEACHER") ? "teacher" : "student");
+            } else {
+                messageVO.setSenderName("未知用户");
+                messageVO.setSenderRole("STUDENT");
+                messageVO.setSenderAvatar(null);
+                messageVO.setSender("student");
+            }
+        } else {
+            messageVO.setSenderName("未知用户");
+            messageVO.setSenderRole("STUDENT");
+            messageVO.setSenderAvatar(null);
+            messageVO.setSender("student");
+        }
+        
         messageVO.setContent(message.getContent());
             
         if (message.getSentTime() != null) {
@@ -776,8 +933,68 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
             
         messageVO.setStatus(message.getStatus());
         messageVO.setMessageType(message.getMessageType());
-        messageVO.setSenderAvatar(message.getSenderAvatar());
         return messageVO;
+    }
+    
+    /**
+     * 关联历史消息到会话
+     */
+    private void associateHistoricalMessages(Long conversationId, Long userId1, Long userId2) {
+        try {
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.and(w -> w
+                    .eq(InstantMessage::getSenderId, userId1)
+                    .eq(InstantMessage::getReceiverId, userId2))
+                .or(w -> w
+                    .eq(InstantMessage::getSenderId, userId2)
+                    .eq(InstantMessage::getReceiverId, userId1))
+                .isNull(InstantMessage::getConversationId)
+                .eq(InstantMessage::getIsDeleted, 0);
+            
+            InstantMessage updateMessage = new InstantMessage();
+            updateMessage.setConversationId(conversationId);
+            updateMessage.setUpdateTime(LocalDateTime.now());
+            
+            int updatedCount = instantMessageMapper.update(updateMessage, wrapper);
+            if (updatedCount > 0) {
+                log.info("已关联 {} 条历史消息到会话 {}", updatedCount, conversationId);
+                
+                // 更新会话的最后消息时间
+                updateConversationLastMessage(conversationId);
+            }
+        } catch (Exception e) {
+            log.error("关联历史消息失败 - 会话 ID: {}", conversationId, e);
+        }
+    }
+    
+    /**
+     * 更新会话的最后消息信息
+     */
+    private void updateConversationLastMessage(Long conversationId) {
+        try {
+            LambdaQueryWrapper<InstantMessage> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(InstantMessage::getConversationId, conversationId)
+                .eq(InstantMessage::getIsDeleted, 0)
+                .orderByDesc(InstantMessage::getSentTime);
+            
+            // 使用分页查询获取第一条记录
+            Page<InstantMessage> page = new Page<>(1, 1);
+            IPage<InstantMessage> result = instantMessageMapper.selectPage(page, wrapper);
+            
+            if (result.getRecords() != null && !result.getRecords().isEmpty()) {
+                InstantMessage lastMessage = result.getRecords().get(0);
+                Conversation conversation = new Conversation();
+                conversation.setId(conversationId);
+                conversation.setLastMessageId(lastMessage.getId());
+                conversation.setLastMessageTime(lastMessage.getSentTime());
+                conversation.setLastActiveTime(lastMessage.getSentTime());
+                conversationMapper.updateById(conversation);
+                
+                log.info("已更新会话 {} 的最后消息信息", conversationId);
+            }
+        } catch (Exception e) {
+            log.error("更新会话最后消息失败 - 会话 ID: {}", conversationId, e);
+        }
     }
     
     /**
@@ -798,10 +1015,16 @@ public class StudentMessageServiceImpl extends ServiceImpl<PaperInfoMapper, Pape
                     .eq(InstantMessage::getSenderId, teacherId)
                     .eq(InstantMessage::getReceiverId, studentId))
                 .eq(InstantMessage::getIsDeleted, 0)
-                .orderByDesc(InstantMessage::getSentTime)
-                .last("LIMIT 1");
+                .orderByDesc(InstantMessage::getSentTime);
             
-            return instantMessageMapper.selectOne(wrapper);
+            // 使用分页查询获取第一条记录
+            Page<InstantMessage> page = new Page<>(1, 1);
+            IPage<InstantMessage> result = instantMessageMapper.selectPage(page, wrapper);
+            
+            if (result.getRecords() != null && !result.getRecords().isEmpty()) {
+                return result.getRecords().get(0);
+            }
+            return null;
         } catch (Exception e) {
             log.warn("获取最后消息失败", e);
             return null;

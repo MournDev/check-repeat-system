@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.abin.checkrepeatsystem.teacher.mapper.ReviewTemplateMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.abin.checkrepeatsystem.pojo.entity.ReviewTemplate">
+        <id column="id" property="id"/>
+        <result column="title" property="title"/>
+        <result column="category" property="category"/>
+        <result column="content" property="content"/>
+        <result column="scenarios" property="scenarios" typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="usage_count" property="usageCount"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="last_used" property="lastUsed"/>
+        <result column="create_by" property="createBy"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="is_deleted" property="isDeleted"/>
+
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, title, category, content, scenarios, is_public, usage_count, create_time, update_time, last_used, create_by, update_by
+    </sql>
+
+    <!-- 增加使用次数 -->
+    <update id="incrementUsageCount" parameterType="java.lang.Long">
+        update review_template
+        set
+        usage_count = usage_count + 1,
+        last_used = now()
+        where id = #{id}
+    </update>
+
+</mapper>

@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.common.service.Impl;
 
 import com.abin.checkrepeatsystem.common.service.FileUploadService;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
+import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.pojo.base.FileBaseParam;
 import com.abin.checkrepeatsystem.pojo.base.FileBusinessBindParam;
 import com.abin.checkrepeatsystem.pojo.base.FileUploadResp;
@@ -36,24 +37,37 @@ public class FileUploadServiceImpl implements FileUploadService {
     @Resource
     private JwtUtils jwtUtils;
 
+    @Resource
+    private ApplicationMonitorService monitorService;
+
     @Override
     public FileUploadResp uploadFile(FileBaseParam baseParam, FileBusinessBindParam businessParam,Long loginUserId) throws IOException {
-        // 1. 基础校验（文件非空、大小、类型）
-        validateBaseParam(baseParam);
-        // 2. MD5查重（避免重复上传）
-        Long existingFileId = checkFileExists(baseParam.getFileMd5());
-        if (existingFileId != null) {
-            return buildExistResp(existingFileId);
+        boolean success = false;
+        try {
+            // 1. 基础校验（文件非空、大小、类型）
+            validateBaseParam(baseParam);
+            // 2. MD5查重（避免重复上传）
+            Long existingFileId = checkFileExists(baseParam.getFileMd5());
+            if (existingFileId != null) {
+                success = true;
+                return buildExistResp(existingFileId);
+            }
+            // 3. 按配置选择存储方式（本地/OSS）
+            String storagePath = "LOCAL".equals(storageType)
+                    ? localFileStorageService.storeFile(baseParam.getFile(), businessParam)
+                    : ossFileStorageService.storeFile(baseParam.getFile(), businessParam);
+            // 4. 记录文件元数据到paper_info表
+            PaperInfo paperInfo = buildSysAttachment(baseParam, businessParam, storagePath, loginUserId);
+            paperInfoMapper.insert(paperInfo);
+            // 5. 封装标准化响应
+            success = true;
+            return buildUploadResp(paperInfo);
+        } finally {
+            // 记录文件上传指标
+            if (baseParam != null && baseParam.getFile() != null) {
+                monitorService.recordFileUpload(baseParam.getFile().getSize(), success);
+            }
         }
-        // 3. 按配置选择存储方式（本地/OSS）
-        String storagePath = "LOCAL".equals(storageType)
-                ? localFileStorageService.storeFile(baseParam.getFile(), businessParam)
-                : ossFileStorageService.storeFile(baseParam.getFile(), businessParam);
-        // 4. 记录文件元数据到paper_info表
-        PaperInfo paperInfo = buildSysAttachment(baseParam, businessParam, storagePath, loginUserId);
-        paperInfoMapper.insert(paperInfo);
-        // 5. 封装标准化响应
-        return buildUploadResp(paperInfo);
     }
 
     /**

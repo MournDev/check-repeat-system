@@ -255,12 +255,31 @@ public class PaperInfo extends BaseEntity implements Serializable {
     /**
      * 论文正文在MinIO中的存储路径
      */
-    @TableField(exist = false)
+    @TableField("content_path")
     private String contentPath;
     
     /**
      * IK分词后文本在MinIO中的存储路径
      */
-    @TableField(exist = false)
+    @TableField("segmented_path")
     private String segmentedPath;
-}
+    
+    /**
+     * 论文版本号
+     */
+    @TableField("version")
+    private Integer version;
+    
+    /**
+     * 论文关键词
+     */
+    @TableField("keywords")
+    private String keywords;
+    
+    /**
+     * 父版本论文ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    @TableField("parent_paper_id")
+    private Long parentPaperId;
+} 

@@ -12,7 +12,8 @@ import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.write.metadata.WriteSheet;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,8 +39,9 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/admin/logs")
 @PreAuthorize("hasAuthority('ADMIN')")
-@Slf4j
 public class AdminLogController {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminLogController.class);
 
     @Resource
     private SysLoginLogMapper sysLoginLogMapper;
@@ -284,13 +286,13 @@ public class AdminLogController {
         // 获取操作日志统计
         LambdaQueryWrapper<SysOperationLog> operationWrapper = new LambdaQueryWrapper<>();
         if (level != null && !level.isEmpty()) {
-            operationWrapper.eq(SysOperationLog::getOperationType, level);
+            operationWrapper.eq(log -> log.getOperationType(), level);
         }
         if (startDate != null && !startDate.isEmpty()) {
-            operationWrapper.ge(SysOperationLog::getOperationTime, LocalDateTime.parse(startDate));
+            operationWrapper.ge(log -> log.getOperationTime(), LocalDateTime.parse(startDate));
         }
         if (endDate != null && !endDate.isEmpty()) {
-            operationWrapper.le(SysOperationLog::getOperationTime, LocalDateTime.parse(endDate));
+            operationWrapper.le(log -> log.getOperationTime(), LocalDateTime.parse(endDate));
         }
         
         Long operationCount = sysOperationLogMapper.selectCount(operationWrapper);
@@ -299,10 +301,10 @@ public class AdminLogController {
         // 获取登录日志统计
         LambdaQueryWrapper<SysLoginLog> loginWrapper = new LambdaQueryWrapper<>();
         if (startDate != null && !startDate.isEmpty()) {
-            loginWrapper.ge(SysLoginLog::getLoginTime, LocalDateTime.parse(startDate));
+            loginWrapper.ge(log -> log.getLoginTime(), LocalDateTime.parse(startDate));
         }
         if (endDate != null && !endDate.isEmpty()) {
-            loginWrapper.le(SysLoginLog::getLoginTime, LocalDateTime.parse(endDate));
+            loginWrapper.le(log -> log.getLoginTime(), LocalDateTime.parse(endDate));
         }
         
         Long loginCount = sysLoginLogMapper.selectCount(loginWrapper);
@@ -311,11 +313,11 @@ public class AdminLogController {
         // 按操作类型统计操作日志
         Map<String, Long> operationTypeStats = new HashMap<>();
         operationTypeStats.put("登录", sysOperationLogMapper.selectCount(
-                new LambdaQueryWrapper<SysOperationLog>().eq(SysOperationLog::getOperationType, "login")));
+                new LambdaQueryWrapper<SysOperationLog>().eq(log -> log.getOperationType(), "login")));
         operationTypeStats.put("论文上传", sysOperationLogMapper.selectCount(
-                new LambdaQueryWrapper<SysOperationLog>().eq(SysOperationLog::getOperationType, "paper_upload")));
+                new LambdaQueryWrapper<SysOperationLog>().eq(log -> log.getOperationType(), "paper_upload")));
         operationTypeStats.put("查重提交", sysOperationLogMapper.selectCount(
-                new LambdaQueryWrapper<SysOperationLog>().eq(SysOperationLog::getOperationType, "task_submit")));
+                new LambdaQueryWrapper<SysOperationLog>().eq(log -> log.getOperationType(), "task_submit")));
         stats.put("operationTypeStats", operationTypeStats);
         
         return Result.success("系统日志统计获取成功", stats);

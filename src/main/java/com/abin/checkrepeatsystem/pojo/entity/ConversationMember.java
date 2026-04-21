@@ -59,6 +59,12 @@ public class ConversationMember extends BaseEntity {
     @TableField("unread_count")
     private Integer unreadCount;
 
+    /**
+     * 用户头像（持久化存储）
+     */
+    @TableField("avatar")
+    private String avatar;
+
     // 冗余字段 - 便于查询显示
     /**
      * 用户姓名

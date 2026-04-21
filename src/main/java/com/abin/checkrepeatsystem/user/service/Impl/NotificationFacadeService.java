@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.user.service.Impl;
 
 import com.abin.checkrepeatsystem.common.enums.NoticeType;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.user.service.Impl.OptimizedEmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NotificationFacadeService {
 
-    private final EmailService emailService;
+    private final OptimizedEmailService emailService;
     private final UserQueryService userQueryService;
 
     /**

@@ -30,7 +30,12 @@ public class LoginInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // 2. 解析Token中的用户ID（JwtUtil需自定义，确保Token未过期、未篡改）
+        // 2. 移除Bearer前缀
+        if (token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        // 3. 解析Token中的用户ID（JwtUtil需自定义，确保Token未过期、未篡改）
         Long userId;
         try {
             userId = jwtUtils.getUserIdFromToken(token);

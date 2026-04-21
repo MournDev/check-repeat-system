@@ -6,10 +6,13 @@ import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.StudentListDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentListService;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,6 +31,9 @@ public class TeacherStudentListServiceImpl extends ServiceImpl<SysUserMapper, Sy
 
     @Autowired
     private PaperInfoMapper paperInfoMapper;
+
+    @Resource
+    private StudentInfoService studentInfoService;
 
     @Override
     public PageResultVO<StudentListDTO> getStudentsByTeacherId(Long teacherId, Integer current, Integer pageSize) {
@@ -85,12 +91,17 @@ public class TeacherStudentListServiceImpl extends ServiceImpl<SysUserMapper, Sy
         dto.setStudentId(student.getId());
         dto.setUsername(student.getUsername());
         dto.setStudentName(student.getRealName());
-        dto.setCollegeName(student.getCollegeName());
-        dto.setMajor(student.getMajor());
-        dto.setGrade(student.getGrade());
-        dto.setClassName(student.getClassName());
         dto.setPhone(student.getPhone());
         dto.setEmail(student.getEmail());
+        
+        // 从StudentInfo表获取学生信息
+        StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+        if (studentInfo != null) {
+            dto.setCollegeName(studentInfo.getCollegeName());
+            dto.setMajor(studentInfo.getMajor());
+            dto.setGrade(studentInfo.getGrade());
+            dto.setClassName(studentInfo.getClassName());
+        }
         
         // 设置论文信息
         dto.setPaperId(paperInfo.getId());

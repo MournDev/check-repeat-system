@@ -17,6 +17,6 @@ public interface PaperStatusLogService extends IService<PaperStatusLog> {
      * @param operateUserId 操作人ID
      * @param operateIp 操作IP
      */
-    void recordStatusLog(Long paperId, Integer oldStatus, Integer newStatus,
+    void recordStatusLog(Long paperId, String oldStatus, String newStatus,
                          String statusReason, Long operateUserId, String operateIp);
 }

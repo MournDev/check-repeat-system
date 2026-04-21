@@ -1,7 +1,6 @@
 package com.abin.checkrepeatsystem.admin.vo;
 
 import com.alibaba.excel.annotation.ExcelProperty;
-import com.alibaba.excel.annotation.format.NumberFormat;
 import com.alibaba.excel.annotation.write.style.ColumnWidth;
 import com.alibaba.excel.annotation.write.style.ContentStyle;
 import com.alibaba.excel.enums.poi.HorizontalAlignmentEnum;

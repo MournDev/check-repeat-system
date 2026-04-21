@@ -10,6 +10,10 @@ import com.abin.checkrepeatsystem.mapper.SysDictDataMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysDictData;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +40,12 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
     
     @Resource
     private SysDictDataMapper sysDictDataMapper;
+    
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
+    
+    @Resource
+    private StudentInfoService studentInfoService;
 
     @Override
     public Result<Map<String, Object>> getAssignmentStats() {
@@ -58,11 +68,19 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             
             // 平均指导数
             List<SysUser> teachers = sysUserMapper.selectList(teacherWrapper);
-            double avgLoad = teachers.isEmpty() ? 0 : 
-                teachers.stream()
-                       .mapToInt(SysUser::getCurrentAdvisorCount)
-                       .average()
-                       .orElse(0);
+            double avgLoad = 0;
+            if (!teachers.isEmpty()) {
+                int totalLoad = 0;
+                int validCount = 0;
+                for (SysUser teacher : teachers) {
+                    TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+                    if (teacherInfo != null && teacherInfo.getCurrentAdvisorCount() != null) {
+                        totalLoad += teacherInfo.getCurrentAdvisorCount();
+                        validCount++;
+                    }
+                }
+                avgLoad = validCount > 0 ? (double) totalLoad / validCount : 0;
+            }
             stats.put("avgLoad", Math.round(avgLoad));
             
             // 今日分配数 - 今天创建的有指导老师的论文
@@ -114,17 +132,14 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 SysUser student = sysUserMapper.selectById(paper.getStudentId());
                 if (student != null) {
                     record.put("name", student.getRealName());
-                    record.put("major", student.getMajorId());
-                    record.put("grade", student.getGrade());
                     record.put("collegeId", student.getCollegeId());
                     
-                    // 获取研究兴趣
-                    List<String> interests = Arrays.asList(Optional.ofNullable(student.getResearchDirection())
-                        .orElse("").split(","))
-                        .stream()
-                        .filter(s -> !s.isEmpty())
-                        .collect(Collectors.toList());
-                    record.put("interests", interests);
+                    // 从StudentInfo表获取学生详情
+                    StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                    if (studentInfo != null) {
+                        record.put("major", studentInfo.getMajorId());
+                        record.put("grade", studentInfo.getGrade());
+                    }
                 }
                 
                 return record;
@@ -143,49 +158,73 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
     @Override
     public Result<Page<Map<String, Object>>> getAvailableTeachers(String keyword, Integer page, Integer size) {
         try {
-            Page<SysUser> userPage = new Page<>(page, size);
-            
-            LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(SysUser::getUserType, "teacher")
+            // 先获取所有教师用户
+            LambdaQueryWrapper<SysUser> userWrapper = new LambdaQueryWrapper<>();
+            userWrapper.eq(SysUser::getUserType, "teacher")
                    .eq(SysUser::getStatus, 1);
             
-            // 关键词搜索
+            // 关键词搜索（只搜索姓名）
             if (keyword != null && !keyword.isEmpty()) {
-                wrapper.and(w -> w.like(SysUser::getRealName, keyword)
-                                 .or()
-                                 .like(SysUser::getProfessionalTitle, keyword));
+                userWrapper.like(SysUser::getRealName, keyword);
             }
             
-            wrapper.orderByAsc(SysUser::getCurrentAdvisorCount);
+            List<SysUser> allTeachers = sysUserMapper.selectList(userWrapper);
             
-            Page<SysUser> resultPage = sysUserMapper.selectPage(userPage, wrapper);
-            
-            // 转换为前端需要的格式
-            Page<Map<String, Object>> resultMap = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());
-            List<Map<String, Object>> records = resultPage.getRecords().stream().map(teacher -> {
+            // 转换为带详细信息的记录
+            List<Map<String, Object>> allRecords = allTeachers.stream().map(teacher -> {
                 Map<String, Object> record = new HashMap<>();
                 record.put("id", teacher.getId());
                 record.put("name", teacher.getRealName());
-                record.put("title", teacher.getProfessionalTitle());
-                record.put("department", teacher.getOffice());
-                record.put("currentLoad", teacher.getCurrentAdvisorCount());
-                record.put("maxLoad", teacher.getMaxReviewCount());
                 record.put("collegeId", teacher.getCollegeId());
                 
-                // 获取专长领域
-                List<String> expertise = Arrays.asList(Optional.ofNullable(teacher.getResearchDirection())
-                    .orElse("").split(","))
-                    .stream()
-                    .filter(s -> !s.isEmpty())
-                    .collect(Collectors.toList());
-                record.put("expertise", expertise);
+                // 从TeacherInfo表获取教师详情
+                TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+                if (teacherInfo != null) {
+                    record.put("title", teacherInfo.getProfessionalTitle());
+                    record.put("department", teacherInfo.getOffice());
+                    record.put("currentLoad", teacherInfo.getCurrentAdvisorCount());
+                    record.put("maxLoad", teacherInfo.getMaxReviewCount());
+                    
+                    // 获取专长领域
+                    List<String> expertise = Arrays.asList(Optional.ofNullable(teacherInfo.getResearchDirection())
+                        .orElse("").split(","))
+                        .stream()
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.toList());
+                    record.put("expertise", expertise);
+                } else {
+                    // 确保即使TeacherInfo不存在也能正常返回
+                    record.put("title", "");
+                    record.put("department", "");
+                    record.put("currentLoad", 0);
+                    record.put("maxLoad", 15); // 默认值
+                    record.put("expertise", new ArrayList<>());
+                }
                 
                 return record;
             }).collect(Collectors.toList());
             
-            resultMap.setRecords(records);
+            // 进一步过滤职称关键词
+            if (keyword != null && !keyword.isEmpty()) {
+                allRecords = allRecords.stream()
+                    .filter(record -> record.get("name").toString().contains(keyword) || 
+                                     record.get("title").toString().contains(keyword))
+                    .collect(Collectors.toList());
+            }
             
-            log.info("获取可用教师列表成功，共{}条记录", records.size());
+            // 按当前负载排序
+            allRecords.sort(Comparator.comparingInt(record -> (Integer) record.get("currentLoad")));
+            
+            // 分页处理
+            int total = allRecords.size();
+            int start = (page - 1) * size;
+            int end = Math.min(start + size, total);
+            List<Map<String, Object>> pageRecords = start < total ? allRecords.subList(start, end) : new ArrayList<>();
+            
+            Page<Map<String, Object>> resultMap = new Page<>(page, size, total);
+            resultMap.setRecords(pageRecords);
+            
+            log.info("获取可用教师列表成功，共{}条记录", pageRecords.size());
             return Result.success(resultMap);
         } catch (Exception e) {
             log.error("获取可用教师列表失败: {}", e.getMessage(), e);
@@ -217,9 +256,12 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             paperInfoMapper.updateById(paper);
             
             // 更新教师负载
-            teacher.setCurrentAdvisorCount(teacher.getCurrentAdvisorCount() + 1);
-            teacher.setUpdateTime(LocalDateTime.now());
-            sysUserMapper.updateById(teacher);
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(Long.valueOf(teacherId));
+            if (teacherInfo != null) {
+                teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
+                teacherInfo.setUpdateTime(LocalDateTime.now());
+                teacherInfoService.saveOrUpdate(teacherInfo);
+            }
             
             log.info("单个分配成功: 学生ID={}, 教师ID={}", studentId, teacherId);
             return Result.success("分配成功");
@@ -246,8 +288,15 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 return Result.error(ResultCode.PARAM_ERROR, "指定用户不是教师");
             }
             
-            int maxLoad = teacher.getMaxReviewCount() != null ? teacher.getMaxReviewCount() : 15;
-            int availableSlots = maxLoad - teacher.getCurrentAdvisorCount();
+            // 从TeacherInfo表获取教师负载信息
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(Long.valueOf(teacherId));
+            if (teacherInfo == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "教师信息不存在");
+            }
+            
+            int maxLoad = teacherInfo.getMaxReviewCount() != null ? teacherInfo.getMaxReviewCount() : 15;
+            int currentLoad = teacherInfo.getCurrentAdvisorCount() != null ? teacherInfo.getCurrentAdvisorCount() : 0;
+            int availableSlots = maxLoad - currentLoad;
             if (availableSlots <= 0) {
                 return Result.error(ResultCode.PARAM_ERROR, "该教师已达到最大指导学生数");
             }
@@ -287,9 +336,9 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             
             // 更新教师负载
             if (successCount > 0) {
-                teacher.setCurrentAdvisorCount(teacher.getCurrentAdvisorCount() + successCount);
-                teacher.setUpdateTime(LocalDateTime.now());
-                sysUserMapper.updateById(teacher);
+                teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + successCount);
+                teacherInfo.setUpdateTime(LocalDateTime.now());
+                teacherInfoService.saveOrUpdate(teacherInfo);
             }
             
             result.put("successCount", successCount);
@@ -427,17 +476,22 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
      */
     private void updateTeachersMaxReviewCount(Integer maxLoadPerTeacher) {
         try {
-            // 构建更新条件：只更新教师用户
-            LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(SysUser::getUserType, "teacher");
+            // 先获取所有教师用户
+            LambdaQueryWrapper<SysUser> userWrapper = new LambdaQueryWrapper<>();
+            userWrapper.eq(SysUser::getUserType, "teacher");
+            List<SysUser> teachers = sysUserMapper.selectList(userWrapper);
             
-            // 创建更新对象
-            SysUser updateUser = new SysUser();
-            updateUser.setMaxReviewCount(maxLoadPerTeacher);
-            updateUser.setUpdateTime(LocalDateTime.now());
-            
-            // 批量更新所有教师的最大审核数量
-            int updatedCount = sysUserMapper.update(updateUser, wrapper);
+            // 批量更新每个教师的最大审核数量
+            int updatedCount = 0;
+            for (SysUser teacher : teachers) {
+                TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+                if (teacherInfo != null) {
+                    teacherInfo.setMaxReviewCount(maxLoadPerTeacher);
+                    teacherInfo.setUpdateTime(LocalDateTime.now());
+                    teacherInfoService.saveOrUpdate(teacherInfo);
+                    updatedCount++;
+                }
+            }
             
             log.info("更新教师最大审核数量成功，影响记录数: {}", updatedCount);
         } catch (Exception e) {

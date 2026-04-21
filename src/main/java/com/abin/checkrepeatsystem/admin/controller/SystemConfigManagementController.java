@@ -37,6 +37,7 @@ public class SystemConfigManagementController {
      * 1. 获取所有系统配置
      * 用途：初始化页面时加载所有配置项
      */
+    @OperationLog(type = "config_get_all", description = "获取所有系统配置")
     @GetMapping
     public Result<Map<String, Object>> getAllConfig() {
         log.info("接收获取所有系统配置请求");
@@ -204,6 +205,7 @@ public class SystemConfigManagementController {
      * 8. 测试邮件配置接口
      * 用途：验证邮件配置是否正确
      */
+    @OperationLog(type = "config_test_email", description = "测试邮件配置", recordResult = true)
     @PostMapping("/test-email")
     public Result<String> testEmailConfig(@RequestBody Map<String, String> request) {
         String recipientEmail = request.get("recipientEmail");
@@ -229,6 +231,7 @@ public class SystemConfigManagementController {
      * 用途：将当前配置导出为JSON文件
      * 路径：/api/admin/system/config/export
      */
+    @OperationLog(type = "config_export", description = "导出配置", recordResult = true)
     @GetMapping("/export")
     public void exportConfig(HttpServletResponse response) {
         log.info("接收导出配置请求");
@@ -268,6 +271,7 @@ public class SystemConfigManagementController {
      * 10. 恢复默认配置接口
      * 用途：将所有配置恢复到系统默认值
      */
+    @OperationLog(type = "config_reset_default", description = "恢复默认配置", recordResult = true)
     @PostMapping("/reset-default")
     public Result<String> resetDefaultConfig() {
         log.info("接收恢复默认配置请求");
@@ -290,6 +294,7 @@ public class SystemConfigManagementController {
      * 11. 刷新配置接口
      * 用途：强制刷新系统配置缓存
      */
+    @OperationLog(type = "config_refresh", description = "刷新配置", recordResult = true)
     @PostMapping("/refresh")
     public Result<Map<String, Object>> refreshConfig() {
         log.info("接收刷新配置请求");

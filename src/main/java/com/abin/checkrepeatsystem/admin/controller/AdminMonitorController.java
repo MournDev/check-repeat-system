@@ -8,7 +8,8 @@ import com.abin.checkrepeatsystem.monitor.service.DatabaseMonitorService;
 import com.abin.checkrepeatsystem.monitor.service.SystemMonitorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,12 +19,13 @@ import java.util.Map;
 /**
  * 管理员系统监控控制器
  */
-@Slf4j
 @RestController
 @RequestMapping("/api/admin/monitor")
 @PreAuthorize("hasAuthority('ADMIN')")
 @Tag(name = "系统监控接口", description = "系统性能监控和健康度检查相关接口")
 public class AdminMonitorController {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminMonitorController.class);
 
     @Resource
     private AdminDashboardService adminDashboardService;

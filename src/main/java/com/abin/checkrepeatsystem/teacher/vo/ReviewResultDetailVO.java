@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.teacher.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import java.util.List;
 
@@ -32,6 +33,7 @@ public class ReviewResultDetailVO {
         /**
          * 论文ID
          */
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         private String paperId;
         
         /**

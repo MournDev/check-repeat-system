@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.teacher.service.Impl;
 
 import cn.hutool.core.util.IdUtil;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
@@ -261,13 +262,13 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                     // 根据审核状态设置论文状态
                     switch (reviewDTO.getReviewStatus()) {
                         case 1: // 通过
-                            paperInfo.setPaperStatus("completed");
+                            paperInfo.setPaperStatus(PaperStatusEnum.COMPLETED.getValue());
                             break;
                         case 2: // 不通过
-                            paperInfo.setPaperStatus("rejected");
+                            paperInfo.setPaperStatus(PaperStatusEnum.REJECTED.getValue());
                             break;
                         case 3: // 需要修改
-                            paperInfo.setPaperStatus("need_revision");
+                            paperInfo.setPaperStatus(PaperStatusEnum.REJECTED.getValue());
                             break;
                         default:
                             throw new IllegalArgumentException("无效的审核状态");
@@ -1054,15 +1055,6 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                         historyRecord.setReviewOpinion(record.getReviewOpinion());
                         historyRecord.setReviewTime(record.getReviewTime());
                         historyRecord.setVersion("V" + (reviewRecords.indexOf(record) + 1)); // 简单版本号
-                        
-                        // 设置状态描述
-                        switch (record.getReviewStatus()) {
-                            case 1: historyRecord.setReviewStatusDesc("审核通过"); break;
-                            case 2: historyRecord.setReviewStatusDesc("审核不通过"); break;
-                            case 3: historyRecord.setReviewStatusDesc("修改后通过"); break;
-                            default: historyRecord.setReviewStatusDesc("未知状态");
-                        }
-                        
                         return historyRecord;
                     })
                     .collect(Collectors.toList());
@@ -1162,7 +1154,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             stats.setTotalReviewed((int) reviewPage.getTotal());
             
             // 按状态统计
-            Map<Integer, Long> statusCount = reviewPage.getRecords().stream()
+            Map<String, Long> statusCount = reviewPage.getRecords().stream()
                     .collect(Collectors.groupingBy(ReviewRecord::getReviewStatus, Collectors.counting()));
             
             stats.setApproved(statusCount.getOrDefault(1, 0L).intValue());
