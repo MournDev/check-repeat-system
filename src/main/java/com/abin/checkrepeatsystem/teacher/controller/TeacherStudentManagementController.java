@@ -12,16 +12,19 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentManagementService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -340,27 +343,34 @@ public class TeacherStudentManagementController {
             Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("获取学生论文信息: teacherId={}, studentId={}", teacherId, studentId);
             
-            // 1. 验证学生是否存在且属于当前教师指导
+            // 1. 验证学生是否存在
             SysUser student = sysUserService.getById(studentId);
             if (student == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "学生不存在");
             }
             
-            // 2. 验证指导关系
+            // 2. 验证学生是否属于当前教师指导（检查是否有任何论文属于该教师）
+            LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(PaperInfo::getStudentId, studentId)
+                       .eq(PaperInfo::getTeacherId, teacherId)
+                       .eq(PaperInfo::getIsDeleted, 0);
+            
+            Long count = paperInfoMapper.selectCount(queryWrapper);
+            if (count == 0 && !sysUserService.isAdmin(teacherId)) {
+                log.warn("权限验证失败 - 教师无权查看学生论文: 当前教师ID={}, 学生ID={}", 
+                        teacherId, studentId);
+                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
+            }
+            
+            // 3. 获取学生最新论文
             PaperInfo latestPaper = paperInfoMapper.selectLatestPaper(studentId);
             if (latestPaper == null) {
                 log.warn("学生暂无论文信息: studentId={}", studentId);
                 return Result.error(ResultCode.PARAM_ERROR, "该学生暂无论文");
             }
             
-            log.info("指导关系验证 - 当前教师ID: {}, 论文指导教师ID: {}, 学生ID: {}, 论文ID: {}", 
-                    teacherId, latestPaper.getTeacherId(), studentId, latestPaper.getId());
-            
-            if (!latestPaper.getTeacherId().equals(teacherId) && !sysUserService.isAdmin(teacherId)) {
-                log.warn("权限验证失败 - 教师无权查看学生论文: 当前教师ID={}, 论文指导教师ID={}, 学生ID={}", 
-                        teacherId, latestPaper.getTeacherId(), studentId);
-                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
-            }
+            log.info("获取学生论文信息 - 当前教师ID: {}, 学生ID: {}, 论文ID: {}", 
+                    teacherId, studentId, latestPaper.getId());
             
             // 3. 构造返回数据
             StudentPaperInfoDTO paperInfoDTO = new StudentPaperInfoDTO();
@@ -397,8 +407,92 @@ public class TeacherStudentManagementController {
     }
     
     /**
+     * 11. 获取学生所有论文接口（新增）
+     * GET /api/teacher/students/{studentId}/papers
+     */
+    @GetMapping("/{studentId}/papers")
+    @Operation(summary = "获取学生所有论文", description = "获取指定学生的所有论文信息")
+    public Result<List<StudentPaperInfoDTO>> getStudentAllPapers(
+            @Parameter(description = "学生ID") @PathVariable Long studentId) {
+        
+        try {
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("获取学生所有论文: teacherId={}, studentId={}", teacherId, studentId);
+            
+            // 1. 验证学生是否存在
+            SysUser student = sysUserService.getById(studentId);
+            if (student == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "学生不存在");
+            }
+            
+            // 2. 验证学生是否属于当前教师指导（检查是否有任何论文属于该教师）
+            LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(PaperInfo::getStudentId, studentId)
+                       .eq(PaperInfo::getTeacherId, teacherId)
+                       .eq(PaperInfo::getIsDeleted, 0);
+            
+            Long count = paperInfoMapper.selectCount(queryWrapper);
+            if (count == 0 && !sysUserService.isAdmin(teacherId)) {
+                log.warn("权限验证失败 - 教师无权查看学生论文: 当前教师ID={}, 学生ID={}", 
+                        teacherId, studentId);
+                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
+            }
+            
+            // 3. 获取学生所有论文
+            LambdaQueryWrapper<PaperInfo> allPapersQuery = new LambdaQueryWrapper<>();
+            allPapersQuery.eq(PaperInfo::getStudentId, studentId)
+                        .eq(PaperInfo::getIsDeleted, 0)
+                        .orderByDesc(PaperInfo::getCreateTime);
+            
+            List<PaperInfo> allPapers = paperInfoMapper.selectList(allPapersQuery);
+            if (allPapers.isEmpty()) {
+                log.warn("学生暂无论文信息: studentId={}", studentId);
+                return Result.error(ResultCode.PARAM_ERROR, "该学生暂无论文");
+            }
+            
+            // 4. 构造返回数据
+            List<StudentPaperInfoDTO> paperInfoDTOList = new ArrayList<>();
+            for (PaperInfo paper : allPapers) {
+                StudentPaperInfoDTO paperInfoDTO = new StudentPaperInfoDTO();
+                paperInfoDTO.setPaperId(paper.getId());
+                paperInfoDTO.setPaperTitle(paper.getPaperTitle());
+                paperInfoDTO.setFileId(paper.getFileId());
+                paperInfoDTO.setPaperStatus(paper.getPaperStatus());
+                paperInfoDTO.setSubmitTime(paper.getSubmitTime() != null ? 
+                    paper.getSubmitTime().toString() : null);
+                paperInfoDTO.setSimilarity(paper.getSimilarityRate() != null ? 
+                    paper.getSimilarityRate().doubleValue() : 0.0);
+                
+                // 获取文件详细信息
+                if (paper.getFileId() != null) {
+                    try {
+                        FileInfo fileInfo = fileService.getById(paper.getFileId());
+                        if (fileInfo != null) {
+                            paperInfoDTO.setFileName(fileInfo.getOriginalFilename());
+                            paperInfoDTO.setFileSize(fileInfo.getFileSizeDesc());
+                        }
+                    } catch (Exception e) {
+                        log.warn("获取文件详细信息失败: {}", e.getMessage());
+                    }
+                }
+                
+                paperInfoDTOList.add(paperInfoDTO);
+            }
+            
+            log.info("获取学生所有论文成功: teacherId={}, studentId={}, paperCount={}", 
+                    teacherId, studentId, paperInfoDTOList.size());
+            return Result.success("获取成功", paperInfoDTOList);
+            
+        } catch (Exception e) {
+            log.error("获取学生所有论文失败: studentId={}", studentId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文信息失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 学生论文信息DTO
      */
+    @Data
     public static class StudentPaperInfoDTO {
         private Long paperId;
         private String paperTitle;
@@ -409,30 +503,6 @@ public class TeacherStudentManagementController {
         private String submitTime;
         private String paperStatus;
         private Double similarity;
-        
-        // Getters and Setters
-        public Long getPaperId() { return paperId; }
-        public void setPaperId(Long paperId) { this.paperId = paperId; }
-        
-        public String getPaperTitle() { return paperTitle; }
-        public void setPaperTitle(String paperTitle) { this.paperTitle = paperTitle; }
-        
-        public Long getFileId() { return fileId; }
-        public void setFileId(Long fileId) { this.fileId = fileId; }
-        
-        public String getFileName() { return fileName; }
-        public void setFileName(String fileName) { this.fileName = fileName; }
-        
-        public String getFileSize() { return fileSize; }
-        public void setFileSize(String fileSize) { this.fileSize = fileSize; }
-        
-        public String getSubmitTime() { return submitTime; }
-        public void setSubmitTime(String submitTime) { this.submitTime = submitTime; }
-        
-        public String getPaperStatus() { return paperStatus; }
-        public void setPaperStatus(String paperStatus) { this.paperStatus = paperStatus; }
-        
-        public Double getSimilarity() { return similarity; }
-        public void setSimilarity(Double similarity) { this.similarity = similarity; }
+
     }
 }

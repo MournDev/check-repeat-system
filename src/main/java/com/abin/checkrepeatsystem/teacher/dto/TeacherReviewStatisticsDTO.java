@@ -48,7 +48,7 @@ public class TeacherReviewStatisticsDTO {
         /**
          * 审核状态
          */
-        private Integer reviewStatus;
+        private String reviewStatus;
         
         /**
          * 审核时间

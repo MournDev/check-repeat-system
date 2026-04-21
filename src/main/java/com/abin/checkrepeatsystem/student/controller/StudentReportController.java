@@ -61,4 +61,13 @@ public class StudentReportController {
     public Result<String> deleteReport(@RequestParam Long reportId) {
         return checkReportService.deleteReport(reportId);
     }
+    
+    /**
+     * 5. 获取报告数据（用于前端查重报告详情页面）
+     * @param reportId 报告ID
+     */
+    @GetMapping("/data")
+    public Result<com.abin.checkrepeatsystem.student.dto.ReportDataDTO> getReportData(@RequestParam Long reportId) {
+        return checkReportService.getReportData(reportId);
+    }
 }

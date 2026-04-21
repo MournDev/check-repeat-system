@@ -65,23 +65,25 @@
     <!-- 获取学院分布数据 -->
     <select id="selectCollegeDistribution" resultType="com.abin.checkrepeatsystem.teacher.vo.CollegeDistributionVO">
         SELECT
-        su.college_name as collegeName,
+        c.college_name as collegeName,
         COUNT(DISTINCT pi.student_id) as studentCount,
         COUNT(*) as reviewCount,
         ROUND(AVG(pi.similarity_rate), 1) as avgSimilarity
         FROM paper_info pi
         LEFT JOIN sys_user su ON pi.student_id = su.id
+        LEFT JOIN college c ON su.college_id = c.id
         WHERE pi.teacher_id = #{teacherId}
         AND pi.is_deleted = 0
-        AND su.college_name IS NOT NULL
-        AND su.college_name != ''
+        AND su.college_id IS NOT NULL
+        AND c.college_name IS NOT NULL
+        AND c.college_name != ''
         <if test="startDate != null">
             AND pi.submit_time >= #{startDate}
         </if>
         <if test="endDate != null">
             AND pi.submit_time &lt;= #{endDate}
         </if>
-        GROUP BY su.college_name
+        GROUP BY c.college_name
         ORDER BY studentCount DESC, reviewCount DESC
     </select>
     

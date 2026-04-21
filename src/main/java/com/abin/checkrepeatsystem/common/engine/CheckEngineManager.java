@@ -3,10 +3,13 @@ package com.abin.checkrepeatsystem.common.engine;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.pojo.vo.CheckResult;
 import com.abin.checkrepeatsystem.user.service.CheckEngine;
+
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +30,7 @@ public class CheckEngineManager {
     /**
      * 初始化引擎映射
      */
+    @PostConstruct
     public void init() {
         for (CheckEngine engine : checkEngines) {
             CheckEngineTypeEnum engineType = engine.getEngineType();
@@ -57,7 +61,7 @@ public class CheckEngineManager {
         }
         
         CheckResult compositeResult = new CheckResult();
-        double maxSimilarity = 0.0;
+        BigDecimal maxSimilarity = BigDecimal.ZERO;
         StringBuilder sourceInfo = new StringBuilder();
         StringBuilder extraInfo = new StringBuilder();
         
@@ -69,8 +73,8 @@ public class CheckEngineManager {
                 
                 if (result.isSuccess() && result.getSimilarity() != null) {
                     // 记录最高相似度
-                    if (result.getSimilarity().doubleValue() > maxSimilarity) {
-                        maxSimilarity = result.getSimilarity().doubleValue();
+                    if (result.getSimilarity().doubleValue() > maxSimilarity.doubleValue()) {
+                        maxSimilarity = result.getSimilarity();
                         compositeResult.setReportUrl(result.getReportUrl());
                     }
                     
@@ -82,19 +86,21 @@ public class CheckEngineManager {
                     
                     // 拼接额外信息
                     if (result.getExtraInfo() != null) {
-                        extraInfo.append("[").append(engineType.getDescription()).append("] ")
-                                .append(result.getExtraInfo()).append("\n");
+                        extraInfo.append("[")
+                                .append(engineType.getDescription())
+                                .append("] ")
+                                .append(result.getExtraInfo())
+                                .append("\n");
                     }
                 }
                 
             } catch (Exception e) {
                 log.error("查重引擎执行失败: {}", engineType.getDescription(), e);
-                // 单个引擎失败不影响整体流程
             }
         }
         
         // 设置综合结果
-        compositeResult.setSimilarity(java.math.BigDecimal.valueOf(maxSimilarity));
+        compositeResult.setSimilarity(maxSimilarity);
         compositeResult.setCheckSource(sourceInfo.toString());
         compositeResult.setExtraInfo(extraInfo.toString());
         compositeResult.setSuccess(true);

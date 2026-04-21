@@ -3,19 +3,20 @@ package com.abin.checkrepeatsystem.teacher.service.Impl;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
+import jakarta.annotation.Resource;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SystemMessage;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentManagementService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +46,9 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
 
     @Autowired
     private MessageService messageService;
+
+    @Resource
+    private StudentInfoService studentInfoService;
 
     @Override
     public Result<Object> getStudentList(StudentListRequestDTO requestDTO) {
@@ -76,10 +81,12 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             // 执行分页查询
             Page<PaperInfo> paperPage = paperInfoMapper.selectPage(page, queryWrapper);
 
-            // 转换为学生列表DTO
+            // 转换为学生列表DTO并去重（根据学生ID）
             List<StudentListDTO> studentList = paperPage.getRecords().stream()
                     .map(this::convertToStudentListDTO)
                     .filter(Objects::nonNull)
+                    .collect(Collectors.toMap(StudentListDTO::getStudentId, Function.identity(), (existing, replacement) -> existing))
+                    .values().stream()
                     .collect(Collectors.toList());
 
             // 构建响应数据
@@ -439,9 +446,6 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             SysUser newUser = new SysUser();
             newUser.setUsername(addStudentDTO.getUsername().trim());
             newUser.setRealName(addStudentDTO.getStudentName().trim());
-            newUser.setCollegeName(addStudentDTO.getCollegeName().trim());
-            newUser.setMajor(addStudentDTO.getMajor().trim());
-            newUser.setGrade(addStudentDTO.getGrade().trim());
             newUser.setEmail(addStudentDTO.getEmail() != null ? addStudentDTO.getEmail().trim() : null);
             newUser.setPhone(addStudentDTO.getPhone() != null ? addStudentDTO.getPhone().trim() : null);
             newUser.setUserType("STUDENT");
@@ -454,14 +458,26 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
                 log.info("成功添加学生: username={}, studentName={}", 
                         addStudentDTO.getUsername(), addStudentDTO.getStudentName());
                 
+                // 创建学生信息
+                StudentInfo studentInfo = new StudentInfo();
+                studentInfo.setUserId(newUser.getId());
+                studentInfo.setCollegeName(addStudentDTO.getCollegeName().trim());
+                studentInfo.setMajor(addStudentDTO.getMajor().trim());
+                studentInfo.setGrade(addStudentDTO.getGrade().trim());
+                studentInfo.setClassName(addStudentDTO.getClassName() != null ? addStudentDTO.getClassName().trim() : null);
+                studentInfo.setIsDeleted(0);
+                studentInfo.setCreateTime(LocalDateTime.now());
+                studentInfo.setUpdateTime(LocalDateTime.now());
+                studentInfoService.save(studentInfo);
+                
                 // 构建返回数据
                 Map<String, Object> responseData = new HashMap<>();
                 responseData.put("studentId", newUser.getId());
                 responseData.put("username", newUser.getUsername());
                 responseData.put("studentName", newUser.getRealName());
-                responseData.put("collegeName", newUser.getCollegeName());
-                responseData.put("major", newUser.getMajor());
-                responseData.put("grade", newUser.getGrade());
+                responseData.put("collegeName", addStudentDTO.getCollegeName().trim());
+                responseData.put("major", addStudentDTO.getMajor().trim());
+                responseData.put("grade", addStudentDTO.getGrade().trim());
                 responseData.put("createTime", newUser.getCreateTime());
                 
                 return Result.success("学生添加成功", responseData);
@@ -519,9 +535,6 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
                     SysUser newUser = new SysUser();
                     newUser.setUsername(username);
                     newUser.setRealName(studentName);
-                    newUser.setCollegeName((String) rowData.get("学院"));
-                    newUser.setMajor((String) rowData.get("专业"));
-                    newUser.setGrade((String) rowData.get("年级"));
                     newUser.setUserType("STUDENT");
                     newUser.setIsDeleted(0);
                     newUser.setCreateTime(LocalDateTime.now());
@@ -529,6 +542,18 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
 
                     int insertResult = sysUserMapper.insert(newUser);
                     if (insertResult > 0) {
+                        // 创建学生信息
+                        StudentInfo studentInfo = new StudentInfo();
+                        studentInfo.setUserId(newUser.getId());
+                        studentInfo.setCollegeName((String) rowData.get("学院"));
+                        studentInfo.setMajor((String) rowData.get("专业"));
+                        studentInfo.setGrade((String) rowData.get("年级"));
+                        studentInfo.setClassName(null);
+                        studentInfo.setIsDeleted(0);
+                        studentInfo.setCreateTime(LocalDateTime.now());
+                        studentInfo.setUpdateTime(LocalDateTime.now());
+                        studentInfoService.save(studentInfo);
+                        
                         successCount++;
                     } else {
                         ImportResultDTO.ImportFailure failure = new ImportResultDTO.ImportFailure();
@@ -567,13 +592,26 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
                 return null;
             }
 
+            // 从StudentInfo表获取学生详细信息
+            StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+
             StudentListDTO dto = new StudentListDTO();
             dto.setStudentId(student.getId());
             dto.setUsername(student.getUsername());
             dto.setStudentName(student.getRealName());
-            dto.setCollegeName(student.getCollegeName());
-            dto.setMajor(student.getMajor());
-            dto.setGrade(student.getGrade());
+            
+            // 从StudentInfo获取学院、专业、年级等信息
+            if (studentInfo != null) {
+                dto.setCollegeName(studentInfo.getCollegeName());
+                dto.setMajor(studentInfo.getMajor());
+                dto.setGrade(studentInfo.getGrade());
+            } else {
+                // 如果StudentInfo不存在，设置默认值
+                dto.setCollegeName("");
+                dto.setMajor("");
+                dto.setGrade("");
+            }
+            
             dto.setPaperStatus(paperInfo.getPaperStatus());
             dto.setAdvisorName(paperInfo.getTeacherName());
             dto.setSubmitTime(paperInfo.getSubmitTime());

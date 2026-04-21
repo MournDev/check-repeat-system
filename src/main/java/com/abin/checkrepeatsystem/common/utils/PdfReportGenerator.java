@@ -294,9 +294,6 @@ public class PdfReportGenerator {
     /**
      * 加载中文字体（SimHei.ttf）
      */
-    /**
-     * 加载中文字体（SimHei.ttf）
-     */
     private PdfFont loadSimHeiFont() throws Exception {
         try {
             // 从classpath加载字体文件

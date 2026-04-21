@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.teacher.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.teacher.dto.UpdateTeacherInfoReq;
@@ -29,6 +30,7 @@ public class TeacherController {
      * @param updateReq
      * @return
      */
+    @OperationLog(type = "teacher_update_info", description = "教师更新个人信息", recordResult = true)
     @PostMapping("/update")
     public Result<String> updateInfo(@Valid @RequestBody UpdateTeacherInfoReq updateReq) {
         log.info("接收教师信息更新请求：用户ID={}", updateReq.getUserId());
@@ -40,6 +42,7 @@ public class TeacherController {
      *
      * @return
      */
+    @OperationLog(type = "teacher_get_info", description = "获取教师信息")
     @GetMapping("/get")
     public Result<UpdateTeacherInfoReq> getInfo(@RequestParam Long userId) {
         if (userId == null){
@@ -53,9 +56,10 @@ public class TeacherController {
      *
      * @return
      */
+    @OperationLog(type = "teacher_change_password", description = "教师修改密码", recordResult = true)
     @PostMapping("/changePassword")
     public Result<String> changePassword(@RequestParam Long userId, @RequestParam String newPassword) {
-        log.info("接收删除教师信息请求：用户ID={}", userId);
+        log.info("接收教师修改密码请求：用户ID={}", userId);
         return  teacherService.changePasswordByUserId(userId, newPassword);
     }
 }

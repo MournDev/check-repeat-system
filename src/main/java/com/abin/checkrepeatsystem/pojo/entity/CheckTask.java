@@ -133,4 +133,16 @@ public class CheckTask extends BaseEntity {
      */
     @TableField(exist = false)
     private Integer wordCount;
-}
+    
+    /**
+     * 任务优先级（1-5，5最高）
+     */
+    @TableField("priority")
+    private Integer priority;
+    
+    /**
+     * 任务重试次数
+     */
+    @TableField("retry_count")
+    private Integer retryCount;
+} 

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.abin.checkrepeatsystem.teacher.mapper.CategorySimilarityThresholdMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.abin.checkrepeatsystem.pojo.entity.CategorySimilarityThreshold">
+        <id column="id" property="id"/>
+        <result column="category_type" property="categoryType"/>
+        <result column="college_id" property="collegeId"/>
+        <result column="major_id" property="majorId"/>
+        <result column="threshold" property="threshold"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="create_by" property="createBy"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, category_type, college_id, major_id, threshold, create_time, update_time, create_by, update_by
+    </sql>
+
+    <!-- 软删除所有 -->
+    <update id="delete" parameterType="java.lang.Object">
+        update category_similarity_threshold
+        set is_deleted = 1
+    </update>
+
+</mapper>

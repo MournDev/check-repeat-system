@@ -3,6 +3,8 @@ package com.abin.checkrepeatsystem.teacher.service.Impl;
 import com.abin.checkrepeatsystem.common.Exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
+import com.abin.checkrepeatsystem.common.enums.ReviewStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.*;
@@ -17,6 +19,7 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
 import com.abin.checkrepeatsystem.common.utils.ReviewAttachUtils;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -68,6 +71,9 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
     @Resource
     private PaperStatusLogMapper paperStatusLogMapper;
 
+    @Resource
+    private StudentInfoService studentInfoService;
+
     // 批量审核最大数量（从配置文件获取）
     @Value("${review.batch.max-count}")
     private Integer batchMaxCount;
@@ -83,7 +89,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
         // 仅查询自己指导的、待审核的、未删除的论文
         paperWrapper.eq(PaperInfo::getTeacherId, currentTeacherId)
-                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.AUDITING) // -待审核
+                .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getValue()) // 待审核状态
                 .eq(PaperInfo::getIsDeleted, 0);
 
         // 2. 模糊查询条件（学生姓名、论文标题）
@@ -121,20 +127,19 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
     public Result<Map<String, Object>> doReview(ReviewOperateReq operateReq) {
         Long currentTeacherId = UserBusinessInfoUtils.getCurrentUserId();
         List<Long> paperIds = operateReq.getPaperIds();
-        Integer reviewStatus = operateReq.getReviewStatus();
+        String reviewStatus = operateReq.getReviewStatus();
         String reviewOpinion = operateReq.getReviewOpinion();
         MultipartFile reviewAttach = operateReq.getReviewAttach();
-        String suggestedModifications = operateReq.getSuggestedModifications(); // 【新增】获取建议修改点
+        String suggestedModifications = operateReq.getSuggestedModifications(); // 获取建议修改点
 
-        // 1. 基础校验
         // 校验批量数量
         if (paperIds.size() > batchMaxCount) {
             return Result.error(ResultCode.PARAM_ERROR,
                     String.format("单次审核最多选择%s篇论文，当前选择%s篇", batchMaxCount, paperIds.size()));
         }
         // 校验审核状态
-        if (!Arrays.asList(3, 4).contains(reviewStatus)) {
-            return Result.error(ResultCode.PARAM_ERROR, "审核状态无效（仅支持3-通过、4-不通过）");
+        if (!ReviewStatusEnum.isValid(reviewStatus)) {
+            return Result.error(ResultCode.PARAM_ERROR, "审核状态无效（仅支持通过、不通过）");
         }
         // 清洗审核意见（防XSS）
         String cleanedOpinion = reviewAttachUtils.cleanReviewOpinion(reviewOpinion);
@@ -156,13 +161,14 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                     failReasons.add(String.format("论文ID：%s，原因：论文不存在或已删除", paperId));
                     continue;
                 }
-                // 校验是否为当前教师指导的论文
-                if (!paperInfo.getTeacherId().equals(currentTeacherId)) {
+                // 校验是否为当前教师指导的论文，管理员可以审核任何论文
+                String currentRole = UserBusinessInfoUtils.getCurrentUserRoleCode();
+                if (!"ADMIN".equals(currentRole) && !paperInfo.getTeacherId().equals(currentTeacherId)) {
                     failReasons.add(String.format("论文ID：%s，原因：无权限审核他人指导的论文", paperId));
                     continue;
                 }
                 // 校验论文状态（仅待审核状态可审核）
-                if (!paperInfo.getPaperStatus().equals(DictConstants.PaperStatus.AUDITING)) {
+                if (!paperInfo.getPaperStatus().equals(PaperStatusEnum.AUDITING.getValue())) {
                     failReasons.add(String.format("论文ID：%s，原因：当前状态（%s）不允许审核（仅待审核可审核）",
                             paperId, paperInfo.getPaperStatus()));
                     continue;
@@ -198,26 +204,26 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 UserBusinessInfoUtils.setAuditField(reviewRecord, true); // 填充审计字段
                 save(reviewRecord);
 
-                // 3.4 更新论文状态（3-审核通过，4-审核不通过）
+                // 3.4 更新论文状态
                 PaperInfo updatePaper = new PaperInfo();
                 updatePaper.setId(paperId);
                 String oldStatus = paperInfo.getPaperStatus();
-                if (reviewStatus.equals(3)) { // 3-审核通过
+                if (reviewStatus.equals(ReviewStatusEnum.PASS.getValue())) { // 审核通过
                     // 审核通过，设置为完成状态
-                    updatePaper.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
-                } else if (reviewStatus.equals(4)) { // 4-审核不通过
+                    updatePaper.setPaperStatus(PaperStatusEnum.COMPLETED.getValue()); // 使用枚举值，统一状态管理
+                } else if (reviewStatus.equals(ReviewStatusEnum.REJECT.getValue())) { // 审核不通过
                     // 审核不通过，设置为驳回状态
-                    updatePaper.setPaperStatus(DictConstants.PaperStatus.REJECTED);
+                    updatePaper.setPaperStatus(PaperStatusEnum.REJECTED.getValue()); // 使用枚举值，统一状态管理
                 }
                 paperInfoMapper.updateById(updatePaper);
-                
+
                 successCount++;
                 log.info("论文审核成功：论文 ID={}，审核结果={}，审核记录 ID={}",
-                        paperId, reviewStatus.equals(DictConstants.PaperStatus.COMPLETED) ? "通过" : "不通过", reviewRecord.getId());
-                
+                        paperId, ReviewStatusEnum.getByValue(reviewStatus).getDescription(), reviewRecord.getId());
+
                 // 3.5 记录论文状态变更日志（AUDITING → COMPLETED/REJECTED）
-                recordPaperStatusLog(paperId, oldStatus, updatePaper.getPaperStatus(), 
-                    reviewStatus.equals(3) ? "导师审核通过" : "导师审核不通过");
+                recordPaperStatusLog(paperId, oldStatus, updatePaper.getPaperStatus(),
+                        reviewStatus.equals(ReviewStatusEnum.PASS.getValue()) ? "导师审核通过" : "导师审核不通过");
 
             } catch (Exception e) {
                 log.error("论文审核失败（论文ID：{}）：", paperId, e);
@@ -241,13 +247,13 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         Integer currentPage = queryReq.getCurrentPage();
         Integer pageSize = queryReq.getPageSize();
 
-        // 1. 构建分页查询条件（已审核状态：paper_status=3或4）
+        // 1. 构建分页查询条件（已审核状态：paper_status=completed或rejected）
         Page<PaperInfo> paperPage = new Page<>(currentPage, pageSize);
         LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
         paperWrapper.eq(PaperInfo::getTeacherId, currentTeacherId)
                 .in(PaperInfo::getPaperStatus,
-                        DictConstants.PaperStatus.COMPLETED,
-                        DictConstants.PaperStatus.REJECTED) // 3-通过，4-不通过
+                        PaperStatusEnum.COMPLETED.getValue(), // 审核通过
+                        PaperStatusEnum.REJECTED.getValue()) // 审核不通过
                 .eq(PaperInfo::getIsDeleted, 0);
 
         // 2. 模糊查询条件（与待审核列表一致）
@@ -371,7 +377,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         // 2. 更新论文状态为“待审核”
         PaperInfo updatePaper = new PaperInfo();
         updatePaper.setId(paperId);
-        updatePaper.setPaperStatus(DictConstants.PaperStatus.AUDITING); // 2-待审核
+        updatePaper.setPaperStatus(PaperStatusEnum.AUDITING.getValue()); // 待审核状态，使用枚举值
         paperInfoMapper.updateById(updatePaper);
 
         log.info("论文重新发起审核成功：论文ID={}，指导教师ID={}", paperId, currentTeacherId);
@@ -379,16 +385,17 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
     }
 
     // ------------------------------ 私有辅助方法 ------------------------------
+
     /**
      * 记录论文状态变更日志
      */
     private void recordPaperStatusLog(Long paperId, String oldStatus, String newStatus, String reason) {
         try {
-            com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog statusLog = 
-                new com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog();
+            com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog statusLog =
+                    new com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog();
             statusLog.setPaperId(paperId);
-            statusLog.setOldStatus(Integer.parseInt(oldStatus));
-            statusLog.setNewStatus(Integer.parseInt(newStatus));
+            statusLog.setOldStatus(oldStatus);
+            statusLog.setNewStatus(newStatus);
             statusLog.setStatusReason(reason);
             UserBusinessInfoUtils.setAuditField(statusLog, true);
             paperStatusLogMapper.insert(statusLog);
@@ -398,7 +405,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
             // 日志记录失败不影响主流程，仅警告
         }
     }
-        
+
     /**
      * 批量转换 PaperInfo 列表为 ReviewResultDTO 列表（减少 SQL 查询次数）
      */
@@ -461,8 +468,13 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
             if (student != null) {
                 paperBaseInfo.setStudentName(student.getRealName());
                 paperBaseInfo.setStudentNo(student.getUsername()); // 学生学号=username
-                paperBaseInfo.setCollege(student.getCollegeName());
                 paperBaseInfo.setEmail(student.getEmail());
+
+                // 从StudentInfo表获取学生的学院信息
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    paperBaseInfo.setCollege(studentInfo.getCollegeName());
+                }
             }
             paperBaseInfo.setSubmitTime(paper.getSubmitTime());
             paperBaseInfo.setPaperStatus(paper.getPaperStatus());
@@ -489,7 +501,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
             if (review != null) {
                 ReviewResultDTO.ReviewOperateInfoDTO reviewOperateInfo = new ReviewResultDTO.ReviewOperateInfoDTO();
                 reviewOperateInfo.setReviewStatus(review.getReviewStatus());
-                reviewOperateInfo.setReviewStatusDesc(review.getReviewStatus().equals(3) ? "审核通过" : "审核不通过");
+                reviewOperateInfo.setReviewStatusDesc(review.getReviewStatus());
                 reviewOperateInfo.setReviewOpinion(review.getReviewOpinion());
                 // 查询审核教师姓名
                 SysUser teacher = sysUserMapper.selectById(review.getTeacherId());
@@ -521,21 +533,65 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 dto.setReviewId(review.getId());
             }
 
+            // 2.6 填充顶层字段（方便前端直接使用）
+            // 基础信息
+            dto.setPaperId(paper.getId());
+            dto.setPaperTitle(paper.getPaperTitle());
+            dto.setStudentId(paper.getStudentId());
+            dto.setSubmitTime(paper.getSubmitTime());
+            dto.setPaperStatus(paper.getPaperStatus());
+            
+            // 学生信息
+            if (student != null) {
+                dto.setStudentName(student.getRealName());
+                dto.setStudentNo(student.getUsername());
+                dto.setEmail(student.getEmail());
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    dto.setCollege(studentInfo.getCollegeName());
+                }
+            }
+            
+            // 相似度
+            if (task != null) {
+                dto.setSimilarity(task.getCheckRate() != null ? task.getCheckRate().doubleValue() : 0.0);
+            } else {
+                dto.setSimilarity(0.0);
+            }
+            
+            // 等待时间（天）
+            if (paper.getSubmitTime() != null) {
+                LocalDateTime now = LocalDateTime.now();
+                long days = java.time.Duration.between(paper.getSubmitTime(), now).toDays();
+                dto.setWaitingTime((int) days);
+            } else {
+                dto.setWaitingTime(0);
+            }
+            
+            // 审核时长（分钟）
+            if (paper.getSubmitTime() != null && review != null && review.getReviewTime() != null) {
+                long minutes = java.time.Duration.between(paper.getSubmitTime(), review.getReviewTime()).toMinutes();
+                dto.setReviewDuration((int) minutes);
+            } else {
+                dto.setReviewDuration(0);
+            }
+            
+            // 优先级
+            Integer waitingDays = dto.getWaitingTime();
+            if (waitingDays >= 14) {
+                dto.setPriority("urgent");
+            } else if (waitingDays >= 7) {
+                dto.setPriority("high");
+            } else {
+                dto.setPriority("normal");
+            }
+            
+            // 截止时间（默认7天后）
+            if (paper.getSubmitTime() != null) {
+                dto.setDeadline(paper.getSubmitTime().plusDays(7));
+            }
+
             return dto;
         }).collect(Collectors.toList());
     }
-
-//    /**
-//     * 获取论文状态描述
-//     */
-//    private String getPaperStatusDesc(Integer status) {
-//        return switch (status) {
-//            case 0 -> "待查重";
-//            case 1 -> "查重中";
-//            case 2 -> "待审核";
-//            case 3 -> "审核通过";
-//            case 4 -> "审核不通过";
-//            default -> "未知状态";
-//        };
-//    }
 }

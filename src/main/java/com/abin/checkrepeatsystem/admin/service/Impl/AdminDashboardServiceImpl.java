@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -78,6 +79,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             
             // 论文统计
             Long totalPapers = paperInfoMapper.selectCount(null);
+
             stats.put("totalPapers", totalPapers);
             
             // 【新增】有效论文数（排除已撤回）
@@ -155,7 +157,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                         .map(CheckResult::getRepeatRate)
                         .filter(Objects::nonNull)
                         .reduce(BigDecimal.ZERO, BigDecimal::add)
-                        .divide(new BigDecimal(recentResults.size()), 2, BigDecimal.ROUND_HALF_UP);
+                        .divide(new BigDecimal(recentResults.size()), 2, RoundingMode.HALF_UP);
                 stats.put("avgSimilarity", avgSimilarity);
             } else {
                 stats.put("avgSimilarity", BigDecimal.ZERO);

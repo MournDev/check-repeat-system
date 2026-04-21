@@ -36,6 +36,81 @@ public class ReviewResultDTO {
      */
     private ReviewAttachDTO reviewAttach;
 
+    // ------------------------------ 顶层字段（方便前端直接使用） ------------------------------
+    /**
+     * 论文ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long paperId;
+
+    /**
+     * 论文标题
+     */
+    private String paperTitle;
+
+    /**
+     * 学生姓名
+     */
+    private String studentName;
+
+    /**
+     * 学生学号
+     */
+    private String studentNo;
+
+    /**
+     * 学生ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long studentId;
+
+    /**
+     * 学生邮箱
+     */
+    private String email;
+
+    /**
+     * 学院
+     */
+    private String college;
+
+    /**
+     * 提交时间
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime submitTime;
+
+    /**
+     * 论文状态
+     */
+    private String paperStatus;
+
+    /**
+     * 相似度
+     */
+    private Double similarity;
+
+    /**
+     * 等待时间（天）
+     */
+    private Integer waitingTime;
+
+    /**
+     * 优先级（normal, high, urgent）
+     */
+    private String priority;
+
+    /**
+     * 截止时间
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime deadline;
+
+    /**
+     * 审核时长（分钟）
+     */
+    private Integer reviewDuration;
+
     // ------------------------------ 内部DTO ------------------------------
     /**
      * 论文基础信息
@@ -72,7 +147,7 @@ public class ReviewResultDTO {
      */
     @Data
     public static class ReviewOperateInfoDTO {
-        private Integer reviewStatus; //3/ 4：审核通过/审核不通过
+        private String reviewStatus; // completed-审核通过, rejected-审核不通过
         private String reviewStatusDesc; // 状态描述（通过/不通过）
         private String reviewOpinion; // 审核意见（富文本）
         private String reviewerName; // 审核教师姓名

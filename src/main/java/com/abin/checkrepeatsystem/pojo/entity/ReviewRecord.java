@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -18,22 +19,25 @@ public class ReviewRecord extends BaseEntity {
     /**
      * 对应的论文ID（关联paper_info.id）
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long paperId;
 
     /**
      * 对应的查重任务ID（关联check_task.id，基于该任务结果审核）
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long taskId;
 
     /**
      * 执行审核的教师ID（关联sys_user.id）
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long teacherId;
 
     /**
-     * 审核状态（3-审核通过，4-审核不通过）
+     * 审核状态（completed-审核通过，rejected-审核不通过）
      */
-    private Integer reviewStatus;
+    private String reviewStatus;
 
     /**
      * 审核意见（富文本，可为空）

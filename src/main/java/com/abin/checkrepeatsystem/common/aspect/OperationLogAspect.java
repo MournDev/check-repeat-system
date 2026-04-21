@@ -69,9 +69,11 @@ public class OperationLogAspect {
             // 获取当前用户信息
             String username = getCurrentUsername();
             Long userId = getCurrentUserId();
+            String userType = getCurrentUserType();
             
             logEntity.setUserId(userId);
             logEntity.setUserName(username);
+            logEntity.setUserType(userType);
             logEntity.setOperationType(operationLog.type());
             logEntity.setDescription(buildDescription(operationLog, joinPoint));
             
@@ -80,6 +82,17 @@ public class OperationLogAspect {
                 String params = getMethodParams(joinPoint);
                 logEntity.setRequestParams(params);
             }
+            
+            // 记录操作对象
+            String target = buildOperationTarget(joinPoint);
+            logEntity.setTarget(target);
+            
+            // 记录操作状态
+            logEntity.setStatus(errorMsg == null ? 1 : 0); // 1成功，0失败
+            
+            // 记录详细信息
+            String details = buildDetails(result, errorMsg, executeTime);
+            logEntity.setDetails(details);
             
             // 记录IP地址
             logEntity.setIpAddress(getClientIpAddress());
@@ -90,12 +103,65 @@ public class OperationLogAspect {
             // 保存到数据库
             sysOperationLogMapper.insert(logEntity);
             
-            log.info("操作日志记录成功: 用户={}, 操作={}, 耗时={}ms", 
-                    username, operationLog.type(), executeTime);
+            log.info("操作日志记录成功: 用户={}, 类型={}, 操作={}, 状态={}, 耗时={}ms", 
+                    username, userType, operationLog.type(), errorMsg == null ? "成功" : "失败", executeTime);
                     
         } catch (Exception e) {
             log.error("保存操作日志到数据库失败: {}", e.getMessage(), e);
         }
+    }
+
+    private String getCurrentUserType() {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                String token = request.getHeader("Authorization");
+                if (token != null && token.startsWith("Bearer ")) {
+                    token = token.substring(7);
+                    return jwtUtils.extractUserType(token);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("获取当前用户类型失败: {}", e.getMessage());
+        }
+        return "unknown";
+    }
+
+    private String buildOperationTarget(ProceedingJoinPoint joinPoint) {
+        try {
+            MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+            String methodName = signature.getName();
+            String className = signature.getDeclaringType().getSimpleName();
+            return String.format("%s.%s", className, methodName);
+        } catch (Exception e) {
+            log.warn("构建操作对象失败: {}", e.getMessage());
+            return "unknown";
+        }
+    }
+
+    private String buildDetails(Object result, String errorMsg, long executeTime) {
+        StringBuilder details = new StringBuilder();
+        
+        details.append("{");
+        details.append("\"executeTime\":").append(executeTime).append(",");
+        
+        if (errorMsg != null) {
+            details.append("\"error\":\"").append(errorMsg.replace("\"", "\\\"").replace("\n", "\\n")).append("\"");
+        } else if (result != null) {
+            try {
+                String resultStr = JSON.toJSONString(result);
+                if (resultStr.length() > 500) {
+                    resultStr = resultStr.substring(0, 500) + "...";
+                }
+                details.append("\"result\":").append(resultStr);
+            } catch (Exception e) {
+                details.append("\"result\":\"").append(result.toString().replace("\"", "\\\"").replace("\n", "\\n")).append("\"");
+            }
+        }
+        
+        details.append("}");
+        return details.toString();
     }
 
     private String getCurrentUsername() {

@@ -52,10 +52,14 @@ public class ReportPreviewDTO {
         private Long studentId;
         private String studentName;
         private String teacherName;
-        private String checkRuleName;
+        private LocalDateTime checkRuleName;
         private LocalDateTime checkTime;
         private String reportDetails;
         private String generateTime; // 格式：yyyy-MM-dd HH:mm:ss
+        private Integer citations; // 引用数
+        private Integer totalWords; // 总字数
+        private Integer similarWords; // 相似字数
+        private Integer uniqueSentences; // 独特句段数
     }
 
     /**
@@ -67,7 +71,7 @@ public class ReportPreviewDTO {
         private Long reportId;
         private String reportNo;
         private BigDecimal repeatRate; // 总重复率（如15.32）
-        private Double originalRate; // 原创率（100 - 总重复率）
+        private BigDecimal originalRate; // 原创率（100 - 总重复率）
         private Integer repeatParagraphCount; // 重复段落数
         private Integer totalParagraphCount; // 总段落数
     }
@@ -80,7 +84,7 @@ public class ReportPreviewDTO {
         private String paperTitle;
         private Integer paragraphNo; // 段落序号（1,2,3...）
         private String content; // 段落内容（标红部分用<span style="color:red">包裹）
-        private Double similarity; // 该段落重复率（如0.0=原创，95.5=高度重复）
+        private BigDecimal similarity; // 该段落重复率（如0.0=原创，95.5=高度重复）
         private Boolean isRepeat; // 是否为重复段落（similarity≥5.0为true）
         private List<Long> sourceIds; // 相似来源ID（关联similarSources的sourceId）
     }
@@ -95,6 +99,6 @@ public class ReportPreviewDTO {
         private String sourceType; // 来源类型（期刊/学位论文/互联网资源）
         private String matchedParagraphs;// 匹配的段落
         private String sourceUrl; // 来源链接（可选，如知网链接）
-        private Double maxSimilarity; // 与该来源的最大相似度
+        private BigDecimal maxSimilarity; // 与该来源的最大相似度
     }
 }

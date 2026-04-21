@@ -104,7 +104,7 @@ public class InstantMessageController {
      * 获取未读消息数量
      */
     @GetMapping("/unread/count")
-    public Result<Integer> getUnreadCount() {
+    public Result<Long> getUnreadCount() {
         try {
             Long userId = UserBusinessInfoUtils.getCurrentUserId();
             log.debug("获取未读消息数量请求 - 用户ID: {}", userId);

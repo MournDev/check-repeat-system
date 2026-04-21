@@ -110,17 +110,16 @@
     <!-- 获取各专业审核情况统计 -->
     <select id="getMajorReviewStatistics" resultType="map">
         SELECT 
-            su.major as majorName,
+            si.major as majorName,
             COUNT(*) as totalPapers,
             SUM(CASE WHEN pi.paper_status = 'completed' THEN 1 ELSE 0 END) as passedPapers,
             SUM(CASE WHEN pi.paper_status = 'rejected' THEN 1 ELSE 0 END) as rejectedPapers,
             SUM(CASE WHEN pi.paper_status = 'auditing' THEN 1 ELSE 0 END) as auditingPapers
         FROM paper_info pi
-        JOIN sys_user su ON pi.student_id = su.id
+        JOIN student_info si ON pi.student_id = si.user_id
         WHERE pi.teacher_id = #{teacherId}
           AND pi.is_deleted = 0
-          AND su.is_deleted = 0
-        GROUP BY su.major
+        GROUP BY si.major
         ORDER BY totalPapers DESC
     </select>
 

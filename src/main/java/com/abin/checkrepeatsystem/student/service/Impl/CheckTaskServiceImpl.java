@@ -16,6 +16,7 @@ import com.abin.checkrepeatsystem.common.statemachine.CheckTaskStateMachine;
 import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.TextSimilarityUtils;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
@@ -31,11 +32,15 @@ import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -102,6 +107,14 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
     @Value("${check.task.timeout}")
     private long taskTimeout;
 
+    // 最大重试次数
+    @Value("${check.task.max-retries:3}")
+    private int maxRetries;
+
+    // 重试间隔（毫秒）
+    @Value("${check.task.retry-interval:2000}")
+    private long retryInterval;
+
     @Value("${admin.check-rule.default-threshold}")
     private BigDecimal defaultThreshold;
 
@@ -110,6 +123,33 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
 
     @Resource
     private ApplicationEventPublisher eventPublisher;
+
+    @Resource
+    private CheckTaskMapper checkTaskMapper;
+
+    @Autowired
+    @Lazy
+    private com.abin.checkrepeatsystem.student.controller.CheckStatusWebSocketController checkStatusWebSocketController;
+
+    /**
+     * 初始化上传路径，确保在Windows环境下使用正确的路径
+     */
+    @PostConstruct
+    private void init() {
+        try {
+            // 如果是 Windows 环境且路径为 Unix 风格，转换为 Windows 路径
+            if (System.getProperty("os.name").toLowerCase().contains("win") && 
+                (basePath.startsWith("/") || basePath.startsWith("data"))) {
+                // 使用用户主目录下的临时上传目录
+                String userHome = System.getProperty("user.home");
+                basePath = java.nio.file.Paths.get(userHome, "check-repeat-system", "upload").toString();
+                log.info("检测到 Windows 环境，使用上传路径：{}", basePath);
+            }
+        } catch (Exception e) {
+            log.error("初始化上传路径失败", e);
+        }
+    }
+
 
     // Apache Tika：提取文件文本内容
     private final Tika tika = new Tika();
@@ -153,10 +193,16 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         UserBusinessInfoUtils.setAuditField(checkTask, true);
         save(checkTask);
 
-        // 2. 发布事件，完全解耦（异步执行查重）
+        // 2. 存储当前用户信息到ThreadLocal，供异步线程使用
+        SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
+        if (currentUser != null) {
+            UserContextHolder.setUser(currentUser);
+        }
+
+        // 3. 发布事件，完全解耦（异步执行查重）
         eventPublisher.publishEvent(new CheckTaskCreatedEvent(this, checkTask.getId(), paperId));
 
-        // 3. 立即返回，提供预估信息
+        // 4. 立即返回，提供预估信息
         CheckResultVO checkResultVO = buildCheckResultVO(checkTask);
         
         log.info("查重任务创建成功 - 任务 ID: {}, 论文 ID: {}, 预估时长：{}秒", 
@@ -255,8 +301,9 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
         boolean isStudentOwner = paperInfo.getStudentId().equals(currentUser.getId());
+        boolean isTeacherOwner = paperInfo.getTeacherId() != null && paperInfo.getTeacherId().equals(currentUser.getId());
         boolean isAdmin = UserBusinessInfoUtils.isAdmin();
-        if (!isStudentOwner && !isAdmin) {
+        if (!isStudentOwner && !isTeacherOwner && !isAdmin) {
             return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看该查重任务");
         }
         // 3. 转换为DTO（含完整报告信息）
@@ -338,6 +385,107 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         return resultVO;
     }
 
+    @Override
+    public Result<CheckTaskResultDTO> getCheckTaskById(Long taskId) {
+        // 1. 查询任务信息
+        CheckTask checkTask = getById(taskId);
+        if (checkTask == null || checkTask.getIsDeleted() == 1) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "查重任务不存在或已删除");
+        }
+
+        // 2. 权限校验（学生查自己的，教师查指导的，管理员查所有）
+        PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
+        SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
+        boolean isStudentOwner = paperInfo.getStudentId().equals(currentUser.getId());
+        boolean isTeacherOwner = paperInfo.getTeacherId() != null && paperInfo.getTeacherId().equals(currentUser.getId());
+        boolean isAdmin = UserBusinessInfoUtils.isAdmin();
+        if (!isStudentOwner && !isTeacherOwner && !isAdmin) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看该查重任务");
+        }
+
+        // 3. 转换为DTO（含完整报告信息）
+        CheckTaskResultDTO resultDTO = convertToTaskResultDTO(checkTask, true);
+        return Result.success("查重任务详情查询成功", resultDTO);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<String> deleteCheckTask(Long taskId) {
+        // 1. 查询任务信息
+        CheckTask checkTask = getById(taskId);
+        if (checkTask == null || checkTask.getIsDeleted() == 1) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "查重任务不存在或已删除");
+        }
+
+        // 2. 权限校验
+        PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
+        SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
+        boolean isStudentOwner = paperInfo.getStudentId().equals(currentUser.getId());
+        boolean isAdmin = UserBusinessInfoUtils.isAdmin();
+        if (!isStudentOwner && !isAdmin) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限删除该任务");
+        }
+
+        // 3. 软删除任务
+        removeById(taskId);
+
+        // 4. 如果有报告，也删除报告
+        if (checkTask.getReportId() != null) {
+            checkReportMapper.deleteById(checkTask.getReportId());
+        }
+
+        return Result.success("任务删除成功");
+    }
+
+    @Override
+    public Result<String> createBatchCheckTasks(List<Long> paperIds) {
+        if (paperIds == null || paperIds.isEmpty()) {
+            return Result.error(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
+        }
+
+        Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+        int successCount = 0;
+        int failCount = 0;
+        StringBuilder failReasons = new StringBuilder();
+
+        log.info("开始批量创建查重任务 - 论文数量: {}, 用户ID: {}", paperIds.size(), currentUserId);
+
+        for (Long paperId : paperIds) {
+            try {
+                // 前置校验
+                CheckTaskValidationService.ValidationResult validationResult = 
+                    validationService.validateCheckRequest(paperId, currentUserId);
+                
+                if (!validationResult.isSuccess()) {
+                    failCount++;
+                    failReasons.append("论文ID: " + paperId + "，原因：" + validationResult.getMessage() + "\n");
+                    continue;
+                }
+
+                PaperInfo paperInfo = validationResult.getPaper();
+                // 创建查重任务
+                createCheckTaskInternal(paperId, paperInfo);
+                successCount++;
+
+                log.info("批量创建查重任务成功 - 论文ID: {}", paperId);
+            } catch (Exception e) {
+                failCount++;
+                failReasons.append("论文ID: " + paperId + "，原因：" + e.getMessage() + "\n");
+                log.error("批量创建查重任务失败 - 论文ID: {}", paperId, e);
+            }
+        }
+
+        log.info("批量创建查重任务完成 - 成功: {}, 失败: {}", successCount, failCount);
+
+        if (successCount > 0 && failCount == 0) {
+            return Result.success("批量创建查重任务成功，共处理 " + successCount + " 篇论文");
+        } else if (successCount > 0 && failCount > 0) {
+            return Result.success("部分论文查重任务创建成功，成功: " + successCount + "，失败: " + failCount + "\n失败原因：\n" + failReasons.toString());
+        } else {
+            return Result.error(ResultCode.BUSINESS_NO_REPEAT, "批量创建查重任务失败\n失败原因：\n" + failReasons.toString());
+        }
+    }
+
 
     /**
      * 异步执行查重任务（@Async 需在启动类添加@EnableAsync）
@@ -364,125 +512,153 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
             return;
         }
         
-        try {
-            // 【关键改进 1】先更新任务状态为"执行中"
-            boolean transitionSuccess = stateMachine.transitionStatus(
-                taskId, 
-                CheckTaskStatusEnum.CHECKING,
-                "开始执行查重任务"
-            );
-                    
-            if (!transitionSuccess) {
-                log.warn("状态转换失败，任务 ID: {}", taskId);
-                return;
-            }
+        int retryCount = 0;
+        boolean success = false;
         
-            // 【关键改进 2】校验任务超时（防止任务无限执行）
-            if (Duration.between(startTime, LocalDateTime.now()).toMillis() > taskTimeout) {
-                throw new BusinessException(ResultCode.SYSTEM_TIMEOUT,
-                    "查重任务执行超时（超过" + taskTimeout / 1000 + "秒）");
-            }
-                
-            if (paperInfo.getFilePath() == null || paperInfo.getFilePath().trim().isEmpty()) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "论文文件路径未设置");
-            }
-                    
-            // 3. 提取论文文本内容（从文件路径读取）
-            String paperText = extractTextFromFile(paperInfo.getFilePath());
-            if (paperText.trim().isEmpty()) {
-                throw new BusinessException(ResultCode.PARAM_TYPE_ERROR,
-                    "论文文本提取失败，文件可能为空或格式不支持");
-            }
-        
-            // 4. 使用查重引擎执行真实查重（支持多引擎并行检测）
-            log.info("开始执行查重比对 - 任务 ID: {}, 论文 ID: {}", taskId, paperInfo.getId());
-                
-            // 执行查重（默认使用 LOCAL 本地引擎）
-            com.abin.checkrepeatsystem.pojo.vo.CheckResult checkResult = 
-                checkEngineManager.executeCheck(
-                    paperText, 
-                    paperInfo.getPaperTitle(),
-                    Arrays.asList(com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum.LOCAL)
+        while (retryCount < maxRetries && !success) {
+            try {
+                // 【关键改进 1】先更新任务状态为"执行中"
+                boolean transitionSuccess = stateMachine.transitionStatus(
+                    taskId, 
+                    CheckTaskStatusEnum.CHECKING,
+                    "开始执行查重任务"
                 );
+                        
+                if (!transitionSuccess) {
+                    log.warn("状态转换失败，任务 ID: {}", taskId);
+                    return;
+                }
                 
-            if (!checkResult.isSuccess()) {
-                throw new BusinessException(ResultCode.SYSTEM_ERROR, 
-                    "查重引擎执行失败：" + checkResult.getFailReason());
-            }
+                // 推送状态更新
+                checkStatusWebSocketController.onTaskStatusChange(paperId);
+            
+                // 【关键改进 2】校验任务超时（防止任务无限执行）
+                if (Duration.between(startTime, LocalDateTime.now()).toMillis() > taskTimeout) {
+                    throw new BusinessException(ResultCode.SYSTEM_TIMEOUT,
+                        "查重任务执行超时（超过" + taskTimeout / 1000 + "秒）");
+                }
+                    
+                if (paperInfo.getFilePath() == null || paperInfo.getFilePath().trim().isEmpty()) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "论文文件路径未设置");
+                }
+                        
+                // 3. 提取论文文本内容（从文件路径读取）
+                String paperText = extractTextFromFile(paperInfo.getFilePath());
+                if (paperText.trim().isEmpty()) {
+                    throw new BusinessException(ResultCode.PARAM_TYPE_ERROR,
+                        "论文文本提取失败，文件可能为空或格式不支持");
+                }
+            
+                // 4. 使用查重引擎执行真实查重（支持多引擎并行检测）
+                log.info("开始执行查重比对 - 任务 ID: {}, 论文 ID: {}, 尝试次数: {}/{}", taskId, paperInfo.getId(), retryCount + 1, maxRetries);
+                    
+                // 执行查重（默认使用 LOCAL 本地引擎）
+                com.abin.checkrepeatsystem.pojo.vo.CheckResult checkResult = 
+                    checkEngineManager.executeCheck(
+                        paperText, 
+                        paperInfo.getPaperTitle(),
+                        Arrays.asList(com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum.LOCAL)
+                    );
+                    
+                if (!checkResult.isSuccess()) {
+                    throw new BusinessException(ResultCode.SYSTEM_ERROR, 
+                        "查重引擎执行失败：" + checkResult.getFailReason());
+                }
+                    
+                double maxSimilarity = checkResult.getSimilarity().doubleValue();
+                List<Map<String, Object>> repeatDetails = parseRepeatDetailsFromCheckResult(checkResult);
+            
+                // 6. 生成查重报告（结构化数据+PDF 文件）
+                CheckReport checkReport = generateCheckReport(checkTask, maxSimilarity, repeatDetails);
+            
+                // 7. 使用状态机更新任务状态为"执行成功"
+                stateMachine.transitionStatus(
+                    taskId, 
+                    CheckTaskStatusEnum.COMPLETED, 
+                    "查重任务执行成功"
+                );
+            
+                // 8. 更新任务相关信息
+                checkTask.setCheckRate(BigDecimal.valueOf(maxSimilarity));
+                checkTask.setEndTime(LocalDateTime.now());
+                checkTask.setReportId(checkReport.getId());
+                updateById(checkTask);
+
+                // 推送状态更新
+                checkStatusWebSocketController.onTaskStatusChange(paperId);
+
+                // 【关键改进 3】成功后再更新论文状态
+                updatePaperSuccess(paperInfo, maxSimilarity);
+        
+                // 9. 向 check_result 表写入详细查重结果记录
+                com.abin.checkrepeatsystem.pojo.entity.CheckResult dbCheckResult = 
+                    new com.abin.checkrepeatsystem.pojo.entity.CheckResult();
+                dbCheckResult.setTaskId(checkTask.getId());
+                dbCheckResult.setPaperId(checkTask.getPaperId());
+                dbCheckResult.setRepeatRate(BigDecimal.valueOf(maxSimilarity));
+                dbCheckResult.setCheckSource("LOCAL");
+                dbCheckResult.setCheckTime(LocalDateTime.now());
+                dbCheckResult.setWordCount(paperInfo.getWordCount());
+                dbCheckResult.setStatus(1);
+                if (!repeatDetails.isEmpty()) {
+                    Map<String, Object> topDetail = repeatDetails.get(0);
+                    if (topDetail.get("source") != null) {
+                        dbCheckResult.setMostSimilarPaper(topDetail.get("source").toString());
+                    }
+                }
+                UserBusinessInfoUtils.setAuditField(dbCheckResult, true);
+                checkResultMapper.insert(dbCheckResult);
+        
+                // 10. 记录论文状态变更日志
+                recordPaperStatusLog(paperInfo.getId(), 
+                    DictConstants.PaperStatus.CHECKING, 
+                    getFinalPaperStatus(maxSimilarity), 
+                    "查重完成，根据重复率自动更新状态");
+            
+                log.info("查重任务执行成功 - 任务 ID: {}, 相似度：{}%", taskId, maxSimilarity);
+                success = true;
+            
+            } catch (Exception e) {
+                retryCount++;
+                log.error("查重任务执行失败（任务 ID：{}，尝试次数：{}/{}", taskId, retryCount, maxRetries, e);
+                        
+                if (retryCount >= maxRetries) {
+                    // 达到最大重试次数，更新任务状态为"执行失败"
+                    stateMachine.transitionStatus(
+                        taskId, 
+                        CheckTaskStatusEnum.FAILURE, 
+                        e.getMessage().length() > 500 ? e.getMessage().substring(0, 500) : e.getMessage()
+                    );
                 
-            double maxSimilarity = checkResult.getSimilarity().doubleValue();
-            List<Map<String, Object>> repeatDetails = parseRepeatDetailsFromCheckResult(checkResult);
-        
-            // 6. 生成查重报告（结构化数据+PDF 文件）
-            CheckReport checkReport = generateCheckReport(checkTask, maxSimilarity, repeatDetails);
-        
-            // 7. 使用状态机更新任务状态为"执行成功"
-            stateMachine.transitionStatus(
-                taskId, 
-                CheckTaskStatusEnum.COMPLETED, 
-                "查重任务执行成功"
-            );
-        
-            // 8. 更新任务相关信息
-            checkTask.setCheckRate(BigDecimal.valueOf(maxSimilarity));
-            checkTask.setEndTime(LocalDateTime.now());
-            checkTask.setReportId(checkReport.getId());
-            updateById(checkTask);
-    
-            // 【关键改进 3】成功后再更新论文状态
-            updatePaperSuccess(paperInfo, maxSimilarity);
-    
-            // 9. 向 check_result 表写入详细查重结果记录
-            com.abin.checkrepeatsystem.pojo.entity.CheckResult dbCheckResult = 
-                new com.abin.checkrepeatsystem.pojo.entity.CheckResult();
-            dbCheckResult.setTaskId(checkTask.getId());
-            dbCheckResult.setPaperId(checkTask.getPaperId());
-            dbCheckResult.setRepeatRate(BigDecimal.valueOf(maxSimilarity));
-            dbCheckResult.setCheckSource("LOCAL");
-            dbCheckResult.setCheckTime(LocalDateTime.now());
-            dbCheckResult.setWordCount(paperInfo.getWordCount());
-            dbCheckResult.setStatus(1);
-            if (!repeatDetails.isEmpty()) {
-                Map<String, Object> topDetail = repeatDetails.get(0);
-                if (topDetail.get("source") != null) {
-                    dbCheckResult.setMostSimilarPaper(topDetail.get("source").toString());
+                    // 推送状态更新
+                    checkStatusWebSocketController.onTaskStatusChange(paperId);
+                
+                    // 【关键改进 4】失败时回滚论文状态
+                    PaperInfo updatePaper = new PaperInfo();
+                    updatePaper.setId(paperInfo.getId());
+                    updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
+                    updatePaper.setCheckTime(null);
+                    paperInfoMapper.updateById(updatePaper);
+            
+                    // 记录论文状态变更日志
+                    recordPaperStatusLog(paperInfo.getId(), 
+                        DictConstants.PaperStatus.CHECKING, 
+                        DictConstants.PaperStatus.ASSIGNED, 
+                        "查重任务执行失败，恢复至已分配状态");
+                            
+                    log.warn("查重任务失败，已恢复论文状态 - 任务 ID: {}, 论文 ID: {}", taskId, paperId);
+                } else {
+                    // 等待一段时间后重试
+                    try {
+                        log.info("查重任务执行失败，{}毫秒后重试 - 任务 ID: {}", retryInterval, taskId);
+                        Thread.sleep(retryInterval * retryCount); // 递增等待时间
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.warn("查重重试被中断 - 任务 ID: {}", taskId);
+                        break;
+                    }
                 }
             }
-            UserBusinessInfoUtils.setAuditField(dbCheckResult, true);
-            checkResultMapper.insert(dbCheckResult);
-    
-            // 10. 记录论文状态变更日志
-            recordPaperStatusLog(paperInfo.getId(), 
-                DictConstants.PaperStatus.CHECKING, 
-                getFinalPaperStatus(maxSimilarity), 
-                "查重完成，根据重复率自动更新状态");
-        
-            log.info("查重任务执行成功 - 任务 ID: {}, 相似度：{}%", taskId, maxSimilarity);
-        
-        } catch (Exception e) {
-            log.error("查重任务执行失败（任务 ID：{}）", taskId, e);
-                    
-            // 异常处理：使用状态机更新任务状态为"执行失败"
-            stateMachine.transitionStatus(
-                taskId, 
-                CheckTaskStatusEnum.FAILURE, 
-                e.getMessage().length() > 500 ? e.getMessage().substring(0, 500) : e.getMessage()
-            );
-        
-            // 【关键改进 4】失败时回滚论文状态
-            PaperInfo updatePaper = new PaperInfo();
-            updatePaper.setId(paperInfo.getId());
-            updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
-            updatePaper.setCheckTime(null);
-            paperInfoMapper.updateById(updatePaper);
-    
-            // 记录论文状态变更日志
-            recordPaperStatusLog(paperInfo.getId(), 
-                DictConstants.PaperStatus.CHECKING, 
-                DictConstants.PaperStatus.ASSIGNED, 
-                "查重任务执行失败，恢复至已分配状态");
-                    
-            log.warn("查重任务失败，已恢复论文状态 - 任务 ID: {}, 论文 ID: {}", taskId, paperId);
         }
     }
         
@@ -538,8 +714,8 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
             com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog statusLog = 
                 new com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog();
             statusLog.setPaperId(paperId);
-            statusLog.setOldStatus(Integer.parseInt(oldStatus)); // 转换为整数（根据数据库定义）
-            statusLog.setNewStatus(Integer.parseInt(newStatus));
+            statusLog.setOldStatus(oldStatus);
+            statusLog.setNewStatus(newStatus);
             statusLog.setStatusReason(reason);
             UserBusinessInfoUtils.setAuditField(statusLog, true);
             paperStatusLogMapper.insert(statusLog);
@@ -602,10 +778,23 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
      * 从文件中提取文本内容（支持doc/docx/pdf）
      */
     private String extractTextFromFile(String filePath) throws IOException, TikaException, SAXException {
-        String fullPath = basePath + filePath;
+        // 确保basePath以斜杠结尾
+        String normalizedBasePath = basePath.endsWith("/") ? basePath : basePath + "/";
+        // 处理文件路径中的反斜杠，统一转换为斜杠
+        String normalizedFilePath = filePath.replace("\\", "/");
+        String fullPath = normalizedBasePath + normalizedFilePath;
+        
+        // 打印完整文件路径，方便调试
+        log.info("尝试读取论文文件：{}", fullPath);
+        
         File file = new File(fullPath);
         if (!file.exists() || !file.isFile()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,"论文文件不存在：" + filePath);
+            // 检查目录是否存在
+            File parentDir = file.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                log.warn("论文文件目录不存在：{}", parentDir.getAbsolutePath());
+            }
+            throw new BusinessException(ResultCode.PARAM_ERROR,"论文文件不存在：" + fullPath);
         }
         // 使用Tika提取文本（自动识别文件类型）
         try (InputStream inputStream = new FileInputStream(file)) {
@@ -627,14 +816,21 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         // 3. 构建报告实体
         CheckReport checkReport = new CheckReport();
         checkReport.setTaskId(checkTask.getId());
+        checkReport.setPaperId(checkTask.getPaperId()); // 关联论文ID
         checkReport.setReportNo(reportNo);
         checkReport.setRepeatDetails(JSON.toJSONString(repeatDetails)); // 重复详情转JSON字符串
         checkReport.setReportPath(reportPath);
         checkReport.setReportType("pdf");
+        checkReport.setTotalSimilarity(BigDecimal.valueOf(checkRate)); // 设置总相似度
+        checkReport.setReportGenerateTime(LocalDateTime.now()); // 设置报告生成时间
         UserBusinessInfoUtils.setAuditField(checkReport, true);
         checkReportMapper.insert(checkReport);
 
-        // 4. 关键：实际生成PDF文件
+        // 4. 关键：更新任务的报告ID
+        checkTask.setReportId(checkReport.getId());
+        checkTaskMapper.updateById(checkTask);
+
+        // 5. 关键：实际生成PDF文件
         generateCheckReportPdf(checkTask, checkReport, checkRate, repeatDetails);
         return checkReport;
     }
@@ -709,7 +905,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
      * 转换CheckTask为CheckTaskResultDTO（支持是否返回完整报告）
      * @param withFullReport 是否返回完整报告信息
      */
-    private CheckTaskResultDTO convertToTaskResultDTO(CheckTask checkTask, boolean withFullReport) {
+    public CheckTaskResultDTO convertToTaskResultDTO(CheckTask checkTask, boolean withFullReport) {
         CheckTaskResultDTO dto = new CheckTaskResultDTO();
         dto.setTaskId(checkTask.getId());
         dto.setTaskNo(checkTask.getTaskNo());

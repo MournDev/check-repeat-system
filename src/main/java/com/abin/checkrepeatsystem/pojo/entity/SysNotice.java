@@ -23,7 +23,7 @@ public class SysNotice {
     private Long userId;
 
     /**
-     * 通知类型：1-提交成功，2-查重完成，3-审核结果，4-截止提醒
+     * 通知类型：1-提交成功，2-查重完成，3-审核结果，4-截止提醒，5-系统通知，6-教师分配，7-论文修改请求，8-其他
      */
     private Integer noticeType;
 
@@ -46,6 +46,21 @@ public class SysNotice {
      * 阅读时间
      */
     private LocalDateTime readTime;
+
+    /**
+     * 优先级：0-普通，1-重要，2-紧急
+     */
+    private Integer priority;
+
+    /**
+     * 相关业务ID（如论文ID、任务ID等）
+     */
+    private Long relatedId;
+
+    /**
+     * 相关业务类型（如paper、task等）
+     */
+    private String relatedType;
 
     /**
      * 创建时间（自动填充）
@@ -78,14 +93,20 @@ public class SysNotice {
     private String noticeTypeDesc;
     
     /**
-     * 相关业务ID（如论文ID、任务ID等）
+     * 优先级描述（冗余字段，便于显示）
      */
     @TableField(exist = false)
-    private Long relatedId;
+    private String priorityDesc;
     
     /**
-     * 相关业务类型（如paper、task等）
+     * 创建时间文本（冗余字段，便于显示）
      */
     @TableField(exist = false)
-    private String relatedType;
+    private String createTimeText;
+    
+    /**
+     * 阅读状态文本（冗余字段，便于显示）
+     */
+    @TableField(exist = false)
+    private String readStatusText;
 }

@@ -45,5 +45,26 @@ public interface CheckTaskService {
      */
     CheckResultVO getCheckResult(Long paperId);
 
+    /**
+     * 根据任务ID获取任务详情
+     * @param taskId 任务ID
+     * @return 任务详情
+     */
+    Result<CheckTaskResultDTO> getCheckTaskById(Long taskId);
+
+    /**
+     * 删除查重任务
+     * @param taskId 任务ID
+     * @return 删除结果
+     */
+    Result<String> deleteCheckTask(Long taskId);
+
+    /**
+     * 批量创建查重任务
+     * @param paperIds 论文ID列表
+     * @return 批量创建结果
+     */
+    Result<String> createBatchCheckTasks(List<Long> paperIds);
+
 
 }

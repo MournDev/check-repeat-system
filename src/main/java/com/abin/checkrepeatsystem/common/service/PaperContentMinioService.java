@@ -36,26 +36,30 @@ public class PaperContentMinioService {
      */
     public String storePaperContent(String content, Long paperId) {
         try {
+            log.info("开始存储论文正文到MinIO: paperId={}, contentLength={}", paperId, content != null ? content.length() : 0);
+            
             // 验证参数
             if (content == null || content.isEmpty()) {
+                log.error("论文内容不能为空: paperId={}", paperId);
                 throw new IllegalArgumentException("论文内容不能为空");
             }
             if (paperId == null) {
+                log.error("论文ID不能为空");
                 throw new IllegalArgumentException("论文ID不能为空");
             }
             
             String fileName = "papers/content/" + paperId + "/" + UUID.randomUUID().toString() + ".txt";
-            
-            // 检查MinIO连接
-            testMinioConnection();
+            log.info("生成MinIO文件路径: fileName={}", fileName);
             
             try (InputStream inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
+                log.info("开始上传到MinIO: bucket={}, object={}", bucketName, fileName);
                 minioClient.putObject(io.minio.PutObjectArgs.builder()
                         .bucket(bucketName)
                         .object(fileName)
                         .stream(inputStream, content.getBytes(StandardCharsets.UTF_8).length, -1)
                         .contentType("text/plain")
                         .build());
+                log.info("上传到MinIO成功");
             }
             
             String fullPath = minioEndpoint + "/" + bucketName + "/" + fileName;
@@ -200,19 +204,5 @@ public class PaperContentMinioService {
             return null;
         }
         return fullPath.substring(fullPath.indexOf(bucketName + "/") + bucketName.length() + 1);
-    }
-    
-    /**
-     * 测试MinIO连接
-     */
-    private void testMinioConnection() {
-        try {
-            // 简单的连接测试
-            minioClient.bucketExists(io.minio.BucketExistsArgs.builder().bucket(bucketName).build());
-            log.debug("MinIO连接测试通过");
-        } catch (Exception e) {
-            log.error("MinIO连接测试失败", e);
-            throw new RuntimeException("MinIO服务连接失败: " + e.getMessage(), e);
-        }
     }
 }

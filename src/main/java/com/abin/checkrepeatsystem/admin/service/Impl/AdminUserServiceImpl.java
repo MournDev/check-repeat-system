@@ -10,8 +10,14 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
+import com.abin.checkrepeatsystem.pojo.entity.AdminInfo;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
+import com.abin.checkrepeatsystem.user.service.AdminInfoService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
@@ -37,6 +43,15 @@ public class AdminUserServiceImpl implements AdminUserService {
     
     @Resource
     private SysLoginLogMapper sysLoginLogMapper;
+    
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
+    
+    @Resource
+    private StudentInfoService studentInfoService;
+    
+    @Resource
+    private AdminInfoService adminInfoService;
     
     @Resource
     private PasswordEncoder passwordEncoder;
@@ -106,14 +121,31 @@ public class AdminUserServiceImpl implements AdminUserService {
             newUser.setUserType(createReq.getUserType());
             newUser.setStatus(1); // 默认启用
             newUser.setIsDeleted(0);
-            newUser.setCollegeName(createReq.getCollegeName());
-            newUser.setMajor(createReq.getMajor());
-            newUser.setGrade(createReq.getGrade());
-            newUser.setClassName(createReq.getClassName());
             
             boolean saved = sysUserService.save(newUser);
             if (!saved) {
                 return Result.error(ResultCode.SYSTEM_ERROR,"用户创建失败");
+            }
+            
+            // 根据用户类型创建对应的信息记录
+            if ("TEACHER".equals(createReq.getUserType())) {
+                TeacherInfo teacherInfo = new TeacherInfo();
+                teacherInfo.setUserId(newUser.getId());
+                teacherInfo.setCollegeName(createReq.getCollegeName());
+                teacherInfo.setMajor(createReq.getMajor());
+                teacherInfoService.save(teacherInfo);
+            } else if ("STUDENT".equals(createReq.getUserType())) {
+                StudentInfo studentInfo = new StudentInfo();
+                studentInfo.setUserId(newUser.getId());
+                studentInfo.setCollegeName(createReq.getCollegeName());
+                studentInfo.setMajor(createReq.getMajor());
+                studentInfo.setGrade(createReq.getGrade());
+                studentInfo.setClassName(createReq.getClassName());
+                studentInfoService.save(studentInfo);
+            } else if ("ADMIN".equals(createReq.getUserType())) {
+                AdminInfo adminInfo = new AdminInfo();
+                adminInfo.setUserId(newUser.getId());
+                adminInfoService.save(adminInfo);
             }
             
             Map<String, Object> result = new HashMap<>();
@@ -141,13 +173,42 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setRealName(updateReq.getRealName());
         user.setEmail(updateReq.getEmail());
         user.setPhone(updateReq.getPhone());
-        user.setCollegeName(updateReq.getCollegeName());
-        user.setMajor(updateReq.getMajor());
-        user.setGrade(updateReq.getGrade());
-        user.setClassName(updateReq.getClassName());
-        user.setStatus(updateReq.getStatus());
+        // 只有当status不为null时才更新状态
+        if (updateReq.getStatus() != null) {
+            user.setStatus(updateReq.getStatus());
+        }
         
         sysUserService.updateById(user);
+        
+        // 根据用户类型更新对应的信息记录
+        if ("TEACHER".equals(user.getUserType())) {
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(userId);
+            if (teacherInfo == null) {
+                teacherInfo = new TeacherInfo();
+                teacherInfo.setUserId(userId);
+            }
+            teacherInfo.setCollegeName(updateReq.getCollegeName());
+            teacherInfo.setMajor(updateReq.getMajor());
+            teacherInfoService.saveOrUpdateByUserId(teacherInfo);
+        } else if ("STUDENT".equals(user.getUserType())) {
+            StudentInfo studentInfo = studentInfoService.getByUserId(userId);
+            if (studentInfo == null) {
+                studentInfo = new StudentInfo();
+                studentInfo.setUserId(userId);
+            }
+            studentInfo.setCollegeName(updateReq.getCollegeName());
+            studentInfo.setMajor(updateReq.getMajor());
+            studentInfo.setGrade(updateReq.getGrade());
+            studentInfo.setClassName(updateReq.getClassName());
+            studentInfoService.saveOrUpdateByUserId(studentInfo);
+        } else if ("ADMIN".equals(user.getUserType())) {
+            AdminInfo adminInfo = adminInfoService.getByUserId(userId);
+            if (adminInfo == null) {
+                adminInfo = new AdminInfo();
+                adminInfo.setUserId(userId);
+            }
+            adminInfoService.saveOrUpdateByUserId(adminInfo);
+        }
         
         log.info("管理员更新用户信息成功: userId={}", userId);
         return Result.success("用户信息更新成功");
@@ -339,12 +400,25 @@ public class AdminUserServiceImpl implements AdminUserService {
         dto.setPhone(user.getPhone());
         dto.setUserType(user.getUserType());
         dto.setStatus(user.getStatus());
-        dto.setCollegeName(user.getCollegeName());
-        dto.setMajor(user.getMajor());
-        dto.setGrade(user.getGrade());
-        dto.setClassName(user.getClassName());
         dto.setCreateTime(user.getCreateTime());
         dto.setLastLoginTime(user.getLastLoginTime());
+        
+        // 根据用户类型获取额外信息
+        if ("TEACHER".equals(user.getUserType())) {
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(user.getId());
+            if (teacherInfo != null) {
+                dto.setCollegeName(teacherInfo.getCollegeName());
+                dto.setMajor(teacherInfo.getMajor());
+            }
+        } else if ("STUDENT".equals(user.getUserType())) {
+            StudentInfo studentInfo = studentInfoService.getByUserId(user.getId());
+            if (studentInfo != null) {
+                dto.setCollegeName(studentInfo.getCollegeName());
+                dto.setMajor(studentInfo.getMajor());
+                dto.setGrade(studentInfo.getGrade());
+                dto.setClassName(studentInfo.getClassName());
+            }
+        }
         
         // 设置角色名称
         String roleName = switch (user.getUserType()) {

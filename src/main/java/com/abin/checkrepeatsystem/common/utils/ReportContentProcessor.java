@@ -1,237 +1,296 @@
 package com.abin.checkrepeatsystem.common.utils;
 
-import cn.hutool.core.lang.TypeReference;
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
-import com.abin.checkrepeatsystem.common.enums.ResultCode;
-import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
-import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.*;
+import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
-
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
-import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.nio.file.Paths;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * 报告内容处理工具类：分段、标红、来源匹配
  */
-@Component
 @Slf4j
+@Component
 public class ReportContentProcessor {
 
     @Resource
     private PaperInfoMapper paperInfoMapper;
-
     @Resource
-    private FileInfoMapper fileInfoMapper;
-
-    @Resource
-    private SysUserMapper sysUserMapper;
-
-
-
-    // 在线预览单段最大长度（从配置文件获取）
-    @Value("${report.preview.max-paragraph-length}")
+    private PaperContentMinioService paperContentMinioService;
+    
+    @Value("${report.preview.max-paragraph-length:500}")
     private int maxParagraphLength;
 
-    // 文件上传基础路径
-    @Value("${file.upload.base-path}")
-    private String uploadBasePath;
-
-    // 段落分割符（适配中文文本：句号/问号/感叹号后换行）
-    private static final String PARAGRAPH_SEPARATOR = "[。？！；]";
+    private static final String PARAGRAPH_SEPARATOR = "[。！？.!?]";
 
     /**
-     * 构建报告预览DTO（从报告与任务数据生成）
-     * @param checkReport 查重报告实体
-     * @param checkTask 关联的查重任务
-     * @return 报告预览DTO
+     * 构建报告预览DTO
      */
-    public ReportPreviewDTO buildReportPreviewDTO(CheckReport checkReport, CheckTask checkTask) {
+    public ReportPreviewDTO buildReportPreviewDTO(
+            CheckTask checkTask, 
+            CheckReport checkReport,
+            PaperInfo paperInfo,
+            SysUser student,
+            SysUser teacher) {
+        
         ReportPreviewDTO previewDTO = new ReportPreviewDTO();
-
-        // 1. 构建基础信息
-        previewDTO.setBaseInfo(buildBaseInfoDTO(checkReport, checkTask));
-
-        // 2. 构建重复率统计
-        previewDTO.setRateStat(buildRateStatDTO(checkReport, checkTask));
-
-        // 3. 构建分段内容（含标红）
-        PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
-        String paperText = extractPaperText(paperInfo.getFileId()); // 从论文文件提取文本
+        
+        // 1. 构建基本信息
+        ReportPreviewDTO.ReportBaseInfoDTO baseInfo = buildBaseInfoDTO(
+                checkTask, checkReport, paperInfo, student, teacher);
+        previewDTO.setBaseInfo(baseInfo);
+        
+        // 2. 构建相似度统计
+        ReportPreviewDTO.ReportRateStatDTO rateStat = buildRateStatDTO(
+                checkTask, checkReport, baseInfo);
+        previewDTO.setRateStat(rateStat);
+        
+        // 3. 构建分段信息（含标红）
         List<ReportPreviewDTO.ReportParagraphDTO> paragraphs = buildParagraphs(
-                paperText,
-                checkReport.getRepeatDetails()
-        );
+                paperInfo.getFileId(), checkReport.getRepeatDetails());
         previewDTO.setParagraphs(paragraphs);
-
+        
         // 4. 构建相似来源列表
-        previewDTO.setSimilarSources(buildSimilarSources(checkReport.getRepeatDetails()));
-
+        if (checkReport.getRepeatDetails() != null && !checkReport.getRepeatDetails().isEmpty()) {
+            List<ReportPreviewDTO.ReportSimilarSourceDTO> similarSources = 
+                    buildSimilarSources(checkReport.getRepeatDetails());
+            previewDTO.setSimilarSources(similarSources);
+        } else {
+            previewDTO.setSimilarSources(new ArrayList<>());
+        }
+        
         return previewDTO;
     }
 
     /**
-     * 从论文文件提取纯文本（适配 doc/docx/pdf）
+     * 构建基本信息DTO
      */
-    private String extractPaperText(Long fileId) {
-        // 根据 fileId 查询文件信息
-        FileInfo fileInfo = fileInfoMapper.selectById(fileId);
-        if (fileInfo == null) {
-            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
-        }
-            
-        // 使用存储路径构建完整文件路径
-        String filePath = Paths.get(uploadBasePath, fileInfo.getStoragePath()).toString();
-            
-        // 复用之前开发的文本提取逻辑（Apache Tika）
-        try {
-            return TikaTextExtractor.extractTextFromFile(filePath); // 之前开发的工具类，此处简化
-        } catch (Exception e) {
-            log.error("论文文本提取失败（路径：{}）：", filePath, e);
-            throw new BusinessException(ResultCode.SYSTEM_ERROR,"报告预览失败，无法提取论文内容");
-        }
-    }
-
-    /**
-     * 构建报告基础信息DTO
-     */
-    private ReportPreviewDTO.ReportBaseInfoDTO buildBaseInfoDTO(CheckReport checkReport, CheckTask checkTask) {
+    private ReportPreviewDTO.ReportBaseInfoDTO buildBaseInfoDTO(
+            CheckTask checkTask, 
+            CheckReport checkReport,
+            PaperInfo paperInfo,
+            SysUser student,
+            SysUser teacher) {
+        
         ReportPreviewDTO.ReportBaseInfoDTO baseInfo = new ReportPreviewDTO.ReportBaseInfoDTO();
-        baseInfo.setReportId(checkReport.getId());
-        baseInfo.setReportNo(checkReport.getReportNo());
+        
         baseInfo.setTaskId(checkTask.getId());
         baseInfo.setTaskNo(checkTask.getTaskNo());
-        baseInfo.setPaperId(checkTask.getPaperId());
-
-        // 补充论文与用户信息
-        PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
-        SysUser student = sysUserMapper.selectById(paperInfo.getStudentId());
-        SysUser teacher = sysUserMapper.selectById(paperInfo.getTeacherId());
-
+        baseInfo.setReportNo(checkReport.getReportNo());
+        baseInfo.setReportId(checkReport.getId());
+        baseInfo.setPaperId(paperInfo.getId());
         baseInfo.setPaperTitle(paperInfo.getPaperTitle());
         baseInfo.setStudentName(student.getRealName());
         baseInfo.setTeacherName(teacher.getRealName());
+        baseInfo.setAuthor(paperInfo.getAuthor());
+        baseInfo.setRealName(student.getRealName());
+        baseInfo.setUserName(student.getUsername());
+        baseInfo.setSimilarityRate(checkReport.getTotalSimilarity());
+        baseInfo.setStudentId(student.getId());
+        baseInfo.setCheckRuleName(checkTask.getStartTime());
         baseInfo.setGenerateTime(checkReport.getCreateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-
+        
+        // 计算并设置新增字段
+        String paperText = extractPaperText(paperInfo.getFileId());
+        List<String> rawParagraphs = splitTextToParagraphs(paperText);
+        int totalWords = paperText.length();
+        
+        // 解析重复详情，计算相似字数
+        int similarWords = 0;
+        if (checkReport.getRepeatDetails() != null && !checkReport.getRepeatDetails().isEmpty()) {
+            try {
+                List<Map<String, Object>> repeatDetails = new ObjectMapper().readValue(
+                        checkReport.getRepeatDetails(),
+                        new TypeReference<List<Map<String, Object>>>() {}
+                );
+                if (repeatDetails != null && !repeatDetails.isEmpty()) {
+                    similarWords = repeatDetails.size();
+                }
+            } catch (Exception e) {
+                log.error("解析重复详情失败: {}", e.getMessage());
+            }
+        }
+        
+        baseInfo.setCitations(0); // 暂时设为0，可根据实际情况计算
+        baseInfo.setTotalWords(totalWords);
+        baseInfo.setSimilarWords(similarWords);
+        baseInfo.setUniqueSentences(rawParagraphs.size());
+        
         return baseInfo;
     }
 
     /**
-     * 构建重复率统计DTO
+     * 构建相似度统计DTO
      */
-    private ReportPreviewDTO.ReportRateStatDTO buildRateStatDTO(CheckReport checkReport, CheckTask checkTask) {
+    private ReportPreviewDTO.ReportRateStatDTO buildRateStatDTO(
+            CheckTask checkTask, 
+            CheckReport checkReport,
+            ReportPreviewDTO.ReportBaseInfoDTO baseInfo) {
+        
         ReportPreviewDTO.ReportRateStatDTO rateStat = new ReportPreviewDTO.ReportRateStatDTO();
-        // 总重复率（从任务中获取）
-        double repeatRate = checkTask.getCheckRate() != null ? checkTask.getCheckRate().doubleValue() : 0.0;
-        rateStat.setRepeatRate(BigDecimal.valueOf(repeatRate));
-        rateStat.setOriginalRate(100.0 - repeatRate);
-
-        // 解析重复详情，统计重复段落数
-        List<Map<String, Object>> repeatDetails = JSON.parseObject(
-                checkReport.getRepeatDetails(),
-                new TypeReference<List<Map<String, Object>>>() {}
-        );
-        // 总段落数（从论文文本分段后统计）
-        PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
-        // 重复段落数（去重统计，避免同一段落匹配多个来源）
-        List<Integer> repeatParaNos = repeatDetails.stream()
-                .map(detail -> (Integer) detail.get("paragraphNo"))
-                .distinct()
-                .collect(Collectors.toList());
-        rateStat.setRepeatParagraphCount(repeatParaNos.size());
-
+        
+        rateStat.setReportId(checkReport.getId());
+        rateStat.setReportNo(checkReport.getReportNo());
+        
+        BigDecimal repeatRate = checkTask.getCheckRate() != null ? checkTask.getCheckRate() : BigDecimal.ZERO;
+        rateStat.setRepeatRate(repeatRate);
+        rateStat.setOriginalRate(BigDecimal.valueOf(100).subtract(repeatRate));
+        
+        // 计算重复段落数和总段落数
+        int totalParagraphCount = baseInfo.getUniqueSentences() != null ? baseInfo.getUniqueSentences() : 0;
+        int repeatParagraphCount = 0;
+        
+        if (checkReport.getRepeatDetails() != null && !checkReport.getRepeatDetails().isEmpty()) {
+            try {
+                List<Map<String, Object>> repeatDetails = new ObjectMapper().readValue(
+                        checkReport.getRepeatDetails(),
+                        new TypeReference<List<Map<String, Object>>>() {}
+                );
+                if (repeatDetails != null && !repeatDetails.isEmpty()) {
+                    // 去重统计重复段落数
+                    Set<Integer> repeatParaNoSet = new HashSet<>();
+                    for (Map<String, Object> detail : repeatDetails) {
+                        Object paraNoObj = detail.get("paragraphNo");
+                        if (paraNoObj instanceof Number) {
+                            repeatParaNoSet.add(((Number) paraNoObj).intValue());
+                        }
+                    }
+                    repeatParagraphCount = repeatParaNoSet.size();
+                }
+            } catch (Exception e) {
+                log.error("解析重复详情失败: {}", e.getMessage());
+            }
+        }
+        
+        rateStat.setRepeatParagraphCount(repeatParagraphCount);
+        rateStat.setTotalParagraphCount(totalParagraphCount);
+        
         return rateStat;
     }
 
     /**
-     * 构建分段内容（含标红标记）
+     * 构建分段DTO（含标红）
      */
-    private List<ReportPreviewDTO.ReportParagraphDTO> buildParagraphs(
-            String paperText,
-            String repeatDetailsJson) {
-        // 1. 文本分段（按句号/问号/感叹号分割）
-        List<String> rawParagraphs = splitTextToParagraphs(paperText);
-        // 2. 解析重复详情
-        List<Map<String, Object>> repeatDetails = JSON.parseObject(
-                repeatDetailsJson,
-                new TypeReference<List<Map<String, Object>>>() {}
-        );
-        // 3. 按段落序号分组重复详情
-        Map<Integer, List<Map<String, Object>>> repeatByParaNo = repeatDetails.stream()
-                .collect(Collectors.groupingBy(detail -> (Integer) detail.get("paragraphNo")));
-
-        // 4. 构建分段DTO（含标红）
+    private List<ReportPreviewDTO.ReportParagraphDTO> buildParagraphs(Long fileId, String repeatDetailsJson) {
         List<ReportPreviewDTO.ReportParagraphDTO> paragraphDTOs = new ArrayList<>();
-        for (int i = 0; i < rawParagraphs.size(); i++) {
-            int paraNo = i + 1; // 段落序号从1开始
-            String rawContent = rawParagraphs.get(i);
-            // 截取超长段落（避免预览页面过长）
-            String content = rawContent.length() > maxParagraphLength
-                    ? rawContent.substring(0, maxParagraphLength) + "..."
-                    : rawContent;
-
-            ReportPreviewDTO.ReportParagraphDTO paraDTO = new ReportPreviewDTO.ReportParagraphDTO();
-            paraDTO.setParagraphNo(paraNo);
-            paraDTO.setContent(content);
-
-            // 处理重复段落标红
-            if (repeatByParaNo.containsKey(paraNo)) {
-                List<Map<String, Object>> paraRepeatDetails = repeatByParaNo.get(paraNo);
-                // 计算该段落最大相似度
-                double maxSimilarity = paraRepeatDetails.stream()
-                        .mapToDouble(detail -> (Double) detail.get("similarity"))
-                        .max()
-                        .orElse(0.0);
-                paraDTO.setSimilarity(maxSimilarity);
-                paraDTO.setIsRepeat(maxSimilarity >= 5.0); // 相似度≥5%判定为重复
-
-                // 标红重复片段（简化逻辑：标红相似度最高的片段）
-                Map<String, Object> maxSimilarDetail = paraRepeatDetails.stream()
-                        .max((d1, d2) -> Double.compare(
-                                (Double) d1.get("similarity"),
-                                (Double) d2.get("similarity")
-                        ))
-                        .orElse(null);
-                if (maxSimilarDetail != null) {
-                    String repeatFragment = (String) maxSimilarDetail.get("repeatFragment");
-                    if (content.contains(repeatFragment)) {
-                        // 用<span>标签包裹标红片段
-                        String highlightedContent = content.replace(
-                                repeatFragment,
-                                "<span style=\"color:red\">" + repeatFragment + "</span>"
-                        );
-                        paraDTO.setContent(highlightedContent);
+        
+        try {
+            // 1. 提取论文文本并分段
+            String paperText = extractPaperText(fileId);
+            List<String> rawParagraphs = splitTextToParagraphs(paperText);
+            
+            // 2. 解析重复详情，按段落分组
+            Map<Integer, List<Map<String, Object>>> repeatByParaNo = new HashMap<>();
+            if (repeatDetailsJson != null && !repeatDetailsJson.isEmpty()) {
+                List<Map<String, Object>> repeatDetails = new ObjectMapper().readValue(
+                        repeatDetailsJson,
+                        new TypeReference<List<Map<String, Object>>>() {}
+                );
+                
+                if (repeatDetails != null && !repeatDetails.isEmpty()) {
+                    for (Map<String, Object> detail : repeatDetails) {
+                        Object paraNoObj = detail.get("paragraphNo");
+                        if (paraNoObj instanceof Number) {
+                            int paraNo = ((Number) paraNoObj).intValue();
+                            repeatByParaNo.computeIfAbsent(paraNo, k -> new ArrayList<>()).add(detail);
+                        }
                     }
                 }
-
-                // 关联相似来源ID
-                List<Long> sourceIds = paraRepeatDetails.stream()
-                        .map(detail -> (Long) detail.get("sourceId"))
-                        .distinct()
-                        .collect(Collectors.toList());
-                paraDTO.setSourceIds(sourceIds);
-            } else {
-                // 非重复段落
-                paraDTO.setSimilarity(0.0);
-                paraDTO.setIsRepeat(false);
-                paraDTO.setSourceIds(new ArrayList<>());
             }
+            
+            // 3. 构建分段DTO
+            for (int i = 0; i < rawParagraphs.size(); i++) {
+                int paraNo = i + 1; // 段落序号从1开始
+                String rawContent = rawParagraphs.get(i);
+                // 截取超长段落（避免预览页面过长）
+                String content = rawContent.length() > maxParagraphLength
+                        ? rawContent.substring(0, maxParagraphLength) + "..."
+                        : rawContent;
+                
+                ReportPreviewDTO.ReportParagraphDTO paraDTO = new ReportPreviewDTO.ReportParagraphDTO();
+                paraDTO.setParagraphNo(paraNo);
+                paraDTO.setContent(content);
+                
+                // 处理重复段落标红
+                if (repeatByParaNo.containsKey(paraNo)) {
+                    List<Map<String, Object>> paraRepeatDetails = repeatByParaNo.get(paraNo);
+                    
+                    // 优化：一次遍历同时获取最大相似度和对应的详情
+                    Map<String, Object> maxSimilarDetail = null;
+                    double maxSimValue = 0.0;
+                    for (Map<String, Object> detail : paraRepeatDetails) {
+                        Object simObj = detail.get("similarity");
+                        if (simObj != null) {
+                            double simValue = ((Number) simObj).doubleValue();
+                            if (simValue > maxSimValue) {
+                                maxSimValue = simValue;
+                                maxSimilarDetail = detail;
+                            }
+                        }
+                    }
+                    
+                    BigDecimal maxSimilarity = BigDecimal.valueOf(maxSimValue);
+                    paraDTO.setSimilarity(maxSimilarity);
+                    paraDTO.setIsRepeat(maxSimilarity.compareTo(BigDecimal.valueOf(5.0)) >= 0); // 相似度≥5%判定为重复
 
-            paragraphDTOs.add(paraDTO);
+                    // 标红重复片段（简化逻辑：标红相似度最高的片段）
+                    if (maxSimilarDetail != null) {
+                        String repeatFragment = (String) maxSimilarDetail.get("repeatFragment");
+                        if (repeatFragment != null && content.contains(repeatFragment)) {
+                            // 用<span>标签包裹标红片段（只替换第一次出现）
+                            String highlightedContent = content.replaceFirst(
+                                    java.util.regex.Pattern.quote(repeatFragment),
+                                    "<span style=\"color:red\">" + java.util.regex.Matcher.quoteReplacement(repeatFragment) + "</span>"
+                            );
+                            paraDTO.setContent(highlightedContent);
+                        }
+                    }
+                    
+                    // 关联相似来源ID
+                    List<Long> sourceIds = paraRepeatDetails.stream()
+                            .map(detail -> {
+                                Object sourceIdObj = detail.get("sourceId");
+                                if (sourceIdObj instanceof Long) {
+                                    return (Long) sourceIdObj;
+                                } else if (sourceIdObj instanceof Number) {
+                                    return ((Number) sourceIdObj).longValue();
+                                } else if (sourceIdObj instanceof String) {
+                                    try {
+                                        return Long.parseLong((String) sourceIdObj);
+                                    } catch (NumberFormatException e) {
+                                        return null;
+                                    }
+                                }
+                                return null;
+                            })
+                            .filter(Objects::nonNull)
+                            .distinct()
+                            .collect(Collectors.toList());
+                    paraDTO.setSourceIds(sourceIds);
+                } else {
+                    // 非重复段落
+                    paraDTO.setSimilarity(BigDecimal.ZERO);
+                    paraDTO.setIsRepeat(false);
+                    paraDTO.setSourceIds(new ArrayList<>());
+                }
+                
+                paragraphDTOs.add(paraDTO);
+            }
+        } catch (Exception e) {
+            log.error("构建分段信息失败: {}", e.getMessage(), e);
         }
-
+        
         return paragraphDTOs;
     }
 
@@ -239,39 +298,187 @@ public class ReportContentProcessor {
      * 构建相似来源列表
      */
     private List<ReportPreviewDTO.ReportSimilarSourceDTO> buildSimilarSources(String repeatDetailsJson) {
-        List<Map<String, Object>> repeatDetails = JSON.parseObject(
-                repeatDetailsJson,
-                new TypeReference<List<Map<String, Object>>>() {}
-        );
+        if (repeatDetailsJson == null || repeatDetailsJson.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        List<Map<String, Object>> repeatDetails;
+        try {
+            repeatDetails = new ObjectMapper().readValue(
+                    repeatDetailsJson,
+                    new TypeReference<List<Map<String, Object>>>() {}
+            );
+        } catch (Exception e) {
+            log.error("解析重复详情失败: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+        
+        if (repeatDetails == null || repeatDetails.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
         // 去重相似来源（按sourceId分组）
-        Map<Long, Map<String, Object>> sourceMap = repeatDetails.stream()
-                .collect(Collectors.toMap(
-                        detail -> (Long) detail.get("sourceId"),
-                        detail -> detail,
-                        (d1, d2) -> {
-                            // 合并相同来源的最大相似度
-                            double maxSimilarity = Math.max(
-                                    (Double) d1.get("similarity"),
-                                    (Double) d2.get("similarity")
-                            );
-                            d1.put("similarity", maxSimilarity);
-                            return d1;
+        Map<Long, Map<String, Object>> sourceMap = new HashMap<>();
+        
+        for (Map<String, Object> detail : repeatDetails) {
+            Object sourceIdObj = detail.get("sourceId");
+            if (sourceIdObj != null) {
+                // 处理不同类型的sourceId
+                Long sourceIdLong = null;
+                if (sourceIdObj instanceof Long) {
+                    sourceIdLong = (Long) sourceIdObj;
+                } else if (sourceIdObj instanceof Integer) {
+                    sourceIdLong = ((Integer) sourceIdObj).longValue();
+                } else if (sourceIdObj instanceof String) {
+                    try {
+                        sourceIdLong = Long.parseLong((String) sourceIdObj);
+                    } catch (NumberFormatException e) {
+                        // 忽略无法转换的sourceId
+                        continue;
+                    }
+                }
+                
+                if (sourceIdLong != null) {
+                    if (sourceMap.containsKey(sourceIdLong)) {
+                        // 合并相同来源的最大相似度
+                        Map<String, Object> existingDetail = sourceMap.get(sourceIdLong);
+                        double existingSimilarity = getSimilarityValue(existingDetail.get("similarity"));
+                        double currentSimilarity = getSimilarityValue(detail.get("similarity"));
+                        if (currentSimilarity > existingSimilarity) {
+                            existingDetail.put("similarity", currentSimilarity);
                         }
-                ));
+                    } else {
+                        sourceMap.put(sourceIdLong, detail);
+                    }
+                }
+            }
+        }
 
         // 转换为DTO
         return sourceMap.values().stream()
                 .map(detail -> {
                     ReportPreviewDTO.ReportSimilarSourceDTO sourceDTO = new ReportPreviewDTO.ReportSimilarSourceDTO();
-                    sourceDTO.setSourceId((Long) detail.get("sourceId"));
-                    sourceDTO.setSourceName((String) detail.get("sourceName"));
-                    sourceDTO.setSourceType((String) detail.get("sourceType"));
-                    sourceDTO.setSourceUrl((String) detail.get("sourceUrl"));
-                    sourceDTO.setMaxSimilarity((Double) detail.get("similarity"));
+                    
+                    // 安全的类型转换
+                    Object sourceIdObj = detail.get("sourceId");
+                    if (sourceIdObj != null) {
+                        if (sourceIdObj instanceof Long) {
+                            sourceDTO.setSourceId((Long) sourceIdObj);
+                        } else if (sourceIdObj instanceof Number) {
+                            sourceDTO.setSourceId(((Number) sourceIdObj).longValue());
+                        } else if (sourceIdObj instanceof String) {
+                            try {
+                                sourceDTO.setSourceId(Long.parseLong((String) sourceIdObj));
+                            } catch (NumberFormatException e) {
+                                // 忽略转换错误
+                            }
+                        }
+                    }
+                    
+                    Object sourceNameObj = detail.get("sourceName");
+                    if (sourceNameObj != null) {
+                        sourceDTO.setSourceName(sourceNameObj.toString());
+                    }
+                    
+                    Object sourceTypeObj = detail.get("sourceType");
+                    if (sourceTypeObj != null) {
+                        sourceDTO.setSourceType(sourceTypeObj.toString());
+                    }
+                    
+                    Object sourceUrlObj = detail.get("sourceUrl");
+                    if (sourceUrlObj != null) {
+                        sourceDTO.setSourceUrl(sourceUrlObj.toString());
+                    }
+                    
+                    Object similarityObj = detail.get("similarity");
+                    if (similarityObj != null) {
+                        if (similarityObj instanceof java.math.BigDecimal) {
+                            sourceDTO.setMaxSimilarity((java.math.BigDecimal) similarityObj);
+                        } else if (similarityObj instanceof Double) {
+                            sourceDTO.setMaxSimilarity(java.math.BigDecimal.valueOf((Double) similarityObj));
+                        } else if (similarityObj instanceof Number) {
+                            sourceDTO.setMaxSimilarity(java.math.BigDecimal.valueOf(((Number) similarityObj).doubleValue()));
+                        } else if (similarityObj instanceof String) {
+                            try {
+                                sourceDTO.setMaxSimilarity(java.math.BigDecimal.valueOf(Double.parseDouble((String) similarityObj)));
+                            } catch (NumberFormatException e) {
+                                // 忽略转换错误
+                            }
+                        }
+                    }
+                    
                     return sourceDTO;
                 })
-                .sorted((s1, s2) -> Double.compare(s2.getMaxSimilarity(), s1.getMaxSimilarity())) // 按相似度降序
+                .filter(sourceDTO -> sourceDTO.getMaxSimilarity() != null) // 过滤掉相似度为null的来源
+                .sorted((s1, s2) -> s1.getMaxSimilarity().compareTo(s2.getMaxSimilarity()) * -1) // 按相似度降序
                 .collect(Collectors.toList());
+    }
+    
+    /**
+     * 获取相似度值
+     */
+    private double getSimilarityValue(Object similarityObj) {
+        if (similarityObj == null) {
+            return 0.0;
+        }
+        if (similarityObj instanceof java.math.BigDecimal) {
+            return ((java.math.BigDecimal) similarityObj).doubleValue();
+        } else if (similarityObj instanceof Double) {
+            return (Double) similarityObj;
+        } else if (similarityObj instanceof Number) {
+            return ((Number) similarityObj).doubleValue();
+        } else if (similarityObj instanceof String) {
+            try {
+                return Double.parseDouble((String) similarityObj);
+            } catch (NumberFormatException e) {
+                return 0.0;
+            }
+        }
+        return 0.0;
+    }
+
+    /**
+     * 提取论文文本
+     */
+    public String extractPaperText(Long fileId) {
+        try {
+            // 1. 优先从Minio读取
+            PaperInfo paperInfo = paperInfoMapper.selectList(
+                    new LambdaQueryWrapper<PaperInfo>()
+                            .eq(PaperInfo::getFileId, fileId)
+                            .orderByDesc(PaperInfo::getCreateTime)
+            ).stream().findFirst().orElse(null);
+            
+            if (paperInfo != null && paperInfo.getContentPath() != null && !paperInfo.getContentPath().isEmpty()) {
+                try {
+                    String minioContent = paperContentMinioService.readPaperContent(paperInfo.getContentPath());
+                    if (minioContent != null && !minioContent.isEmpty()) {
+                        log.info("从Minio获取论文内容成功");
+                        return minioContent;
+                    }
+                } catch (Exception e) {
+                    log.warn("从Minio读取论文内容失败: {}", e.getMessage());
+                }
+            }
+            
+            // 2. 从本地文件系统读取
+            if (paperInfo != null && paperInfo.getFilePath() != null) {
+                String filePath = paperInfo.getFilePath();
+                if (!filePath.startsWith("/")) {
+                    filePath = "/" + filePath;
+                }
+                String fullPath = "/data/upload" + filePath;
+                String content = TikaTextExtractor.extractTextFromFile(fullPath);
+                log.info("从本地文件系统获取论文内容成功: {}", fullPath);
+                return content;
+            }
+            
+            log.warn("未找到论文文件: fileId={}", fileId);
+            return "";
+        } catch (Exception e) {
+            log.error("提取论文文本失败: {}", e.getMessage(), e);
+            return "";
+        }
     }
 
     /**

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.abin.checkrepeatsystem.admin.mapper.SysRoleMapper">
+<mapper namespace="com.abin.checkrepeatsystem.mapper.SysRoleMapper">
 
     <!-- 根据角色编码查询角色 -->
     <select id="selectByRoleCode" resultType="com.abin.checkrepeatsystem.pojo.entity.SysRole">

@@ -227,8 +227,8 @@ public class EnhancedPdfReportGenerator {
         // 按相似度排序显示前10个段落
         paragraphs.stream()
                 .sorted((p1, p2) -> {
-                    Double s1 = p1.getSimilarity() != null ? p1.getSimilarity() : 0.0;
-                    Double s2 = p2.getSimilarity() != null ? p2.getSimilarity() : 0.0;
+                    BigDecimal s1 = p1.getSimilarity() != null ? p1.getSimilarity() : BigDecimal.ZERO;
+                    BigDecimal s2 = p2.getSimilarity() != null ? p2.getSimilarity() : BigDecimal.ZERO;
                     return s2.compareTo(s1); // 降序排列
                 })
                 .limit(10)
@@ -274,7 +274,7 @@ public class EnhancedPdfReportGenerator {
             
             if (source.getMaxSimilarity() != null) {
                 String similarityText = String.format("%.2f%%", source.getMaxSimilarity());
-                DeviceRgb color = getRateColor(BigDecimal.valueOf(source.getMaxSimilarity()));
+                DeviceRgb color = getRateColor(source.getMaxSimilarity());
                 addTableData(sourceTable, font, similarityText, color);
             } else {
                 addTableData(sourceTable, font, "0.00%");
@@ -381,8 +381,8 @@ public class EnhancedPdfReportGenerator {
         String title = String.format("段落 %d (相似度: %.2f%%)", 
                                    paragraph.getParagraphNo(),
                                    paragraph.getSimilarity() != null ? paragraph.getSimilarity() : 0.0);
-        DeviceRgb titleColor = getRateColor(BigDecimal.valueOf(
-                paragraph.getSimilarity() != null ? paragraph.getSimilarity() : 0.0));
+        DeviceRgb titleColor = getRateColor(
+                paragraph.getSimilarity() != null ? paragraph.getSimilarity() : BigDecimal.ZERO);
         
         Paragraph titlePara = new Paragraph(title)
                 .setFont(font)

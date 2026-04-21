@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.teacher.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 /**
@@ -11,11 +12,13 @@ public class PlagiarismReportVO {
     /**
      * 报告ID
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private String reportId;
     
     /**
      * 论文ID
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private String paperId;
     
     /**

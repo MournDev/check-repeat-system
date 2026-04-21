@@ -8,13 +8,17 @@ import com.abin.checkrepeatsystem.pojo.dto.UpdatePasswordReq;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.abin.checkrepeatsystem.pojo.entity.SysRole;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.student.dto.UpdateEmailReq;
 import com.abin.checkrepeatsystem.student.service.InfoService;
 import com.abin.checkrepeatsystem.student.vo.LoginHistoryVO;
 import com.abin.checkrepeatsystem.student.vo.LoginLogQueryReq;
 import com.abin.checkrepeatsystem.user.dto.UpdateUserInfoReq;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
+import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
+import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -35,9 +39,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -77,6 +78,12 @@ public class InfoServiceImpl implements InfoService {
     @Resource
     private JavaMailSender mailSender;
 
+    @Resource
+    private StudentInfoService studentInfoService;
+    
+    @Resource
+    private ConversationMemberMapper conversationMemberMapper;
+
     @Override
     public Result<LoginVO> updateUserInfo(UpdateUserInfoReq updateReq) {
         try {
@@ -101,13 +108,19 @@ public class InfoServiceImpl implements InfoService {
             currentUser.setRealName(updateReq.getRealName());
             currentUser.setEmail(updateReq.getEmail());
             currentUser.setPhone(updateReq.getPhone());
-            currentUser.setMajor(updateReq.getMajor());
-            currentUser.setCollegeName(updateReq.getCollegeName());
-            currentUser.setGrade(updateReq.getGrade());
-            currentUser.setClassName(updateReq.getClassName());
             currentUser.setIntroduce(updateReq.getIntroduce());
 
             sysUserMapper.updateById(currentUser);
+            
+            // 3. 更新学生信息
+            StudentInfo studentInfo = studentInfoService.getByUserId(currentUser.getId());
+            if (studentInfo != null) {
+                studentInfo.setMajor(updateReq.getMajor());
+                studentInfo.setCollegeName(updateReq.getCollegeName());
+                studentInfo.setGrade(updateReq.getGrade());
+                studentInfo.setClassName(updateReq.getClassName());
+                studentInfoService.saveOrUpdate(studentInfo);
+            }
 
             // 3. 查询角色信息用于构建 LoginVO
             SysRole sysRole = sysRoleMapper.selectById(currentUser.getRoleId());
@@ -122,14 +135,18 @@ public class InfoServiceImpl implements InfoService {
             loginVO.setRoleCode(sysRole.getRoleCode());
             loginVO.setUsername(currentUser.getUsername());
             loginVO.setRealName(currentUser.getRealName());
-            loginVO.setMajor(currentUser.getMajor());
-            loginVO.setCollegeName(currentUser.getCollegeName());
-            loginVO.setGrade(currentUser.getGrade());
-            loginVO.setClassName(currentUser.getClassName());
             loginVO.setPhone(currentUser.getPhone());
             loginVO.setEmail(currentUser.getEmail());
             loginVO.setIntroduce(currentUser.getIntroduce());
             loginVO.setLastLoginTime(currentUser.getLastLoginTime());
+            
+            // 从StudentInfo表获取学生信息（复用上面已查询的studentInfo对象）
+            if (studentInfo != null) {
+                loginVO.setMajor(studentInfo.getMajor());
+                loginVO.setCollegeName(studentInfo.getCollegeName());
+                loginVO.setGrade(studentInfo.getGrade());
+                loginVO.setClassName(studentInfo.getClassName());
+            }
 
             log.info("用户信息更新成功：用户名={}", currentUser.getUsername());
             return Result.success( "用户信息更新成功", loginVO);
@@ -199,6 +216,16 @@ public class InfoServiceImpl implements InfoService {
             // 7. 更新用户头像路径
             currentUser.setAvatar(avatarUrl);
             sysUserMapper.updateById(currentUser);
+            
+            // 8. 同步更新会话成员的头像
+            LambdaQueryWrapper<ConversationMember> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(ConversationMember::getUserId, currentUser.getId());
+            List<ConversationMember> members = conversationMemberMapper.selectList(wrapper);
+            for (ConversationMember member : members) {
+                member.setAvatar(avatarUrl);
+                conversationMemberMapper.updateById(member);
+            }
+            log.info("同步更新会话成员头像成功: userId={}", currentUser.getId());
 
             log.info("用户头像上传成功： 头像路径={}", avatarUrl);
             return Result.success("头像上传成功", avatarUrl);

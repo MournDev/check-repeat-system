@@ -1,6 +1,5 @@
 package com.abin.checkrepeatsystem.common.enums;
 
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
@@ -9,7 +8,6 @@ import org.springframework.http.HttpStatus;
  * 规则：错误码=HTTP状态码*100 + 业务序号（如 40001=HTTP400+参数格式错）
  */
 @Getter
-@AllArgsConstructor
 public enum ResultCode {
     // ====================== 1. 参数相关错误（HTTP 400） ======================
     PARAM_EMPTY(40001, HttpStatus.BAD_REQUEST, "参数不能为空"),
@@ -57,4 +55,11 @@ public enum ResultCode {
     private final HttpStatus httpStatus;
     // 默认错误信息（可根据业务场景覆盖）
     private final String defaultMsg;
+
+    // 构造器
+    private ResultCode(Integer code, HttpStatus httpStatus, String defaultMsg) {
+        this.code = code;
+        this.httpStatus = httpStatus;
+        this.defaultMsg = defaultMsg;
+    }
 }

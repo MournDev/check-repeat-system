@@ -1,11 +1,12 @@
 package com.abin.checkrepeatsystem.teacher.service;
 
 import com.abin.checkrepeatsystem.common.Result;
-import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
 import com.abin.checkrepeatsystem.teacher.dto.UpdateTeacherInfoReq;
+import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.validation.Valid;
 
-public interface TeacherInfoService{
+public interface TeacherInfoService extends IService<TeacherInfo> {
     /**
      * 更新教师信息
      * @param updateReq 教师信息更新请求

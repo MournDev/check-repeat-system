@@ -33,6 +33,11 @@ public class AddStudentDTO {
     private String grade;
     
     /**
+     * 班级（可选）
+     */
+    private String className;
+    
+    /**
      * 邮箱（可选）
      */
     private String email;

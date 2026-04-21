@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.student.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -44,6 +45,7 @@ public class MessageSessionVO {
     @ApiModel("会话成员")
     public static class SessionMemberVO {
         @ApiModelProperty("用户ID")
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         private Long userId;
 
         @ApiModelProperty("用户姓名")

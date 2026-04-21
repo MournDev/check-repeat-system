@@ -74,7 +74,7 @@ public class WebSocketMessageHandler {
         // 这里可以集成到消息服务中
         if (message.getReceiverId() != null) {
             // 发送给指定用户
-            webSocketSender.sendToUser(message.getReceiverId(), "/queue/messages", message);
+            webSocketSender.sendToUser(message.getReceiverId(), message);
         }
         
         log.debug("聊天消息处理完成 - 发送者: {}, 接收者: {}", 
@@ -87,7 +87,7 @@ public class WebSocketMessageHandler {
     private void handleTypingMessage(WebSocketMessage message) {
         // 通知对方用户正在输入
         if (message.getReceiverId() != null) {
-            webSocketSender.sendToUser(message.getReceiverId(), "/queue/typing", message);
+            webSocketSender.sendToUser(message.getReceiverId(), message);
         }
     }
 

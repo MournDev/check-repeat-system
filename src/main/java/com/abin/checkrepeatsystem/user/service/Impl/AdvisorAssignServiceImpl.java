@@ -1,6 +1,5 @@
 package com.abin.checkrepeatsystem.user.service.Impl;
 
-import cn.hutool.core.date.DateTime;
 import com.abin.checkrepeatsystem.common.Exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
@@ -11,23 +10,18 @@ import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.user.mapper.TeacherAllocationRecordMapper;
 import com.abin.checkrepeatsystem.user.service.AdvisorAssignService;
-import com.abin.checkrepeatsystem.user.service.MessageService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.abin.checkrepeatsystem.user.vo.PaperAdvisorTaskVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 
@@ -48,20 +42,13 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     private TeacherAllocationRecordMapper teacherAllocationRecordMapper;
 
     @Resource
-    private NotificationFacadeService notificationFacadeService;
-
-    @Resource
     private InternalMessageNotificationService internalMessageNotificationService;
 
     @Resource
-    private EmailNotificationService emailNotificationService;
+    private TeacherInfoDataService teacherInfoService;
 
     @Resource
-    private MessageService messageService;
-
-
-
-    private final UserBusinessInfoUtils userBusinessInfoUtils;
+    private  UserBusinessInfoUtils userBusinessInfoUtils;
 
     @Value("${advisor-assign.max-task-count}")
     private Integer maxTaskCount;
@@ -139,10 +126,10 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
                 }
 
                 // 5. 更新老师任务数
-                SysUser advisor = sysUserMapper.selectById(bestAdvisor.getAdvisorId());
-                if (advisor != null) {
-                    advisor.setCurrentAdvisorCount(advisor.getCurrentAdvisorCount() + 1);
-                    sysUserMapper.updateById(advisor);
+                TeacherInfo teacherInfo = teacherInfoService.getByUserId(bestAdvisor.getAdvisorId());
+                if (teacherInfo != null) {
+                    teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
+                    teacherInfoService.saveOrUpdate(teacherInfo);
                 }
 
                 // 6. 创建分配记录
@@ -173,7 +160,13 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
         if ((advisor == null) || !"2001".equals(advisor.getRoleId())) {
             throw new BusinessException(ResultCode.BUSINESS_ILLEGAL, "指导老师不合法");
         }
-        if (advisor.getCurrentAdvisorCount() >= maxTaskCount) {
+        
+        // 检查老师任务数
+        TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacherId);
+        if (teacherInfo == null) {
+            throw new BusinessException(ResultCode.BUSINESS_ILLEGAL, "指导老师信息不存在");
+        }
+        if (teacherInfo.getCurrentAdvisorCount() >= maxTaskCount) {
             throw new BusinessException(ResultCode.BUSINESS_NO_TASK_MAX, "老师任务数已达上限");
         }
 
@@ -185,9 +178,10 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
         paperInfo.setAllocationStatus(DictConstants.AllocationStatus.PENDING);//待确认
         paperInfo.setAllocationTime(LocalDateTime.now());
         paperInfo.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);//已分配，等待学生确认
+        
         // 更新老师任务数
-        advisor.setCurrentAdvisorCount(advisor.getCurrentAdvisorCount() + 1);
-        sysUserMapper.updateById(advisor);
+        teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
+        teacherInfoService.saveOrUpdate(teacherInfo);
 
 
         // 创建分配记录
@@ -244,7 +238,6 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
         List<SysUser> teachers = sysUserMapper.selectList(
                 new LambdaQueryWrapper<SysUser>()
                         .eq(SysUser::getRoleId, 2001L)  // 修复：使用Long类型而不是字符串
-                        .lt(SysUser::getCurrentAdvisorCount, maxTaskCount)
                         .eq(SysUser::getIsDeleted, 0)
         );
 
@@ -252,11 +245,18 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
             PaperAdvisorTaskVO vo = new PaperAdvisorTaskVO();
             vo.setAdvisorId(teacher.getId());
             vo.setAdvisorName(teacher.getRealName());
-            vo.setMajorId(teacher.getMajorId());
-            vo.setResearchDirection(teacher.getResearchDirection());
-            vo.setCurrentTaskCount(teacher.getCurrentAdvisorCount());
+            
+            // 从TeacherInfo表获取教师详情
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+            if (teacherInfo != null) {
+                vo.setMajorId(teacherInfo.getMajorId());
+                vo.setResearchDirection(teacherInfo.getResearchDirection());
+                vo.setCurrentTaskCount(teacherInfo.getCurrentAdvisorCount());
+            }
+            
             return vo;
-        }).collect(Collectors.toList());
+        }).filter(vo -> vo.getCurrentTaskCount() < maxTaskCount) // 过滤任务数不超过上限的老师
+        .collect(Collectors.toList());
     }
 
     /**
@@ -304,7 +304,7 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     private void sendNotification(Long advisorId, Long paperId) {
         SysUser advisor = sysUserMapper.selectById(advisorId);
         String message = String.format("您已分配到新论文指导任务（论文ID：%d），请及时审核", paperId);
-        System.out.println("通知老师[" + advisor.getRealName() + "]：" + message);
+        // System.out.println("通知老师[" + advisor.getRealName() + "]：" + message); // 移除调试输出
         // 实际项目集成站内信/邮件服务
     }
 

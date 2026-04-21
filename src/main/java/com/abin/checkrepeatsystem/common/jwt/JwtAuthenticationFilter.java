@@ -44,11 +44,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 1. 获取请求URI
             String requestUri = request.getRequestURI();
 
-            // 2. 放行登录、注册和刷新令牌接口
+            // 2. 放行登录、注册、刷新令牌接口和Actuator监控接口
             if (requestUri.startsWith("/api/auth/login")
                     || requestUri.startsWith("/api/auth/register")
                     || requestUri.startsWith("/api/auth/refresh-token")
                     || requestUri.startsWith("/api/auth/forgot-password")
+                    || requestUri.startsWith("/check/actuator")
             ) {
                 // 直接放行，不进行JWT认证
                 filterChain.doFilter(request, response);
@@ -84,8 +85,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String headerAuth = request.getHeader(tokenHeader);
         if (StringUtils.hasText(headerAuth)) {
             // 移除Bearer前缀（如果存在）
-            if (headerAuth.startsWith(tokenPrefix + " ")) {
-                headerAuth = headerAuth.substring(tokenPrefix.length() + 1);
+            if (headerAuth.startsWith(tokenPrefix)) {
+                headerAuth = headerAuth.substring(tokenPrefix.length());
             }
             return headerAuth;
         }

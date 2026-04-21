@@ -7,12 +7,18 @@ import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SystemMessage;
+import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
 import com.abin.checkrepeatsystem.student.dto.StudentProfileDTO;
 import com.abin.checkrepeatsystem.student.dto.UpdateProfileReq;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.StudentProfileService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
+import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
+import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +49,15 @@ public class StudentProfileServiceImpl implements StudentProfileService {
     @Resource
     private MessageService messageService;
 
+    @Resource
+    private StudentInfoService studentInfoService;
+
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
+    
+    @Resource
+    private ConversationMemberMapper conversationMemberMapper;
+
     @Override
     public Result<StudentProfileDTO> getStudentProfile(Long studentId) {
         try {
@@ -57,12 +72,16 @@ public class StudentProfileServiceImpl implements StudentProfileService {
             profile.setName(student.getRealName());
             profile.setEmail(student.getEmail());
             profile.setPhone(student.getPhone());
-            profile.setCollege(student.getCollegeName());
-            profile.setMajor(student.getMajor());
-            profile.setGrade(student.getGrade());
-            profile.setClassName(student.getClassName());
             profile.setAvatar(student.getAvatar());
-            profile.setResearchInterest(student.getResearchDirection());
+            
+            // 从StudentInfo表获取学生信息
+            StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+            if (studentInfo != null) {
+                profile.setCollege(studentInfo.getCollegeName());
+                profile.setMajor(studentInfo.getMajor());
+                profile.setGrade(studentInfo.getGrade());
+                profile.setClassName(studentInfo.getClassName());
+            }
 
             // 获取指导关系
             LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
@@ -121,25 +140,42 @@ public class StudentProfileServiceImpl implements StudentProfileService {
             if (updateReq.getAvatar() != null) {
                 student.setAvatar(updateReq.getAvatar());
             }
-            if (updateReq.getResearchInterest() != null) {
-                student.setResearchDirection(updateReq.getResearchInterest());
-            }
             if (updateReq.getIntroduce() != null) {
                 student.setIntroduce(updateReq.getIntroduce());
-            }
-            if (updateReq.getGrade() != null) {
-                student.setGrade(updateReq.getGrade());
-            }
-            if (updateReq.getMajor() != null) {
-                student.setMajor(updateReq.getMajor());
-            }
-            if (updateReq.getClassName() != null) {
-                student.setClassName(updateReq.getClassName());
             }
             
             student.setUpdateTime(LocalDateTime.now());
             
             sysUserMapper.updateById(student);
+            
+            // 同步更新会话成员的头像
+            if (updateReq.getAvatar() != null) {
+                LambdaQueryWrapper<ConversationMember> wrapper = new LambdaQueryWrapper<>();
+                wrapper.eq(ConversationMember::getUserId, studentId);
+                List<ConversationMember> members = conversationMemberMapper.selectList(wrapper);
+                for (ConversationMember member : members) {
+                    member.setAvatar(updateReq.getAvatar());
+                    conversationMemberMapper.updateById(member);
+                }
+                log.info("同步更新会话成员头像成功: studentId={}", studentId);
+            }
+            
+            // 更新学生信息
+            StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+            if (studentInfo != null) {
+                if (updateReq.getGrade() != null) {
+                    studentInfo.setGrade(updateReq.getGrade());
+                }
+                if (updateReq.getMajor() != null) {
+                    studentInfo.setMajor(updateReq.getMajor());
+                }
+                if (updateReq.getClassName() != null) {
+                    studentInfo.setClassName(updateReq.getClassName());
+                }
+                
+                studentInfo.setUpdateTime(LocalDateTime.now());
+                studentInfoService.saveOrUpdate(studentInfo);
+            }
 
             log.info("更新学生个人资料成功: studentId={}", studentId);
             return Result.success("个人资料更新成功");
@@ -259,23 +295,28 @@ public class StudentProfileServiceImpl implements StudentProfileService {
         StudentProfileDTO.AdvisorInfo advisorInfo = new StudentProfileDTO.AdvisorInfo();
         advisorInfo.setId(advisor.getId());
         advisorInfo.setName(advisor.getRealName());
-        advisorInfo.setTitle(advisor.getProfessionalTitle() != null ? advisor.getProfessionalTitle() : "教师");
         advisorInfo.setPhone(advisor.getPhone());
         advisorInfo.setEmail(advisor.getEmail());
-        advisorInfo.setOffice(advisor.getOffice() != null ? advisor.getOffice() : "未设置");
         advisorInfo.setAvatar(advisor.getAvatar());
-        advisorInfo.setResearchField(advisor.getResearchDirection());
         
-        // 添加专长领域（假设用逗号分隔）
-        if (advisor.getResearchDirection() != null) {
-            String[] fields = advisor.getResearchDirection().split(",");
-            List<String> expertiseList = new ArrayList<>();
-            for (String field : fields) {
-                if (!field.trim().isEmpty()) {
-                    expertiseList.add(field.trim());
+        // 从TeacherInfo表获取教师信息
+        TeacherInfo teacherInfo = teacherInfoService.getByUserId(advisor.getId());
+        if (teacherInfo != null) {
+            advisorInfo.setTitle(teacherInfo.getProfessionalTitle() != null ? teacherInfo.getProfessionalTitle() : "教师");
+            advisorInfo.setOffice(teacherInfo.getOffice() != null ? teacherInfo.getOffice() : "未设置");
+            advisorInfo.setResearchField(teacherInfo.getResearchDirection());
+            
+            // 添加专长领域（假设用逗号分隔）
+            if (teacherInfo.getResearchDirection() != null) {
+                String[] fields = teacherInfo.getResearchDirection().split(",");
+                List<String> expertiseList = new ArrayList<>();
+                for (String field : fields) {
+                    if (!field.trim().isEmpty()) {
+                        expertiseList.add(field.trim());
+                    }
                 }
+                advisorInfo.setExpertise(expertiseList);
             }
-            advisorInfo.setExpertise(expertiseList);
         }
         
         return advisorInfo;

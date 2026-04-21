@@ -1,6 +1,8 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.mapper.SystemConfigMapper;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
+import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
@@ -8,11 +10,12 @@ import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
 import com.abin.checkrepeatsystem.student.dto.*;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +48,9 @@ public class StudentDashboardService {
     @Resource
     private SystemConfigMapper systemConfigMapper;
 
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
+
     public StudentDashboardStatsDTO getDashboardStats(Long studentId) {
         StudentDashboardStatsDTO stats = new StudentDashboardStatsDTO();
         
@@ -60,7 +66,7 @@ public class StudentDashboardService {
         // 待审核数 (状态: auditing)
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "auditing")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         Long pendingCount = paperInfoMapper.selectCount(wrapper);
         stats.setPendingCount(pendingCount.intValue());
@@ -68,7 +74,7 @@ public class StudentDashboardService {
         // 已通过数 (状态: completed)
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "completed")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.COMPLETED.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         Long approvedCount = paperInfoMapper.selectCount(wrapper);
         stats.setApprovedCount(approvedCount.intValue());
@@ -76,7 +82,7 @@ public class StudentDashboardService {
         // 需修改数 (状态: rejected)
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "rejected")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.REJECTED.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         Long revisionCount = paperInfoMapper.selectCount(wrapper);
         stats.setRevisionCount(revisionCount.intValue());
@@ -114,13 +120,14 @@ public class StudentDashboardService {
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
                .ge(PaperInfo::getSubmitTime, weekStart)
-               .eq(PaperInfo::getPaperStatus, "completed")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.COMPLETED.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         Long thisWeekApproved = paperInfoMapper.selectCount(wrapper);
         stats.setThisWeekApproved(thisWeekApproved.intValue());
         
         // 5. 计算平均分 (假设论文有评分字段)
-        stats.setAvgScore(BigDecimal.valueOf(85.5)); // 模拟数据
+        // 暂时设置为0，后续从数据库获取实际评分
+        stats.setAvgScore(BigDecimal.ZERO);
         
         // 6. 计算总字数
         Integer totalWords = getTotalWordCount(studentId);
@@ -173,6 +180,17 @@ public class StudentDashboardService {
             return null;
         }
 
+        // 权限检查：确保当前用户是学生本人或该学生的指导教师
+        SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
+        if (currentUser != null) {
+            boolean isStudent = currentUser.getId().equals(studentId);
+            boolean isTeacher = currentUser.getId().equals(latestPaper.getTeacherId());
+            boolean isAdmin = UserBusinessInfoUtils.isAdmin();
+            if (!isStudent && !isTeacher && !isAdmin) {
+                return null;
+            }
+        }
+
         SysUser teacher = sysUserMapper.selectById(latestPaper.getTeacherId());
         if (teacher == null) {
             return null;
@@ -186,7 +204,12 @@ public class StudentDashboardService {
         dto.setEmail(teacher.getEmail());
 //        dto.setOffice(teacher.getOffice());
         dto.setAvatar(teacher.getAvatar());
-        dto.setResearchField(teacher.getResearchDirection());
+        
+        // 从TeacherInfo表获取教师的研究方向
+        TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+        if (teacherInfo != null) {
+            dto.setResearchField(teacherInfo.getResearchDirection());
+        }
 
         // 专长领域（逗号分隔转换为列表）
 //        if (StringUtils.isNotBlank(advisor.getExpertise())) {
@@ -197,7 +220,8 @@ public class StudentDashboardService {
 //        dto.setGuidedPapersCount(advisorInfoMapper.countGuidedPapers(advisor.getId()));
 //        dto.setApprovalRate(advisorInfoMapper.calculateApprovalRate(advisor.getId()));
 //        dto.setAverageScore(advisorInfoMapper.calculateAverageScore(advisor.getId()));
-        dto.setOnlineStatus("online"); // 可以从在线状态服务获取
+        // 在线状态：暂时设置为offline，后续从在线状态服务获取
+        dto.setOnlineStatus("offline");
 
         return dto;
     }
@@ -316,7 +340,7 @@ public class StudentDashboardService {
         // 2. 通过率
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "completed")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.COMPLETED.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         Long approvedCount = paperInfoMapper.selectCount(wrapper);
         Integer passRate = totalCount > 0 ? 
@@ -347,16 +371,18 @@ public class StudentDashboardService {
         // 4. 修改次数 (简化计算，实际应统计每个论文的修改版本数)
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "rejected")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.REJECTED.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         Long revisionCount = paperInfoMapper.selectCount(wrapper);
         radar.setRevisionTimes(Math.min(revisionCount.intValue(), 5));
         
         // 5. 按时提交率 (简化计算)
-        radar.setOnTimeSubmission(95); // 模拟数据
+        // 暂时设置为0，后续从数据库获取实际数据
+        radar.setOnTimeSubmission(0);
         
         // 6. 导师评分 (简化计算)
-        radar.setAdvisorRating(88); // 模拟数据
+        // 暂时设置为0，后续从数据库获取实际数据
+        radar.setAdvisorRating(0);
         
         return radar;
     }
@@ -391,14 +417,10 @@ public class StudentDashboardService {
             }
         }
         
-        // 如果没有数据，提供默认值
+        // 如果没有数据，提供空列表
         if (versions.isEmpty()) {
-            versions.addAll(Arrays.asList("V1", "V2", "V3"));
-            similarities.addAll(Arrays.asList(
-                BigDecimal.valueOf(25.8), 
-                BigDecimal.valueOf(22.3), 
-                BigDecimal.valueOf(18.5)
-            ));
+            versions = new ArrayList<>();
+            similarities = new ArrayList<>();
         }
         
         trend.setVersions(versions);
@@ -413,14 +435,11 @@ public class StudentDashboardService {
     public MajorComparisonDTO getMajorComparison(Long studentId) {
         MajorComparisonDTO comparison = new MajorComparisonDTO();
         
-        // 维度名称
-        comparison.setDimensions(Arrays.asList("论文质量", "创新性", "规范性", "工作量", "答辩表现"));
-        
-        // 我的水平得分 (模拟数据)
-        comparison.setMyLevel(Arrays.asList(85, 78, 92, 88, 90));
-        
-        // 专业平均分 (模拟数据)
-        comparison.setMajorAverage(Arrays.asList(75, 70, 80, 75, 78));
+        // 从数据库获取专业对比数据
+        // 暂时返回空数据，后续实现从数据库获取
+        comparison.setDimensions(new ArrayList<>());
+        comparison.setMyLevel(new ArrayList<>());
+        comparison.setMajorAverage(new ArrayList<>());
         
         return comparison;
     }
@@ -434,7 +453,7 @@ public class StudentDashboardService {
         // 1. 检查是否有待审核的论文
         LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "auditing")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         
         if (paperInfoMapper.selectCount(wrapper) > 0) {
@@ -451,7 +470,7 @@ public class StudentDashboardService {
         // 2. 检查是否有需要修改的论文
         wrapper.clear();
         wrapper.eq(PaperInfo::getStudentId, studentId)
-               .eq(PaperInfo::getPaperStatus, "rejected")
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.REJECTED.getValue())
                .eq(PaperInfo::getIsDeleted, 0);
         
         if (paperInfoMapper.selectCount(wrapper) > 0) {
@@ -484,33 +503,8 @@ public class StudentDashboardService {
     public List<NotificationDTO> getNotifications(Long studentId, Integer limit) {
         List<NotificationDTO> notifications = new ArrayList<>();
         
-        // 模拟通知数据
-        NotificationDTO notif1 = new NotificationDTO();
-        notif1.setId(1L);
-        notif1.setType("success");
-        notif1.setTitle("论文提交成功");
-        notif1.setContent("您的论文《基于深度学习的图像识别研究》已成功提交");
-        notif1.setTime(new Date());
-        notif1.setIsRead(false);
-        notifications.add(notif1);
-        
-        NotificationDTO notif2 = new NotificationDTO();
-        notif2.setId(2L);
-        notif2.setType("info");
-        notif2.setTitle("导师已审阅");
-        notif2.setContent("张教授已审阅您的论文，请查看反馈意见");
-        notif2.setTime(Date.from(LocalDate.now().minusDays(2).atStartOfDay(ZoneId.systemDefault()).toInstant()));
-        notif2.setIsRead(true);
-        notifications.add(notif2);
-        
-        NotificationDTO notif3 = new NotificationDTO();
-        notif3.setId(3L);
-        notif3.setType("warning");
-        notif3.setTitle("查重结果提醒");
-        notif3.setContent("您的论文查重率为15.2%，符合要求");
-        notif3.setTime(Date.from(LocalDate.now().minusDays(5).atStartOfDay(ZoneId.systemDefault()).toInstant()));
-        notif3.setIsRead(true);
-        notifications.add(notif3);
+        // 从数据库获取通知数据
+        // 暂时返回空列表，后续实现从数据库获取
         
         // 限制返回数量
         return limit != null && limit < notifications.size() ? 
@@ -531,63 +525,17 @@ public class StudentDashboardService {
             progress.setCurrentStep(0); // 未开始
         }
         
-        // 预计完成时间
-        progress.setEstimatedCompletion(LocalDate.now().plusDays(30).toString());
+        // 从数据库获取预计完成时间
+        // 暂时设置为空，后续从数据库获取
+        progress.setEstimatedCompletion("");
         
-        // 处理速度评价
-        progress.setProcessingSpeed("正常");
+        // 从数据库获取处理速度评价
+        // 暂时设置为空，后续从数据库获取
+        progress.setProcessingSpeed("");
         
-        // 构建步骤详情
-        List<ProgressTrackingDTO.ProgressStepDTO> steps = new ArrayList<>();
-        
-        // 步骤1: 开题报告
-        ProgressTrackingDTO.ProgressStepDTO step1 = new ProgressTrackingDTO.ProgressStepDTO();
-        step1.setStep(1);
-        step1.setName("开题报告");
-        step1.setStatus("finish");
-        step1.setCompletedTime(Date.from(LocalDate.now().minusMonths(3).atStartOfDay(ZoneId.systemDefault()).toInstant()));
-        step1.setDescription("开题报告已通过审核");
-        steps.add(step1);
-        
-        // 步骤2: 论文初稿
-        ProgressTrackingDTO.ProgressStepDTO step2 = new ProgressTrackingDTO.ProgressStepDTO();
-        step2.setStep(2);
-        step2.setName("论文初稿");
-        step2.setStatus(progress.getCurrentStep() >= 2 ? "finish" : "process");
-        if (progress.getCurrentStep() >= 2) {
-            step2.setCompletedTime(Date.from(LocalDate.now().minusWeeks(2).atStartOfDay(ZoneId.systemDefault()).toInstant()));
-        }
-        step2.setDescription("论文初稿已提交");
-        steps.add(step2);
-        
-        // 步骤3: 论文修改
-        ProgressTrackingDTO.ProgressStepDTO step3 = new ProgressTrackingDTO.ProgressStepDTO();
-        step3.setStep(3);
-        step3.setName("论文修改");
-        step3.setStatus(progress.getCurrentStep() >= 3 ? "finish" : "wait");
-        if (progress.getCurrentStep() >= 3) {
-            step3.setCompletedTime(new Date());
-        }
-        step3.setDescription("根据导师意见修改论文");
-        steps.add(step3);
-        
-        // 步骤4: 最终审核
-        ProgressTrackingDTO.ProgressStepDTO step4 = new ProgressTrackingDTO.ProgressStepDTO();
-        step4.setStep(4);
-        step4.setName("最终审核");
-        step4.setStatus(progress.getCurrentStep() >= 4 ? "finish" : "wait");
-        step4.setDescription("等待最终审核结果");
-        steps.add(step4);
-        
-        // 步骤5: 答辩准备
-        ProgressTrackingDTO.ProgressStepDTO step5 = new ProgressTrackingDTO.ProgressStepDTO();
-        step5.setStep(5);
-        step5.setName("答辩准备");
-        step5.setStatus("wait");
-        step5.setDescription("准备答辩材料");
-        steps.add(step5);
-        
-        progress.setSteps(steps);
+        // 从数据库获取步骤详情
+        // 暂时返回空列表，后续从数据库获取
+        progress.setSteps(new ArrayList<>());
         
         return progress;
     }

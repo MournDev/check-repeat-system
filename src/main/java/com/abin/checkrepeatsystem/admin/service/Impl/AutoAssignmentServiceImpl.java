@@ -6,12 +6,14 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.admin.dto.*;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.admin.mapper.AutoAssignmentHistoryMapper;
 import com.abin.checkrepeatsystem.admin.mapper.AutoAssignmentConfigMapper;
 import com.abin.checkrepeatsystem.pojo.entity.AutoAssignmentHistory;
 import com.abin.checkrepeatsystem.pojo.entity.AutoAssignmentConfig;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -23,10 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import static java.util.Collections.singletonList;
 
 /**
  * 自动论文分配服务实现类
@@ -46,6 +46,9 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
 
     @Resource
     private AutoAssignmentConfigMapper autoAssignmentConfigMapper;
+
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -147,10 +150,14 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
             preview.setAvailableTeachers(availableTeachers.size());
             
             // 计算预期分配数（简单估算）
-            preview.setExpectedAssigned(Math.min(unassignedPapers.size(), 
-                availableTeachers.stream()
-                    .mapToInt(t -> t.getMaxReviewCount() != null ? t.getMaxReviewCount() : 12)
-                    .sum()));
+            int totalCapacity = availableTeachers.stream()
+                .mapToInt(t -> {
+                    TeacherInfo teacherInfo = teacherInfoService.getByUserId(t.getId());
+                    return teacherInfo != null && teacherInfo.getMaxReviewCount() != null ? 
+                           teacherInfo.getMaxReviewCount() : 12;
+                })
+                .sum();
+            preview.setExpectedAssigned(Math.min(unassignedPapers.size(), totalCapacity));
             
             // 计算潜在冲突数（简单估算）
             preview.setPotentialConflicts(Math.max(0, unassignedPapers.size() - preview.getExpectedAssigned()));
@@ -398,8 +405,11 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
                         assignStudentToTeacher(student, bestTeacher);
                         
                         // 更新教师负载
-                        bestTeacher.setCurrentAdvisorCount(bestTeacher.getCurrentAdvisorCount() + 1);
-                        sysUserMapper.updateById(bestTeacher);
+                        TeacherInfo teacherInfo = teacherInfoService.getByUserId(bestTeacher.getId());
+                        if (teacherInfo != null) {
+                            teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
+                            teacherInfoService.saveOrUpdate(teacherInfo);
+                        }
                         
                         successCount++;
                         
@@ -474,11 +484,21 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
                .eq(SysUser::getStatus, 1)
                .eq(SysUser::getIsDeleted, 0);
         
+        List<SysUser> teachers = sysUserMapper.selectList(wrapper);
+        
         if (config.getExcludeFullTeachers()) {
-            wrapper.lt(SysUser::getCurrentAdvisorCount, 12);
+            // 过滤掉满负荷的教师
+            teachers = teachers.stream()
+                .filter(t -> {
+                    TeacherInfo teacherInfo = teacherInfoService.getByUserId(t.getId());
+                    int currentLoad = teacherInfo != null && teacherInfo.getCurrentAdvisorCount() != null ? 
+                                     teacherInfo.getCurrentAdvisorCount() : 0;
+                    return currentLoad < 12;
+                })
+                .collect(Collectors.toList());
         }
         
-        return sysUserMapper.selectList(wrapper);
+        return teachers;
     }
 
     /**
@@ -496,21 +516,29 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
     private int calculateMatchScore(PaperInfo student, SysUser teacher, AutoAssignmentConfigDTO config) {
         int score = 0;
         
+        // 从TeacherInfo表获取教师详情
+        TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+        
         // 专业匹配
-        if (Objects.equals(student.getMajorId(), teacher.getMajorId())) {
+        Long teacherMajorId = teacherInfo != null ? teacherInfo.getMajorId() : null;
+        if (Objects.equals(student.getMajorId(), teacherMajorId)) {
             score += config.getMajorWeight();
         } else if (config.getAllowCrossMajor()) {
             score += config.getMajorWeight() / 2; // 跨专业减半
         }
         
         // 研究兴趣匹配
-        if (isResearchInterestMatch(student.getPaperTitle(), teacher.getResearchDirection())) {
+        String researchDirection = teacherInfo != null ? teacherInfo.getResearchDirection() : null;
+        if (isResearchInterestMatch(student.getPaperTitle(), researchDirection)) {
             score += config.getInterestWeight();
         }
         
         // 负载均衡
-        int loadFactor = Math.max(0, 100 - (teacher.getCurrentAdvisorCount() * 100 / 
-                          (teacher.getMaxReviewCount())));
+        int currentLoad = teacherInfo != null && teacherInfo.getCurrentAdvisorCount() != null ? 
+                         teacherInfo.getCurrentAdvisorCount() : 0;
+        int maxLoad = teacherInfo != null && teacherInfo.getMaxReviewCount() != null ? 
+                      teacherInfo.getMaxReviewCount() : 12;
+        int loadFactor = Math.max(0, 100 - (currentLoad * 100 / maxLoad));
         score += (loadFactor * config.getLoadWeight()) / 100;
         
         // 经验权重（简单按指导年限计算）

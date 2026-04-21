@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.student.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -16,9 +17,11 @@ import java.util.List;
 public class MessageVO {
 
     @ApiModelProperty("消息ID")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long id;
 
     @ApiModelProperty("发送者ID")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long senderId;
 
     @ApiModelProperty("发送者姓名")
@@ -26,6 +29,9 @@ public class MessageVO {
 
     @ApiModelProperty("发送者角色")
     private String senderRole;
+
+    @ApiModelProperty("发送者标识 (student/teacher/advisor)")
+    private String sender;
 
     @ApiModelProperty("消息内容")
     private String content;
@@ -48,6 +54,14 @@ public class MessageVO {
     @ApiModelProperty("格式化后的时间（相对时间）")
     private String formattedTime;
 
+    @ApiModelProperty("会话ID")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long sessionId;
+
+    @ApiModelProperty("会话ID（兼容前端）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long conversationId;
+
     /**
      * 获取格式化的时间显示
      */
@@ -55,12 +69,12 @@ public class MessageVO {
         if (sendTime == null || sendTime.isEmpty()) {
             return "";
         }
-        
+
         try {
             LocalDateTime sentTime = LocalDateTime.parse(sendTime);
             LocalDateTime now = LocalDateTime.now();
             long minutesBetween = java.time.Duration.between(sentTime, now).toMinutes();
-            
+
             if (minutesBetween < 1) {
                 return "刚刚";
             } else if (minutesBetween < 60) {
@@ -87,6 +101,7 @@ public class MessageVO {
     @ApiModel("消息附件")
     public static class MessageAttachmentVO {
         @ApiModelProperty("附件ID")
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         private String id;
 
         @ApiModelProperty("附件名称")

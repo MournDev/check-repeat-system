@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.student.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.dto.UpdatePasswordReq;
 import com.abin.checkrepeatsystem.student.dto.UpdateEmailReq;
@@ -28,6 +29,7 @@ public class StudentInfoController {
      * @param updateReq 用户信息更新请求
      * @return 更新后的用户信息
      */
+    @OperationLog(type = "user_update_info", description = "用户更新个人信息", recordResult = true)
     @PostMapping("/update-info")
     public Result<LoginVO> updateUserInfo(@Valid @RequestBody UpdateUserInfoReq updateReq) {
         log.info("接收用户信息更新请求：用户ID={}", updateReq.getUserId());
@@ -38,6 +40,7 @@ public class StudentInfoController {
      * @param file 头像文件
      * @return 头像访问URL
      */
+    @OperationLog(type = "user_upload_avatar", description = "用户上传头像", recordResult = true)
     @PostMapping("/upload-avatar")
     public Result<String> uploadAvatar(@RequestParam("file") MultipartFile file) {
         log.info("接收用户头像上传请求：");
@@ -54,6 +57,7 @@ public class StudentInfoController {
      * @param queryReq 查询条件
      * @return 登录历史列表
      */
+    @OperationLog(type = "user_login_history", description = "查询登录历史")
     @PostMapping("/login-history")
     public Result<Page<LoginHistoryVO>> getLoginHistory(@RequestBody LoginLogQueryReq queryReq) {
         log.info("接收查询登录历史请求：{}", queryReq);
@@ -65,6 +69,7 @@ public class StudentInfoController {
      * @param updatePasswordReq 密码修改请求
      * @return 修改结果
      */
+    @OperationLog(type = "user_change_password", description = "用户修改密码", recordResult = true)
     @PutMapping("/update-password")
     public Result<String> updatePassword(@Valid @RequestBody UpdatePasswordReq updatePasswordReq) {
         log.info("接收用户密码修改请求");
@@ -76,6 +81,7 @@ public class StudentInfoController {
      * @param email 目标邮箱地址
      * @return 发送结果
      */
+    @OperationLog(type = "user_send_verify_email", description = "发送邮箱验证邮件", recordResult = true)
     @PostMapping("/send-verify-email")
     public Result<String> sendVerifyEmail(@RequestParam String email) {
         log.info("接收发送邮箱验证邮件请求：邮箱={}", email);
@@ -86,6 +92,7 @@ public class StudentInfoController {
      * 验证邮箱接口
      * @param token 验证令牌
      */
+    @OperationLog(type = "user_verify_email", description = "验证邮箱", recordResult = true)
     @GetMapping("/verify-email")
     public Result<String> verifyEmail(@RequestParam String token) {
         try {
@@ -102,6 +109,7 @@ public class StudentInfoController {
      * @param email 目标邮箱地址
      * @return 发送结果
      */
+    @OperationLog(type = "user_send_email_code", description = "发送邮箱验证码", recordResult = true)
     @PostMapping("/send-email-code")
     public Result<String> sendEmailCode(@RequestParam String email) {
         log.info("接收发送邮箱验证码请求：邮箱={}", email);
@@ -113,6 +121,7 @@ public class StudentInfoController {
      * @param updateReq 邮箱更新请求
      * @return 更新结果
      */
+    @OperationLog(type = "user_update_email", description = "更新用户邮箱", recordResult = true)
     @PostMapping("/update-email")
     public Result<String> updateEmail(@Valid @RequestBody UpdateEmailReq updateReq) {
         log.info("接收用户邮箱更新请求：用户ID={}", updateReq.getUserId());

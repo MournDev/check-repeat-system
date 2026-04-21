@@ -44,6 +44,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         
         <!-- Micrometer 监控指标 -->
         <dependency>
@@ -263,13 +268,6 @@
             <version>2.3.1</version>
         </dependency>
 
-        <!-- 文本处理工具 -->
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-text</artifactId>
-            <version>1.11.0</version>
-        </dependency>
-
         <!-- 数学计算（余弦相似度） -->
         <dependency>
             <groupId>org.apache.commons</groupId>
@@ -292,7 +290,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
-            <version>2.7.4</version>
         </dependency>
 
     <!-- AspectJ运行时依赖 -->
@@ -306,11 +303,12 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-aop</artifactId>
     </dependency>
-
-    <!-- Micrometer核心依赖 -->
+    
+    <!-- Jasypt 加密工具 -->
     <dependency>
-        <groupId>io.micrometer</groupId>
-        <artifactId>micrometer-core</artifactId>
+        <groupId>com.github.ulisesbocchio</groupId>
+        <artifactId>jasypt-spring-boot-starter</artifactId>
+        <version>3.0.5</version>
     </dependency>
     </dependencies>
 

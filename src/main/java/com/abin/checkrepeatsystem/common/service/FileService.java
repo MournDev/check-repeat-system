@@ -2,6 +2,8 @@ package com.abin.checkrepeatsystem.common.service;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
+import com.abin.checkrepeatsystem.detection.service.PaperContentExtractor;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
@@ -26,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,6 +91,12 @@ public class FileService {
 
     @Autowired
     private CheckReportMapper checkReportMapper;
+    
+    @Autowired
+    private PaperContentMinioService paperContentMinioService;
+    
+    @Autowired
+    private PaperContentExtractor paperContentExtractor;
 
     // 用于异步处理的线程池
     private final ExecutorService executorService = Executors.newFixedThreadPool(3);
@@ -103,24 +112,34 @@ public class FileService {
         log.info("开始处理文件上传 - 文件名：{}, 用户 ID: {}", originalFilename, userId);
 
         try {
-            // 1. 生成文件 ID
-            Long fileId = generateFileId();
-
-            // 2. 计算文件 MD5（使用字节数组方式，避免依赖临时文件）
+            // 1. 计算文件 MD5（使用字节数组方式，避免依赖临时文件）
             byte[] fileBytes = file.getBytes();
             String fileMd5 = calculateFileMd5FromBytes(fileBytes);
 
-            // 3. 保存文件到磁盘
-            String filePath = saveFileToDisk(file, fileId, String.valueOf(userId));
+            // 2. 同步检查文件是否存在并上传，防止并发插入导致唯一索引冲突
+            synchronized (this) {
+                // 检查是否已存在相同文件（通过MD5）
+                FileInfo existingFile = getByMd5(fileMd5);
+                if (existingFile != null) {
+                    log.info("文件已存在，使用已有的文件信息 - 文件 ID: {}, MD5: {}", existingFile.getId(), fileMd5);
+                    return existingFile.getId();
+                }
 
-            // 4. 保存文件基本信息到数据库（先不统计字数）
-            FileInfo fileInfo = saveBasicFileInfo(file, fileId, fileMd5, filePath, String.valueOf(userId));
+                // 3. 生成文件 ID
+                Long fileId = generateFileId();
 
-            // 5. 异步统计字数并更新数据库
-            asyncCountAndUpdateWordsFromBytes(fileBytes, fileInfo);
+                // 4. 保存文件到磁盘
+                String filePath = saveFileToDisk(file, fileId, String.valueOf(userId));
 
-            log.info("文件上传成功 - 文件 ID: {}, 文件名：{}, 用户 ID: {}", fileId, originalFilename, userId);
-            return fileId;
+                // 5. 保存文件基本信息到数据库（先不统计字数）
+                FileInfo fileInfo = saveBasicFileInfo(file, fileId, fileMd5, filePath, String.valueOf(userId));
+
+                // 6. 异步处理：统计字数和提取内容到Minio
+                asyncProcessFile(fileBytes, fileInfo);
+
+                log.info("文件上传成功 - 文件 ID: {}, 文件名：{}, 用户 ID: {}", fileId, originalFilename, userId);
+                return fileId;
+            }
 
         } catch (Exception e) {
             log.error("文件上传失败 - 文件名：{}, 用户 ID: {}", originalFilename, userId, e);
@@ -132,12 +151,16 @@ public class FileService {
      * 异步统计字数并更新数据库
      */
     /**
-     * 异步统计字数并更新数据库（基于字节数组）
+     * 异步处理文件：统计字数和提取内容到Minio
      */
-    private void asyncCountAndUpdateWordsFromBytes(byte[] fileBytes, FileInfo fileInfo) {
+    private void asyncProcessFile(byte[] fileBytes, FileInfo fileInfo) {
         CompletableFuture.runAsync(() -> {
             try {
+                log.info("开始异步处理文件 - 文件 ID: {}, 文件名: {}", fileInfo.getId(), fileInfo.getOriginalFilename());
+                
+                // 1. 统计字数
                 int wordCount = countWordsFromBytes(fileBytes);
+                log.info("字数统计完成 - 文件 ID: {}, 字数: {}", fileInfo.getId(), wordCount);
 
                 // 更新数据库中的字数
                 FileInfo updateInfo = new FileInfo();
@@ -145,13 +168,31 @@ public class FileService {
                 updateInfo.setWordCount(wordCount);
                 updateInfo.setUpdateTime(LocalDateTime.now());
 
-                fileInfoMapper.updateById(updateInfo);
+                int updateResult = fileInfoMapper.updateById(updateInfo);
+                log.info("字数更新到数据库 - 文件 ID: {}, 更新结果: {}", fileInfo.getId(), updateResult);
 
-                log.info("异步字数统计完成 - 文件 ID: {}, 文件名: {}, 字数: {}",
-                        fileInfo.getId(), fileInfo.getOriginalFilename(), wordCount);
+                // 2. 提取内容并存储到Minio
+                try {
+                    log.info("开始提取内容到Minio - 文件 ID: {}", fileInfo.getId());
+                    // 使用Tika提取文本内容
+                    String content = tika.parseToString(new ByteArrayInputStream(fileBytes));
+                    log.info("Tika提取内容完成 - 文件 ID: {}, 内容长度: {}", fileInfo.getId(), content != null ? content.length() : 0);
+                    
+                    if (content != null && !content.trim().isEmpty()) {
+                        // 存储到Minio
+                        String contentPath = paperContentMinioService.storePaperContent(content, fileInfo.getId());
+                        log.info("文件内容已存储到Minio - 文件 ID: {}, 路径: {}",
+                                fileInfo.getId(), contentPath);
+                    } else {
+                        log.warn("提取的内容为空，无法存储到Minio - 文件 ID: {}", fileInfo.getId());
+                    }
+                } catch (Exception e) {
+                    log.error("提取内容到Minio失败 - 文件 ID: {}, 文件名: {}",
+                            fileInfo.getId(), fileInfo.getOriginalFilename(), e);
+                }
 
             } catch (Exception e) {
-                log.warn("异步字数统计失败 - 文件 ID: {}, 文件名: {}",
+                log.error("异步处理文件失败 - 文件 ID: {}, 文件名: {}",
                         fileInfo.getId(), fileInfo.getOriginalFilename(), e);
 
                 // 失败时设置字数为0
@@ -420,9 +461,20 @@ public class FileService {
      * 根据MD5查找文件
      */
     public FileInfo getByMd5(String md5) {
-        return fileInfoMapper.selectOne(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<FileInfo>()
-                        .eq(FileInfo::getMd5, md5));
+        try {
+            List<FileInfo> fileInfos = fileInfoMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<FileInfo>()
+                            .eq(FileInfo::getMd5, md5));
+            
+            if (fileInfos == null || fileInfos.isEmpty()) {
+                return null;
+            }
+            // 如果有多条记录，返回第一条
+            return fileInfos.get(0);
+        } catch (Exception e) {
+            log.error("根据MD5查询文件失败", e);
+            return null;
+        }
     }
 
     /**

@@ -77,13 +77,22 @@ public class SecurityConfig {
                 // 配置URL权限规则
                 .authorizeHttpRequests(auth -> auth
                         // 放行公开接口
-                        .requestMatchers(
-                                "/api/auth/**",
-                                "/api/avatar/**",
-                                "/api/papers/**",
-                                "/api/file/**",
-                                "/api/minio/**").permitAll()
-                        // 学生接口：仅学生角色可访问
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/avatar/**").permitAll()
+                        .requestMatchers("/api/papers/public/**").permitAll()
+                        .requestMatchers("/api/minio/test-connection").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
+                        // WebSocket连接路径放行
+                        .requestMatchers("/ws/**").permitAll()
+                        // MinIO 接口需要认证
+                        .requestMatchers("/api/minio/**").authenticated()
+                        // 文件下载接口需要认证
+                        .requestMatchers("/api/file/download/**").authenticated()
+                        // 学生接口：允许学生、教师和管理员访问
+                        .requestMatchers("/api/student/check-tasks/taskDetail").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/student/dashboard/advisor").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/student/reports/list").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        // 其他学生接口：仅学生角色可访问
                         .requestMatchers("/api/student/**").hasAuthority("STUDENT")
                         // 教师接口：仅教师角色可访问
                         .requestMatchers("/api/teacher/**").hasAuthority("TEACHER")

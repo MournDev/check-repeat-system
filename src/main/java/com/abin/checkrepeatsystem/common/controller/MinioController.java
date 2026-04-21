@@ -19,36 +19,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
-@RestController("/api/minio")
+@RestController
+@RequestMapping("/api/minio")
 public class MinioController {
     @Autowired
     private MinioClient minioClient;
 
     @Value("${minio.bucket.main}")
     private String bucketName;
-
-    /**
-     * 测试MinIO连接
-     */
-    @GetMapping("/test-connection")
-    public Result<String> testConnection() {
-        try {
-            boolean exists = minioClient.bucketExists(
-                io.minio.BucketExistsArgs.builder()
-                    .bucket(bucketName)
-                    .build()
-            );
-            
-            if (exists) {
-                return Result.success("MinIO连接成功", "Bucket '" + bucketName + "' 存在且可访问");
-            } else {
-                return Result.error(ResultCode.SYSTEM_ERROR, "Bucket '" + bucketName + "' 不存在");
-            }
-        } catch (Exception e) {
-            log.error("MinIO连接测试失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "MinIO连接失败: " + e.getMessage());
-        }
-    }
 
     /**
      * 列出存储桶中的所有对象

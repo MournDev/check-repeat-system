@@ -56,7 +56,7 @@ public class TeacherReviewController {
     @PostMapping(value = "/do-review", consumes = "multipart/form-data")
     public Result<Map<String, Object>> doReview(
             @RequestParam("paperIds") List<Long> paperIds, // 论文ID列表（逗号分隔，如1,2,3）
-            @RequestParam("reviewStatus") Integer reviewStatus, // 3-通过，4-不通过
+            @RequestParam("reviewStatus") String reviewStatus, // completed-通过，rejected-不通过
             @RequestParam(value = "reviewOpinion", required = false) String reviewOpinion, // 审核意见
             @RequestParam(value = "reviewAttach", required = false) MultipartFile reviewAttach) { // 审核附件
         // 构建审核操作参数

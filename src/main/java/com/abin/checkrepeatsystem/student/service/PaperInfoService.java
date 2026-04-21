@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.student.service;
 
+import com.abin.checkrepeatsystem.pojo.entity.PaperAttachment;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.vo.PaperQueryRequest;
 import com.abin.checkrepeatsystem.student.dto.*;
@@ -194,4 +195,45 @@ public interface PaperInfoService extends IService<PaperInfo> {
      * @return 统计分析DTO
      */
     StatisticsDTO getPaperStatistics(Long paperId, Long studentId);
+    
+    /**
+     * 上传附件接口
+     * @param paperId 论文ID
+     * @param file 附件文件
+     * @param attachmentType 附件类型
+     * @param studentId 学生ID
+     * @return 附件信息
+     */
+    PaperAttachment uploadAttachment(Long paperId, MultipartFile file, String attachmentType, Long studentId);
+    
+    /**
+     * 获取论文附件列表
+     * @param paperId 论文ID
+     * @param studentId 学生ID
+     * @return 附件列表
+     */
+    List<PaperAttachment> getPaperAttachments(Long paperId, Long studentId);
+    
+    /**
+     * 删除附件接口
+     * @param attachmentId 附件ID
+     * @param studentId 学生ID
+     * @return 删除结果
+     */
+    boolean deleteAttachment(Long attachmentId, Long studentId);
+
+    /**
+     * 更新论文信息接口
+     * @param paperId 论文ID
+     * @param request 更新数据
+     * @param studentId 学生ID
+     * @return 更新后的论文信息
+     */
+    PaperInfo updatePaper(Long paperId, com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest request, Long studentId);
+
+    /**
+     * 获取专业列表接口
+     * @return 专业列表
+     */
+    List<com.abin.checkrepeatsystem.pojo.entity.Major> getMajorList();
 }

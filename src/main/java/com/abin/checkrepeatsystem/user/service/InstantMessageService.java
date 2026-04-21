@@ -50,7 +50,7 @@ public interface InstantMessageService {
      * @param userId 用户ID
      * @return 未读数量
      */
-    Result<Integer> getUnreadCount(Long userId);
+    Result<Long> getUnreadCount(Long userId);
 
     /**
      * 标记消息为已读

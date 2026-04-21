@@ -8,6 +8,7 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
+import com.abin.checkrepeatsystem.pojo.entity.PaperAttachment;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.PaperInfoService;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 学生论文控制器：处理论文上传、查询、删除等学生端接口
@@ -151,6 +153,22 @@ public class StudentPaperController {
     }
 
     /**
+     * 获取专业列表接口
+     *
+     * @return 专业列表
+     */
+    @GetMapping("/major/list")
+    public Result<List<com.abin.checkrepeatsystem.pojo.entity.Major>> getMajorList() {
+        try {
+            List<com.abin.checkrepeatsystem.pojo.entity.Major> majorList = paperInfoService.getMajorList();
+            return Result.success(majorList);
+        } catch (Exception e) {
+            log.error("获取专业列表失败", e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取专业列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 学生删除论文接口（支持软删除）
      * 只有待处理状态的论文可以删除，已进入查重流程的论文不允许删除
      *
@@ -174,9 +192,10 @@ public class StudentPaperController {
                 return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限删除他人论文");
             }
 
-            // 验证论文状态：只有待处理状态的论文可以删除
-            if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
-                String statusLabel = paperInfoService.getPaperStatusLabel(paperInfo.getPaperStatus());
+            // 验证论文状态：只有待处理状态和已撤回状态的论文可以删除
+            String paperStatus = paperInfo.getPaperStatus();
+            if (!DictConstants.PaperStatus.PENDING.equals(paperStatus) && !DictConstants.PaperStatus.WITHDRAWN.equals(paperStatus)) {
+                String statusLabel = paperInfoService.getPaperStatusLabel(paperStatus);
                 return Result.error(ResultCode.PERMISSION_NOT_STATUS,
                         "当前论文状态为【" + statusLabel + "】，不允许删除");
             }
@@ -197,6 +216,59 @@ public class StudentPaperController {
         } catch (Exception e) {
             log.error("论文删除失败 - 论文ID: {}", paperId, e);
             return Result.error(ResultCode.SYSTEM_ERROR, "论文删除失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 更新论文信息接口
+     *
+     * @param paperId 论文ID
+     * @param request 更新数据
+     * @return 更新结果
+     */
+    @PutMapping("/{paperId}/update")
+    @OperationLog(type = "student_paper_update", description = "学生更新论文信息", recordResult = true)
+    public Result<PaperInfo> updatePaper(@PathVariable Long paperId, @RequestBody PaperSubmitRequest request) {
+        try {
+            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("更新论文请求 - 学生ID: {}, 论文ID: {}, 请求参数: {}", studentId, paperId, request);
+
+            // 1. 权限与状态校验
+            PaperInfo paperInfo = paperInfoService.getById(paperId);
+            if (paperInfo == null) {
+                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
+            }
+
+            // 验证论文归属
+            if (!paperInfo.getStudentId().equals(studentId)) {
+                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限更新他人论文");
+            }
+
+            // 验证论文状态：只有待处理状态的论文可以更新
+            if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
+                String statusLabel = paperInfoService.getPaperStatusLabel(paperInfo.getPaperStatus());
+                return Result.error(ResultCode.PERMISSION_NOT_STATUS,
+                        "当前论文状态为【" + statusLabel + "】，不允许更新");
+            }
+
+            // 2. 验证请求参数
+            if (!validatePaperRequest(request)) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文信息不完整");
+            }
+
+            // 3. 验证文件是否存在
+            FileInfo fileInfo = fileService.getById(request.getFileId());
+            if (fileInfo == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "文件不存在或已被删除");
+            }
+
+            // 4. 调用服务层执行更新
+            PaperInfo updatedPaper = paperInfoService.updatePaper(paperId, request, studentId);
+            return Result.success("论文更新成功", updatedPaper);
+
+        } catch (Exception e) {
+            log.error("论文更新失败 - 论文ID: {}", paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "论文更新失败: " + e.getMessage());
         }
     }
     @DeleteMapping("/delete/file")
@@ -485,6 +557,60 @@ public class StudentPaperController {
             paperInfoService.downloadAttachment(attachmentId, studentId, response);
         } catch (Exception e) {
             log.error("下载附件失败 - 附件ID: {}", attachmentId, e);
+        }
+    }
+    
+    /**
+     * 13. 上传附件接口
+     * 上传论文附件
+     */
+    @PostMapping("/attachments/upload")
+    @OperationLog(type = "student_attachment_upload", description = "学生上传论文附件", recordResult = true)
+    public Result<PaperAttachment> uploadAttachment(@RequestParam Long paperId, 
+                                                  @RequestParam MultipartFile file, 
+                                                  @RequestParam String attachmentType) {
+        try {
+            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+            PaperAttachment attachment = paperInfoService.uploadAttachment(paperId, file, attachmentType, studentId);
+            return Result.success("附件上传成功", attachment);
+        } catch (Exception e) {
+            log.error("上传附件失败", e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "附件上传失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 14. 获取论文附件列表
+     */
+    @GetMapping("/attachments/list")
+    public Result<List<PaperAttachment>> getPaperAttachments(@RequestParam Long paperId) {
+        try {
+            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+            List<PaperAttachment> attachments = paperInfoService.getPaperAttachments(paperId, studentId);
+            return Result.success(attachments);
+        } catch (Exception e) {
+            log.error("获取附件列表失败 - 论文ID: {}", paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取附件列表失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 15. 删除附件接口
+     */
+    @DeleteMapping("/attachments/delete")
+    @OperationLog(type = "student_attachment_delete", description = "学生删除论文附件", recordResult = true)
+    public Result<String> deleteAttachment(@RequestParam Long attachmentId) {
+        try {
+            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+            boolean success = paperInfoService.deleteAttachment(attachmentId, studentId);
+            if (success) {
+                return Result.success("附件删除成功");
+            } else {
+                return Result.error(ResultCode.BUSINESS_NO_SAFE, "附件删除失败");
+            }
+        } catch (Exception e) {
+            log.error("删除附件失败 - 附件ID: {}", attachmentId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "附件删除失败: " + e.getMessage());
         }
     }
 }

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.abin.checkrepeatsystem.teacher.mapper.StudentGroupStudentRelMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.abin.checkrepeatsystem.pojo.entity.StudentGroupStudentRel">
+        <id column="id" property="id"/>
+        <result column="group_id" property="groupId"/>
+        <result column="student_id" property="studentId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="create_by" property="createBy"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, group_id, student_id, create_time, create_by, update_time, update_by, is_deleted
+    </sql>
+
+    <!-- 按分组ID查询关系 -->
+    <select id="selectByGroupId" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from student_group_student_rel
+        where group_id = #{groupId}
+    </select>
+
+    <!-- 按学生ID查询关系 -->
+    <select id="selectByStudentId" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from student_group_student_rel
+        where student_id = #{studentId}
+    </select>
+
+    <!-- 按分组ID和学生ID软删除关系 -->
+    <update id="deleteByGroupIdAndStudentId" parameterType="java.util.Map">
+        update student_group_student_rel
+        set is_deleted = 1
+        where group_id = #{groupId} and student_id = #{studentId}
+    </update>
+
+    <!-- 按分组ID软删除关系 -->
+    <update id="deleteByGroupId" parameterType="java.lang.Long">
+        update student_group_student_rel
+        set is_deleted = 1
+        where group_id = #{groupId}
+    </update>
+
+</mapper>

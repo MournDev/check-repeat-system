@@ -10,6 +10,10 @@
         <result column="operation_param" property="requestParams"/>
         <result column="user_id" property="userId"/>
         <result column="user_name" property="userName"/>
+        <result column="user_type" property="userType"/>
+        <result column="target" property="target"/>
+        <result column="status" property="status"/>
+        <result column="details" property="details"/>
         <result column="ip_address" property="ipAddress"/>
         <result column="operation_time" property="operationTime"/>
         <result column="is_deleted" property="isDeleted"/>
@@ -20,7 +24,8 @@
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
         id, operation_type, operation_desc, operation_param, user_id, 
-        user_name, ip_address, operation_time, is_deleted, create_time, update_time
+        user_name, user_type, target, status, details, ip_address, 
+        operation_time, is_deleted, create_time, update_time
     </sql>
 
     <!-- 分页查询操作日志 -->
@@ -34,6 +39,12 @@
         </if>
         <if test="username != null and username != ''">
             AND user_name LIKE CONCAT('%', #{username}, '%')
+        </if>
+        <if test="userType != null and userType != ''">
+            AND user_type = #{userType}
+        </if>
+        <if test="status != null">
+            AND status = #{status}
         </if>
         <if test="startTime != null">
             AND operation_time >= #{startTime}

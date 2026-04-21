@@ -7,10 +7,12 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
+import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.teacher.service.TeacherAssignmentService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
+import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
@@ -37,6 +39,9 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
 
     @Resource
     private CheckTaskService checkTaskService;
+
+    @Resource
+    private TeacherInfoDataService teacherInfoService;
 
     @Override
     public Result<Boolean> confirmAssignment(Long paperId, Long teacherId) {
@@ -168,10 +173,11 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
      */
     private void releaseTeacherTaskCount(Long teacherId) {
         try {
-            SysUser teacher = sysUserMapper.selectById(teacherId);
-            if (teacher != null && teacher.getCurrentAdvisorCount() > 0) {
-                teacher.setCurrentAdvisorCount(teacher.getCurrentAdvisorCount() - 1);
-                sysUserMapper.updateById(teacher);
+            // 从TeacherInfo表获取教师信息
+            TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacherId);
+            if (teacherInfo != null && teacherInfo.getCurrentAdvisorCount() > 0) {
+                teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() - 1);
+                teacherInfoService.saveOrUpdate(teacherInfo);
                 log.info("释放教师任务数成功 - 老师ID: {}", teacherId);
             }
         } catch (Exception e) {

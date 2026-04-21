@@ -1,8 +1,10 @@
 package com.abin.checkrepeatsystem.monitor.service;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.zaxxer.hikari.HikariDataSource;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -12,9 +14,10 @@ import java.sql.DatabaseMetaData;
 import java.util.HashMap;
 import java.util.Map;
 
-@Slf4j
 @Service
 public class DatabaseMonitorService {
+
+    private static final Logger log = LoggerFactory.getLogger(DatabaseMonitorService.class);
 
     @Autowired
     private DataSource dataSource;
@@ -56,7 +59,7 @@ public class DatabaseMonitorService {
             return Result.success("数据库监控数据获取成功", status);
         } catch (Exception e) {
             log.error("获取数据库监控数据失败", e);
-            return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
+            return Result.error(ResultCode.SYSTEM_ERROR, 
                               "获取数据库监控数据失败: " + e.getMessage());
         }
     }

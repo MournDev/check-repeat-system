@@ -7,7 +7,8 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.enums.CheckStatusFilterEnum;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,8 +25,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/papers")
 @PreAuthorize("hasAuthority('ADMIN')")
-@Slf4j
 public class AdminPaperController {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminPaperController.class);
 
     @Resource
     private AdminPaperService adminPaperService;

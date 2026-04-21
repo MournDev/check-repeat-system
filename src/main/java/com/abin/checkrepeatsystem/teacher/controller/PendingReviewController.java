@@ -254,7 +254,7 @@ public class PendingReviewController {
     }
 
     /**
-     * 14. 获取教师审核历史统计接口
+     * 11. 获取教师审核历史统计接口
      * GET /api/teacher/pending-reviews/teacher-statistics
      */
     @GetMapping("/teacher-statistics")
@@ -275,6 +275,11 @@ public class PendingReviewController {
             return Result.error(ResultCode.SYSTEM_ERROR, "获取教师审核历史统计失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 12. 获取论文审核历史接口
+     * GET /api/teacher/pending-reviews/history/{paperId}
+     */
     @GetMapping("/history/{paperId}")
     @Operation(summary = "获取论文审核历史", description = "获取指定论文的审核历史记录")
     public Result<PaperReviewHistoryDTO> getPaperReviewHistory(
@@ -288,6 +293,12 @@ public class PendingReviewController {
             return Result.error(ResultCode.SYSTEM_ERROR, "获取论文审核历史失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 13. 获取论文预览URL接口
+     * GET /api/teacher/pending-reviews/preview-url/{paperId}
+     * GET /api/teacher/pending-reviews/preview/{paperId}
+     */
     @GetMapping({"/preview-url/{paperId}", "/preview/{paperId}"})
     @Operation(summary = "获取论文预览URL", description = "获取论文的在线预览URL地址")
     public Result<PaperPreviewUrlDTO> getPaperPreviewUrl(
@@ -301,6 +312,11 @@ public class PendingReviewController {
             return Result.error(ResultCode.SYSTEM_ERROR, "获取论文预览URL失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 14. 获取论文原文内容接口
+     * GET /api/teacher/pending-reviews/content/{paperId}
+     */
     @GetMapping("/content/{paperId}")
     @Operation(summary = "获取论文原文内容", description = "获取论文的完整内容信息")
     public Result<PaperContentDTO> getPaperContent(
