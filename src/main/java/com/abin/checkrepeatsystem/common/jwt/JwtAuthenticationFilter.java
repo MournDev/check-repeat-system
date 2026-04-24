@@ -43,6 +43,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             // 1. 获取请求URI
             String requestUri = request.getRequestURI();
+            System.out.println("请求路径: " + requestUri);
 
             // 2. 放行登录、注册、刷新令牌接口和Actuator监控接口
             if (requestUri.startsWith("/api/auth/login")
@@ -51,6 +52,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     || requestUri.startsWith("/api/auth/forgot-password")
                     || requestUri.startsWith("/check/actuator")
             ) {
+                System.out.println("放行路径: " + requestUri);
                 // 直接放行，不进行JWT认证
                 filterChain.doFilter(request, response);
                 return;
