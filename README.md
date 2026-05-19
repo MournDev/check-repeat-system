@@ -159,7 +159,7 @@ check-repeat-system/
 ## 联系方式
 
 - **开发者**：MournDev
-- **邮箱**：3070500838@example.com
+- **邮箱**：3070500838@qq.com
 - **GitHub**：https://github.com/MournDev/check-repeat-system
 
 
