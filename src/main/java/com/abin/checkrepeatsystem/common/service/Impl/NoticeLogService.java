@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.common.service.Impl;
 
 import com.abin.checkrepeatsystem.mapper.SysNoticeLogMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysNoticeLog;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.Builder;
 import lombok.Data;
@@ -51,10 +52,10 @@ public class NoticeLogService {
      * 查询通知发送记录
      */
     public List<SysNoticeLog> getNoticeLogsByRelatedId(Long relatedId, String relatedType) {
-        QueryWrapper<SysNoticeLog> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("related_id", relatedId)
-                .eq("related_type", relatedType)
-                .orderByDesc("send_time");
+        LambdaQueryWrapper<SysNoticeLog> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(SysNoticeLog::getRelatedId, relatedId)
+                .eq(SysNoticeLog::getRelatedType, relatedType)
+                .orderByDesc(SysNoticeLog::getSendTime);
         return noticeLogMapper.selectList(queryWrapper);
     }
 
@@ -62,9 +63,9 @@ public class NoticeLogService {
      * 统计通知发送情况
      */
     public NoticeStats getNoticeStats(LocalDate startDate, LocalDate endDate) {
-        List<SysNoticeLog> logs = noticeLogMapper.selectList(new QueryWrapper<SysNoticeLog>()
-                .ge("send_time", startDate.atStartOfDay())
-                .le("send_time", endDate.plusDays(1).atStartOfDay()));
+        List<SysNoticeLog> logs = noticeLogMapper.selectList(new LambdaQueryWrapper<SysNoticeLog>()
+                .ge(SysNoticeLog::getSendTime, startDate.atStartOfDay())
+                .le(SysNoticeLog::getSendTime, endDate.plusDays(1).atStartOfDay()));
 
         long total = logs.size();
         long successCount = logs.stream().filter(SysNoticeLog::getSuccess).count();

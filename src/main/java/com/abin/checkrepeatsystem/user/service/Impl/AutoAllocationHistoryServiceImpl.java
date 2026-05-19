@@ -4,6 +4,7 @@ import com.abin.checkrepeatsystem.pojo.entity.AutoAllocationHistory;
 import com.abin.checkrepeatsystem.user.mapper.AutoAllocationHistoryMapper;
 import com.abin.checkrepeatsystem.user.service.AutoAllocationHistoryService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -60,11 +61,9 @@ public class AutoAllocationHistoryServiceImpl extends ServiceImpl<AutoAllocation
             }
             
             queryWrapper.orderByDesc(AutoAllocationHistory::getCreateTime);
-            
-            int offset = (page - 1) * size;
-            queryWrapper.last("LIMIT " + offset + ", " + size);
-            
-            List<AutoAllocationHistory> histories = autoAllocationHistoryMapper.selectList(queryWrapper);
+
+            Page<AutoAllocationHistory> historyPage = new Page<>(page, size);
+            List<AutoAllocationHistory> histories = autoAllocationHistoryMapper.selectPage(historyPage, queryWrapper).getRecords();
             
             // 计算执行时长文本
             for (AutoAllocationHistory history : histories) {
@@ -186,12 +185,12 @@ public class AutoAllocationHistoryServiceImpl extends ServiceImpl<AutoAllocation
     @Override
     public List<AutoAllocationHistory> getLatestHistory(int limit) {
         try {
-            List<AutoAllocationHistory> histories = autoAllocationHistoryMapper.selectList(
+            Page<AutoAllocationHistory> latestPage = new Page<>(0, limit);
+            List<AutoAllocationHistory> histories = autoAllocationHistoryMapper.selectPage(latestPage,
                 new LambdaQueryWrapper<AutoAllocationHistory>()
                     .eq(AutoAllocationHistory::getIsDeleted, 0)
                     .orderByDesc(AutoAllocationHistory::getCreateTime)
-                    .last("LIMIT " + limit)
-            );
+            ).getRecords();
             
             // 计算执行时长文本
             for (AutoAllocationHistory history : histories) {

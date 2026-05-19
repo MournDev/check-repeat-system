@@ -21,6 +21,7 @@ import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
@@ -98,7 +99,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             Page<PaperInfo> paperPage = new Page<>(pageNum, pageSize);
             LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(PaperInfo::getTeacherId, teacherId)
-                   .eq(PaperInfo::getPaperStatus, "auditing") // 待审核状态
+                   .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode()) // 待审核状态
                    .orderByDesc(PaperInfo::getSubmitTime);
             
             Page<PaperInfo> resultPage = paperInfoMapper.selectPage(paperPage, wrapper);
@@ -114,6 +115,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 // 顶层字段（方便前端直接使用）
                 record.put("paperId", paper.getId());
                 record.put("paperTitle", paper.getPaperTitle());
+                record.put("fileId", paper.getFileId());
                 record.put("submitTime", paper.getSubmitTime());
                 record.put("version", paper.getFileId() != null ? 1 : 0);
                 
@@ -140,12 +142,10 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 if (paper.getSubmitTime() != null) {
                     record.put("deadline", paper.getSubmitTime().plusDays(7));
                 }
-                
+
                 // paperBaseInfo 对象
                 Map<String, Object> paperBaseInfo = new HashMap<>();
-                paperBaseInfo.put("paperId", paper.getId());
                 paperBaseInfo.put("paperTitle", paper.getPaperTitle());
-                paperBaseInfo.put("submitTime", paper.getSubmitTime());
                 
                 // 获取学生信息
                 SysUser student = sysUserService.getById(paper.getStudentId());
@@ -154,7 +154,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                     record.put("studentId", student.getId());
                     record.put("studentNo", student.getUsername());
                     record.put("email", student.getEmail());
-                    
+
                     paperBaseInfo.put("studentName", student.getRealName());
                     paperBaseInfo.put("studentId", student.getId());
                     paperBaseInfo.put("studentNo", student.getUsername());
@@ -164,23 +164,10 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                     StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
                     if (studentInfo != null) {
                         record.put("college", studentInfo.getCollegeName());
+                        record.put("major", studentInfo.getMajor());
                         paperBaseInfo.put("college", studentInfo.getCollegeName());
-                    } else {
-                        record.put("college", "未知学院");
-                        paperBaseInfo.put("college", "未知学院");
+                        paperBaseInfo.put("major", studentInfo.getMajor());
                     }
-                } else {
-                    record.put("studentName", "未知学生");
-                    record.put("studentId", "");
-                    record.put("studentNo", "");
-                    record.put("email", "");
-                    record.put("college", "未知学院");
-                    
-                    paperBaseInfo.put("studentName", "未知学生");
-                    paperBaseInfo.put("studentId", "");
-                    paperBaseInfo.put("studentNo", "");
-                    paperBaseInfo.put("email", "");
-                    paperBaseInfo.put("college", "未知学院");
                 }
                 
                 record.put("paperBaseInfo", paperBaseInfo);
@@ -194,9 +181,9 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 // 相似度
                 record.put("similarity", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
                 
-                // 字数和页数（暂时设为默认值，实际应从文件中提取）
+                // 字数和页数（）
                 record.put("wordCount", paper.getWordCount());
-                record.put("pageCount", 0);
+                record.put("pageCount", paper.getPageCount());
 
                 records.add(record);
             }
@@ -214,32 +201,25 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
     @Override
     public Result<Map<String, Object>> getStudentStats(Long teacherId) {
         Map<String, Object> stats = new HashMap<>();
-        
+
         try {
             // 总学生数
             Long totalStudents = teacherDashboardMapper.countTotalStudents(teacherId);
-            
-            // 已提交论文数
+            // 已提交论文数（对应前端 submittedStudents）
             Long submittedPapers = teacherDashboardMapper.countSubmittedPapers(teacherId);
-            
-            // 审核中论文数
-            Long auditingPapers = teacherDashboardMapper.countAuditingPapers(teacherId);
-            
-            // 已通过论文数
+            // 已分配导师数（paper_status = 'assigned'）
+            Long assignedPapers = teacherDashboardMapper.countAssignedPapers(teacherId);
+            // 已完成审核数（paper_status = 'completed'，对应前端 completedStudents）
             Long passedPapers = teacherDashboardMapper.countPassedPapers(teacherId);
-            
-            // 需修改论文数（被驳回的）
-            Long needModifyPapers = teacherDashboardMapper.countRejectedPapers(teacherId);
-            
+
             stats.put("totalStudents", totalStudents);
-            stats.put("submittedPapers", submittedPapers);
-            stats.put("auditingPapers", auditingPapers);
-            stats.put("passedPapers", passedPapers);
-            stats.put("needModifyPapers", needModifyPapers);
-            
-            log.debug("教师{}学生统计: 总{}人, 已提交{}篇, 审核中{}篇, 通过{}篇, 需修改{}篇",
-                     teacherId, totalStudents, submittedPapers, auditingPapers, passedPapers, needModifyPapers);
-                     
+            stats.put("submittedStudents", submittedPapers);
+            stats.put("assignedStudents", assignedPapers);
+            stats.put("completedStudents", passedPapers);
+
+            log.debug("教师{}学生统计: 总{}人, 已提交{}人, 已分配{}人, 已完成{}人",
+                     teacherId, totalStudents, submittedPapers, assignedPapers, passedPapers);
+
             return Result.success("获取学生状态统计成功", stats);
         } catch (Exception e) {
             log.error("获取学生状态统计失败: teacherId={}", teacherId, e);
@@ -261,9 +241,9 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             // 验证审核状态
             String newStatus;
             if ("APPROVED".equalsIgnoreCase(reviewStatus)) {
-                newStatus = "completed";
+                newStatus = PaperStatusEnum.COMPLETED.getCode();
             } else if ("REJECTED".equalsIgnoreCase(reviewStatus)) {
-                newStatus = "rejected";
+                newStatus = PaperStatusEnum.REJECTED.getCode();
             } else {
                 return Result.error(ResultCode.PARAM_ERROR, "审核状态参数无效，应为APPROVED或REJECTED");
             }
@@ -329,9 +309,9 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             // 更新论文状态
             String newStatus;
             if ("pass".equalsIgnoreCase(reviewResult)) {
-                newStatus = "completed";
+                newStatus = PaperStatusEnum.COMPLETED.getCode();
             } else if ("reject".equalsIgnoreCase(reviewResult)) {
-                newStatus = "rejected";
+                newStatus = PaperStatusEnum.REJECTED.getCode();
             } else {
                 return Result.error(ResultCode.PARAM_ERROR, "审核结果参数无效");
             }
@@ -422,7 +402,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                     if (major != null) {
                         Map<String, Object> collegeItem = new HashMap<>();
                         String majorName = (String) major.get("majorName");
-                        Object countObj = major.get("count");
+                        Object countObj = major.get("totalPapers");
                         Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
                         collegeItem.put("label", majorName != null ? majorName : "未知专业");
                         collegeItem.put("value", count);
@@ -450,16 +430,11 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
     @Override
     public Result<Object> getRecentActivities(Long teacherId, Integer page, Integer size) {
         try {
-            // 这里可以整合多种活动记录：审核记录、学生提交记录等
-            // 简化实现，返回审核记录
             Page<Map<String, Object>> activityPage = new Page<>(page, size);
-            List<Map<String, Object>> activities = teacherDashboardMapper.getRecentReviewActivities(teacherId, activityPage);
-            
-            activityPage.setRecords(activities);
-            activityPage.setTotal(activities.size()); // 简化处理
-            
-            log.debug("教师{}获取近期活动记录: {}条", teacherId, activities.size());
-            return Result.success("获取近期活动记录成功", activityPage);
+            Page<Map<String, Object>> result = teacherDashboardMapper.getRecentReviewActivities(teacherId, activityPage);
+
+            log.debug("教师{}获取近期活动记录: {}条, 总数: {}", teacherId, result.getRecords().size(), result.getTotal());
+            return Result.success("获取近期活动记录成功", result);
         } catch (Exception e) {
             log.error("获取近期活动记录失败: teacherId={}", teacherId, e);
             return Result.error(ResultCode.SYSTEM_ERROR, "获取近期活动记录失败: " + e.getMessage());
@@ -468,10 +443,11 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
 
     @Override
     public Result<String> exportTeacherData(Long teacherId, String startDate, String endDate) {
+
         try {
             // 构建导出文件名
             String fileName = String.format("teacher_%d_data_%s.xlsx", 
-                teacherId, LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss")));
+                teacherId, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")));
             
             // 这里应该调用实际的数据导出服务
             // 简化实现，返回模拟的导出结果
@@ -531,17 +507,17 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
                 record.put("studentId", student.getUsername());
                 record.put("studentName", student.getRealName());
                 record.put("username", student.getUsername());
-                record.put("major", student.getMajorDisplayName());
-                record.put("college", student.getCollegeDisplayName());
                 record.put("email", student.getEmail());
                 record.put("phone", student.getPhone());
-                
-                // 从StudentInfo表获取学生年级信息
+
+                // 从StudentInfo表获取学生年级、专业、学院信息
                 StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
                 if (studentInfo != null) {
                     record.put("grade", studentInfo.getGrade());
+                    record.put("major", studentInfo.getMajor());
+                    record.put("college", studentInfo.getCollegeName());
                 }
-                
+
                 records.add(record);
             }
             

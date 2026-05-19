@@ -16,8 +16,11 @@ import java.util.Map;
 @ApiModel(description = "查重历史记录DTO")
 public class CheckHistoryDTO {
     
-    @ApiModelProperty(value = "版本号")
+    @ApiModelProperty(value = "版本号（展示序号）")
     private Integer version;
+
+    @ApiModelProperty(value = "实际提交版本号（对应paper_submit.submit_version）")
+    private Integer submitVersion;
     
     @ApiModelProperty(value = "报告ID")
     private String reportId;

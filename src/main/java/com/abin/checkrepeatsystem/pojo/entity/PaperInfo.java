@@ -1,7 +1,5 @@
 package com.abin.checkrepeatsystem.pojo.entity;
 
-import cn.hutool.core.date.DateTime;
-import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -11,10 +9,10 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 论文信息实体：对应paper_info表
@@ -22,7 +20,10 @@ import java.time.LocalDateTime;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("paper_info") // 绑定数据库表名
-public class PaperInfo extends BaseEntity implements Serializable {
+public class
+
+
+PaperInfo extends BaseEntity implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -47,6 +48,7 @@ public class PaperInfo extends BaseEntity implements Serializable {
      */
     @TableField("author")
     private String author;
+
 
     /**
      * 学院ID（关联college.id）
@@ -133,6 +135,12 @@ public class PaperInfo extends BaseEntity implements Serializable {
     private Integer wordCount;
 
     /**
+     * 页数统计
+     */
+    @TableField("page_count")
+    private Integer pageCount;
+
+    /**
      * 论文状态
      */
     @TableField("paper_status")
@@ -179,6 +187,30 @@ public class PaperInfo extends BaseEntity implements Serializable {
      */
     @TableField("check_time")
     private LocalDateTime checkTime;
+
+    /**
+     * 校内查重结果（JSON格式）
+     */
+    @TableField("internal_check_result")
+    private String internalCheckResult;
+
+    /**
+     * 第三方查重结果（JSON格式）
+     */
+    @TableField("third_party_check_result")
+    private String thirdPartyCheckResult;
+
+    /**
+     * 校内查重结果对象（非数据库字段）
+     */
+    @TableField(exist = false)
+    private Map<String, Object> internalCheck;
+
+    /**
+     * 第三方查重结果对象（非数据库字段）
+     */
+    @TableField(exist = false)
+    private Map<String, Object> thirdPartyCheck;
 
     /**
      * 文件路径

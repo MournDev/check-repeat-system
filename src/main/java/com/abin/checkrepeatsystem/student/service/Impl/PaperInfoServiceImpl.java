@@ -43,6 +43,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import java.io.*;
@@ -368,76 +369,50 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 UserContextHolder.setUser(student);
             }
 
-            // 并行处理：分配指导老师、提取内容和触发查重
+            // 并行处理：分配指导老师、提取内容（查重延迟到教师确认后由 TeacherAssignmentService 触发）
             CompletableFuture<Void> allocateTask = CompletableFuture.runAsync(() -> {
                 try {
-                    // 确保在子线程中也设置用户上下文
                     if (student != null) {
                         UserContextHolder.setUser(student);
                     }
-                    
+
                     // 1. 分配指导老师
                     Result<Boolean> result = advisorAssignService.autoAssignAdvisor(paperSubmitId);
                     boolean allocationSuccess = result.isSuccess();
                     if (allocationSuccess) {
-                        // 发送指导老师分配成功通知
                         sendAdvisorAllocatedNotification(paperSubmitId, studentId);
                         log.info("指导老师分配成功 - 论文ID: {}", paperSubmitId);
                     } else {
                         log.warn("指导老师分配失败 - 论文ID: {}", paperSubmitId);
-                        // 发送指导老师分配失败通知
                         String errorMsg = result.getMessage();
                         sendAdvisorAllocateFailedNotification(paperSubmitId, studentId, errorMsg);
                     }
                 } catch (Exception e) {
                     log.error("分配指导老师异常 - 论文ID: {}", paperSubmitId, e);
                 } finally {
-                    // 清理用户上下文
                     UserContextHolder.removeUser();
                 }
             });
 
             CompletableFuture<Void> extractContentTask = CompletableFuture.runAsync(() -> {
                 try {
-                    // 确保在子线程中也设置用户上下文
                     if (student != null) {
                         UserContextHolder.setUser(student);
                     }
-                    
-                    // 2. 提取论文内容并存储到Minio
+
+                    // 2. 提取论文内容并存储到Minio（为后续查重做准备）
                     log.info("开始提取论文内容 - 论文ID: {}", paperSubmitId);
                     paperContentExtractor.extractRawContent(paperSubmitId);
                     log.info("论文内容提取成功 - 论文ID: {}", paperSubmitId);
                 } catch (Exception e) {
                     log.error("提取论文内容异常 - 论文ID: {}", paperSubmitId, e);
                 } finally {
-                    // 清理用户上下文
                     UserContextHolder.removeUser();
                 }
             });
 
-            CompletableFuture<Void> checkTask = CompletableFuture.runAsync(() -> {
-                try {
-                    // 确保在子线程中也设置用户上下文
-                    if (student != null) {
-                        UserContextHolder.setUser(student);
-                    }
-                    
-                    // 3. 触发查重
-                    log.info("开始触发查重 - 论文ID: {}", paperSubmitId);
-                    // 获取学生信息并传递给triggerCheckRepeat
-                    SysUser studentForCheck = sysUserMapper.selectById(studentId);
-                    triggerCheckRepeat(paperSubmitId, studentForCheck);
-                } catch (Exception e) {
-                    log.error("触发查重异常 - 论文ID: {}", paperSubmitId, e);
-                } finally {
-                    // 清理用户上下文
-                    UserContextHolder.removeUser();
-                }
-            });
-
-            // 等待三个任务完成
-            CompletableFuture.allOf(allocateTask, extractContentTask, checkTask).join();
+            // 等待两个任务完成（查重将在教师确认分配后触发）
+            CompletableFuture.allOf(allocateTask, extractContentTask).join();
             log.info("论文后续流程处理完成 - 论文ID: {}", paperSubmitId);
 
         } catch (Exception e) {
@@ -543,6 +518,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         paperInfo.setFileMd5(fileMd5);
         paperInfo.setFilePath(fileInfo.getStoragePath());
         paperInfo.setWordCount(fileInfo.getWordCount());
+        paperInfo.setPageCount(fileInfo.getPageCount());//论文页数
         paperInfo.setStudentId(studentId);
         paperInfo.setPaperStatus(DictConstants.PaperStatus.PENDING);
         paperInfo.setSimilarityRate(BigDecimal.ZERO);
@@ -576,9 +552,11 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         existingPaper.setPaperType(paperType);
         existingPaper.setFileId(fileId);
         existingPaper.setFileMd5(fileMd5);
-        existingPaper.setFilePath(fileInfoMapper.selectById(fileId).getStoragePath());
+        FileInfo fileInfo = fileInfoMapper.selectById(fileId);
+        existingPaper.setFilePath(fileInfo.getStoragePath());
         existingPaper.setPaperStatus(newStatus);
-        existingPaper.setWordCount(fileInfoMapper.selectById(fileId).getWordCount());//论文字数
+        existingPaper.setWordCount(fileInfo.getWordCount());//论文字数
+        existingPaper.setPageCount(fileInfo.getPageCount());//论文页数
         existingPaper.setSimilarityRate(BigDecimal.ZERO); // 重置相似度
         existingPaper.setSubmitTime(LocalDateTime.now());
         existingPaper.setUpdateTime(LocalDateTime.now());
@@ -641,138 +619,6 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         return lastSubmit != null ? lastSubmit.getSubmitVersion() : 0;
     }
 
-    /**
-     * 触发查重逻辑（增加重试机制）
-     */
-    private void triggerCheckRepeat(Long paperId, com.abin.checkrepeatsystem.pojo.entity.SysUser user) {
-        int maxRetries = 3; // 最大重试次数
-        int retryCount = 0;
-        boolean success = false;
-            
-        while (retryCount < maxRetries && !success) {
-            try {
-                log.info("触发查重逻辑 - 论文 ID: {}, 尝试次数：{}", paperId, retryCount + 1);
-    
-                // 设置用户信息到UserContextHolder
-                if (user != null) {
-                    UserContextHolder.setUser(user);
-                }
-                
-                // 这里调用查重服务
-                checkTaskService.createCheckTask(paperId);
-                    
-                success = true;
-                log.info("查重任务创建成功 - 论文 ID: {}", paperId);
-    
-            } catch (Exception e) {
-                retryCount++;
-                log.error("触发查重失败 - 论文 ID: {}, 重试次数：{}/{}", paperId, retryCount, maxRetries, e);
-                    
-                if (retryCount >= maxRetries) {
-                    // 超过最大重试次数，发送告警通知
-                    sendCheckFailedAlert(paperId, e.getMessage());
-                    log.error("查重任务创建失败，已达到最大重试次数 - 论文 ID: {}", paperId);
-                } else {
-                    // 等待一段时间后重试
-                    try {
-                        Thread.sleep(2000 * retryCount); // 递增等待时间
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        log.warn("查重重试被中断 - 论文 ID: {}", paperId);
-                        break;
-                    }
-                }
-            } finally {
-                // 清理UserContextHolder
-                UserContextHolder.removeUser();
-            }
-        }
-    }
-        
-    /**
-     * 发送查重失败告警通知
-     */
-    private void sendCheckFailedAlert(Long paperId, String errorMessage) {
-        try {
-            // 获取论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null) {
-                log.warn("论文不存在，无法发送告警通知 - 论文 ID：{}", paperId);
-                return;
-            }
-                    
-            // 获取学生信息
-            SysUser student = sysUserMapper.selectById(paperInfo.getStudentId());
-                    
-            // 获取管理员信息
-            List<SysUser> admins = sysUserMapper.selectList(
-                new LambdaQueryWrapper<SysUser>()
-                    .eq(SysUser::getRoleId, 4001) // 假设角色ID 4001 是管理员
-                    .eq(SysUser::getIsDeleted, 0)
-            );
-                    
-            // 给管理员发送系统消息
-            for (SysUser admin : admins) {
-                SystemMessage alertMessage = new SystemMessage();
-                alertMessage.setSenderId(0L); // 系统发送
-                alertMessage.setReceiverId(admin.getId());
-                alertMessage.setTitle("【严重】查重任务创建失败告警");
-                alertMessage.setContent(String.format(
-                    "论文《%s》（ID: %d）的查重任务创建失败，已达到最大重试次数。\n" +
-                    "学生：%s\n" +
-                    "错误信息：%s\n" +
-                    "系统将自动重置论文状态，请及时处理！",
-                    paperInfo.getPaperTitle(),
-                    paperId,
-                    student != null ? student.getRealName() : "未知",
-                    errorMessage
-                ));
-                alertMessage.setMessageType("ALERT");
-                alertMessage.setPriority(3); // 高优先级
-                alertMessage.setRelatedType("PAPER");
-                alertMessage.setRelatedId(paperId);
-                alertMessage.setCreateTime(LocalDateTime.now());
-                alertMessage.setUpdateTime(LocalDateTime.now());
-                alertMessage.setIsRead(0);
-                        
-                messageService.sendMessage(alertMessage);
-            }
-                    
-            log.info("查重失败告警通知已发送 - 论文 ID: {}, 管理员数量：{}", paperId, admins.size());
-                
-            // 【修复】重置论文状态为待分配，允许重新分配导师
-            resetPaperStatusAfterCheckFailed(paperId, paperInfo);
-                    
-        } catch (Exception e) {
-            log.error("发送查重失败告警通知失败 - 论文 ID：{}", paperId, e);
-        }
-    }
-        
-    /**
-     * 查重失败后重置论文状态（独立方法，便于事务控制）
-     */
-    private void resetPaperStatusAfterCheckFailed(Long paperId, PaperInfo paperInfo) {
-        try {
-            PaperInfo updatePaper = new PaperInfo();
-            updatePaper.setId(paperId);
-            updatePaper.setPaperStatus(DictConstants.PaperStatus.PENDING);  // 重置为待分配
-            updatePaper.setTeacherId(null);  // 清空导师
-            updatePaper.setTeacherName(null);
-            updatePaper.setAllocationStatus(null);  // 清空分配状态
-            updatePaper.setAllocationType(null);
-            updatePaper.setUpdateTime(LocalDateTime.now());
-                
-            int result = paperInfoMapper.updateById(updatePaper);
-                
-            if (result > 0) {
-                log.info("查重失败后论文状态已重置 - 论文 ID: {}, 新状态：{}", paperId, DictConstants.PaperStatus.PENDING);
-            } else {
-                log.error("重置论文状态失败 - 论文 ID: {}", paperId);
-            }
-        } catch (Exception e) {
-            log.error("重置论文状态异常 - 论文 ID: {}", paperId, e);
-        }
-    }
     
     /**
      * 发送论文提交成功通知
@@ -1207,6 +1053,32 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
     }
     
     /**
+     * 获取论文所有提交版本列表
+     */
+    @Override
+    public List<PaperSubmitDTO> getPaperVersions(Long paperId, Long studentId) {
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
+            throw new RuntimeException("论文不存在或无权限访问");
+        }
+        List<PaperSubmit> submits = paperSubmitMapper.selectList(
+            new LambdaQueryWrapper<PaperSubmit>()
+                .eq(PaperSubmit::getPaperId, paperId)
+                .eq(PaperSubmit::getIsDeleted, 0)
+                .orderByAsc(PaperSubmit::getSubmitVersion)
+        );
+        return submits.stream().map(s -> {
+            PaperSubmitDTO dto = new PaperSubmitDTO();
+            dto.setId(s.getId());
+            dto.setSubmitVersion(s.getSubmitVersion());
+            dto.setFileId(s.getFileId());
+            dto.setSubmitTime(s.getSubmitTime());
+            dto.setRemark(s.getRemark());
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
+    /**
      * 获取论文版本详情接口实现
      */
     @Override
@@ -1220,12 +1092,17 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 throw new RuntimeException("论文不存在或无权限访问");
             }
             
-            // 2. 查询版本信息
-            PaperSubmit paperSubmit = paperSubmitMapper.selectById(versionId);
-            if (paperSubmit == null || !paperSubmit.getPaperId().equals(paperId)) {
-                throw new RuntimeException("版本不存在");
+            // 2. 查询版本信息（按版本号查询，兼容前端传入版本序号而非主键ID）
+            PaperSubmit paperSubmit = paperSubmitMapper.selectOne(
+                new LambdaQueryWrapper<PaperSubmit>()
+                    .eq(PaperSubmit::getPaperId, paperId)
+                    .eq(PaperSubmit::getSubmitVersion, versionId.intValue())
+                    .last("LIMIT 1")
+            );
+            if (paperSubmit == null) {
+                throw new RuntimeException("版本" + versionId + "不存在");
             }
-            
+
             // 3. 构造返回DTO
             PaperVersionDTO versionDTO = new PaperVersionDTO();
             versionDTO.setId(paperSubmit.getId());
@@ -1233,7 +1110,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             versionDTO.setVersion(paperSubmit.getSubmitVersion());
             versionDTO.setSubmitTime(paperSubmit.getSubmitTime());
             versionDTO.setFileId(paperSubmit.getFileId());
-            
+
             // 4. 判断是否为当前版本
             PaperSubmit latestSubmit = paperSubmitMapper.selectOne(
                 new LambdaQueryWrapper<PaperSubmit>()
@@ -1241,7 +1118,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                     .orderByDesc(PaperSubmit::getSubmitVersion)
                     .last("LIMIT 1")
             );
-            versionDTO.setIsCurrent(latestSubmit != null && latestSubmit.getId().equals(versionId));
+            versionDTO.setIsCurrent(latestSubmit != null && latestSubmit.getSubmitVersion().equals(versionId.intValue()));
             
             // 5. 获取查重信息（如果有）- 从查重任务表查询最新完成的查重记录
             CheckTask latestCheckTask = checkTaskMapper.selectOne(
@@ -1288,13 +1165,12 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 throw new RuntimeException("论文不存在或无权限访问");
             }
             
-            // 2. 获取两个版本信息
-            PaperSubmit versionA = paperSubmitMapper.selectById(versionIds.get(0));
-            PaperSubmit versionB = paperSubmitMapper.selectById(versionIds.get(1));
-            
-            if (versionA == null || versionB == null || 
-                !versionA.getPaperId().equals(paperId) || !versionB.getPaperId().equals(paperId)) {
-                throw new RuntimeException("版本信息不正确");
+            // 2. 获取两个版本信息（按submit_version查询，回退为按序号位置查询）
+            PaperSubmit versionA = findSubmitByVersion(paperId, versionIds.get(0).intValue());
+            PaperSubmit versionB = findSubmitByVersion(paperId, versionIds.get(1).intValue());
+
+            if (versionA == null || versionB == null) {
+                throw new RuntimeException("版本信息不正确: 版本" + versionIds.get(0) + "或" + versionIds.get(1) + "不存在");
             }
             
             // 3. 构造对比结果
@@ -1376,7 +1252,38 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             throw new RuntimeException("版本对比失败: " + e.getMessage());
         }
     }
-    
+
+    /**
+     * 按版本号查找提交记录
+     * 优先按 submit_version 精确匹配，找不到则按序号位置（第N条记录）回退查找
+     */
+    private PaperSubmit findSubmitByVersion(Long paperId, int versionNumber) {
+        // 优先：按 submit_version 精确匹配
+        PaperSubmit submit = paperSubmitMapper.selectOne(
+            new LambdaQueryWrapper<PaperSubmit>()
+                .eq(PaperSubmit::getPaperId, paperId)
+                .eq(PaperSubmit::getSubmitVersion, versionNumber)
+                .last("LIMIT 1")
+        );
+        if (submit != null) {
+            return submit;
+        }
+
+        // 回退：按 submit_version 升序排列，取第 N 条（兼容展示序号与submit_version不一致的场景）
+        List<PaperSubmit> allSubmits = paperSubmitMapper.selectList(
+            new LambdaQueryWrapper<PaperSubmit>()
+                .eq(PaperSubmit::getPaperId, paperId)
+                .eq(PaperSubmit::getIsDeleted, 0)
+                .orderByAsc(PaperSubmit::getSubmitVersion)
+        );
+        int index = versionNumber - 1; // 版本号从1开始，列表索引从0开始
+        if (index >= 0 && index < allSubmits.size()) {
+            return allSubmits.get(index);
+        }
+
+        return null;
+    }
+
     /**
      * 下载版本对比报告接口实现
      */
@@ -1692,12 +1599,22 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 
                 // 版本号（按时间倒序）
                 historyDTO.setVersion(checkTasks.size() - i);
+
+                // 获取真实的提交版本号（从 PaperSubmit 表获取）
+                PaperSubmit matchingSubmit = paperSubmitMapper.selectOne(
+                    new LambdaQueryWrapper<PaperSubmit>()
+                        .eq(PaperSubmit::getPaperId, paperId)
+                        .eq(PaperSubmit::getFileId, task.getFileId())
+                        .eq(PaperSubmit::getIsDeleted, 0)
+                        .last("LIMIT 1")
+                );
+                historyDTO.setSubmitVersion(matchingSubmit != null ? matchingSubmit.getSubmitVersion() : checkTasks.size() - i);
                 
                 // 报告信息
                 if (task.getReportId() != null) {
                     CheckReport report = checkReportMapper.selectById(task.getReportId());
                     if (report != null) {
-                        historyDTO.setReportId(report.getReportNo());
+                        historyDTO.setReportId(String.valueOf(report.getId()));
                     }
                 }
                 
@@ -1720,8 +1637,10 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 // 相比上一版本的改进
                 if (i < checkTasks.size() - 1) {
                     CheckTask previousTask = checkTasks.get(i + 1);
-                    BigDecimal improvement = previousTask.getCheckRate().subtract(task.getCheckRate());
-                    historyDTO.setImprovementFromPrevious(improvement);
+                    if (previousTask.getCheckRate() != null && task.getCheckRate() != null) {
+                        BigDecimal improvement = previousTask.getCheckRate().subtract(task.getCheckRate());
+                        historyDTO.setImprovementFromPrevious(improvement);
+                    }
                 }
                 
                 // 章节变化 - 从查重报告中提取真实数据
@@ -1730,7 +1649,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 history.add(historyDTO);
                 
                 // 更新最低相似度
-                if (lowestSimilarity == null || task.getCheckRate().compareTo(lowestSimilarity) < 0) {
+                if (task.getCheckRate() != null && (lowestSimilarity == null || task.getCheckRate().compareTo(lowestSimilarity) < 0)) {
                     lowestSimilarity = task.getCheckRate();
                 }
             }
@@ -2228,24 +2147,27 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             return trend;
         }
         
-        // 计算总改进值
+        // 计算总改进值（空值安全）
         BigDecimal firstRate = checkTasks.get(checkTasks.size() - 1).getCheckRate();
         BigDecimal lastRate = checkTasks.get(0).getCheckRate();
+        if (firstRate == null) firstRate = BigDecimal.ZERO;
+        if (lastRate == null) lastRate = BigDecimal.ZERO;
         BigDecimal totalImprovement = firstRate.subtract(lastRate);
-        
+
         // 判断趋势方向
-        String direction = totalImprovement.compareTo(BigDecimal.ZERO) < 0 ? "decreasing" : 
+        String direction = totalImprovement.compareTo(BigDecimal.ZERO) < 0 ? "decreasing" :
                           totalImprovement.compareTo(BigDecimal.ZERO) > 0 ? "increasing" : "stable";
-        
+
         // 计算平均改进值
         BigDecimal averageImprovement = totalImprovement.divide(
             BigDecimal.valueOf(checkTasks.size() - 1), 2, BigDecimal.ROUND_HALF_UP);
-        
+
         // 找到最佳版本
         int bestVersion = 1;
         BigDecimal lowestRate = firstRate;
         for (int i = 0; i < checkTasks.size(); i++) {
             BigDecimal rate = checkTasks.get(i).getCheckRate();
+            if (rate == null) continue;
             if (rate.compareTo(lowestRate) < 0) {
                 lowestRate = rate;
                 bestVersion = checkTasks.size() - i;
@@ -2477,10 +2399,12 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         paperInfo.setCollegeId(request.getCollegeId());
         paperInfo.setMajorId(request.getMajorId());
         paperInfo.setPaperType(request.getPaperType());
+        FileInfo fileInfo = fileInfoMapper.selectById(request.getFileId());
         paperInfo.setFileId(request.getFileId());
         paperInfo.setFileMd5(request.getFileMd5());
-        paperInfo.setFilePath(fileInfoMapper.selectById(request.getFileId()).getStoragePath());
-        paperInfo.setWordCount(fileInfoMapper.selectById(request.getFileId()).getWordCount());
+        paperInfo.setFilePath(fileInfo.getStoragePath());
+        paperInfo.setWordCount(fileInfo.getWordCount());
+        paperInfo.setPageCount(fileInfo.getPageCount());//论文页数
         paperInfo.setUpdateTime(LocalDateTime.now());
 
         int result = paperInfoMapper.updateById(paperInfo);

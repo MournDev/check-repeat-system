@@ -10,6 +10,7 @@ import jakarta.annotation.Resource;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/sys/user-major")
 @Api(tags = "指导任务上限管理")
+@PreAuthorize("hasAuthority('ADMIN')")
 public class SysUserMajorController {
 
     @Resource

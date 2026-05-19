@@ -18,14 +18,24 @@ public class AddStudentDTO {
     private String studentName;
     
     /**
-     * 学院名称（必填）
+     * 学院名称（必填，用于显示）
      */
     private String collegeName;
-    
+
     /**
-     * 专业（必填）
+     * 学院ID（必填，用于关联）
+     */
+    private Long collegeId;
+
+    /**
+     * 专业名称（必填，用于显示）
      */
     private String major;
+
+    /**
+     * 专业ID（必填，用于关联）
+     */
+    private Long majorId;
     
     /**
      * 年级（必填）

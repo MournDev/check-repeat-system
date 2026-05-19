@@ -2,6 +2,8 @@ package com.abin.checkrepeatsystem.teacher.service;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.ReviewRecord;
+import com.abin.checkrepeatsystem.teacher.dto.PaperContentDTO;
+import com.abin.checkrepeatsystem.teacher.dto.PaperPreviewUrlDTO;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewOperateReq;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewQueryReq;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewResultDTO;
@@ -58,4 +60,34 @@ public interface TeacherReviewService extends IService<ReviewRecord> {
      * @return 重新审核发起结果
      */
     Result<String> reInitiateReview(@RequestParam("paperId") Long paperId);
+
+    /**
+     * 7. 获取论文内容
+     * @param teacherId 教师ID
+     * @param paperId 论文ID
+     * @return 论文内容DTO
+     */
+    Result<PaperContentDTO> getPaperContent(Long teacherId, Long paperId);
+
+    /**
+     * 8. 获取论文预览URL
+     * @param teacherId 教师ID
+     * @param paperId 论文ID
+     * @return 论文预览URL DTO
+     */
+    Result<PaperPreviewUrlDTO> getPaperPreviewUrl(Long teacherId, Long paperId);
+
+    /**
+     * 9. 导出审核记录
+     * @param queryReq 查询参数
+     * @return 导出文件路径
+     */
+    String exportReviewedList(ReviewQueryReq queryReq);
+    
+    /**
+     * 10. 导出审核记录（直接写入响应流）
+     * @param queryReq 查询参数
+     * @param response HTTP响应
+     */
+    void exportReviewedList(ReviewQueryReq queryReq, HttpServletResponse response);
 }

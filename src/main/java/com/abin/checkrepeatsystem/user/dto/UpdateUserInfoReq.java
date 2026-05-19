@@ -24,11 +24,17 @@ public class UpdateUserInfoReq {
     /** 年级名称 */
     private String grade;
 
-    /** 专业名称 */
-    private String major;
+    /** 学院ID */
+    private Long collegeId;
 
     /** 学院名称 */
     private String collegeName;
+
+    /** 专业ID */
+    private Long majorId;
+
+    /** 专业名称 */
+    private String major;
 
     /** 班级名称 */
     private String className;

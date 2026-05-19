@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDate;
@@ -110,10 +111,18 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             
             // 关键词搜索
             if (keyword != null && !keyword.isEmpty()) {
-                wrapper.and(w -> w.like(PaperInfo::getPaperTitle, keyword)
-                                 .or()
-                                 .inSql(PaperInfo::getStudentId, 
-                                        "SELECT id FROM sys_user WHERE real_name LIKE '%" + keyword + "%'"));
+                List<Long> keywordMatchedUserIds = sysUserMapper.selectList(
+                    new LambdaQueryWrapper<SysUser>()
+                        .like(SysUser::getRealName, keyword)
+                        .select(SysUser::getId)
+                ).stream().map(SysUser::getId).collect(Collectors.toList());
+
+                wrapper.and(w -> {
+                    w.like(PaperInfo::getPaperTitle, keyword);
+                    if (!keywordMatchedUserIds.isEmpty()) {
+                        w.or().in(PaperInfo::getStudentId, keywordMatchedUserIds);
+                    }
+                });
             }
             
             wrapper.orderByDesc(PaperInfo::getCreateTime);
@@ -233,6 +242,7 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result<String> singleAssign(String studentId, String teacherId, String remark) {
         try {
             // 验证学生和教师是否存在
@@ -263,6 +273,23 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 teacherInfoService.saveOrUpdate(teacherInfo);
             }
             
+            // 确保学生信息记录存在（如果不存在则创建）
+            SysUser student = sysUserMapper.selectById(paper.getStudentId());
+            if (student != null) {
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo == null) {
+                    studentInfo = new StudentInfo();
+                    studentInfo.setUserId(student.getId());
+                    studentInfo.setCreateTime(LocalDateTime.now());
+                }
+                // 从sys_user同步学院ID
+                if (student.getCollegeId() != null) {
+                    studentInfo.setCollegeId(student.getCollegeId());
+                }
+                studentInfo.setUpdateTime(LocalDateTime.now());
+                studentInfoService.saveOrUpdate(studentInfo);
+            }
+            
             log.info("单个分配成功: 学生ID={}, 教师ID={}", studentId, teacherId);
             return Result.success("分配成功");
         } catch (Exception e) {
@@ -272,6 +299,7 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result<Map<String, Object>> batchAssign(List<String> studentIds, String teacherId, String strategy, String remark) {
         try {
             Map<String, Object> result = new HashMap<>();
@@ -325,6 +353,27 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                     paper.setTeacherId(Long.valueOf(teacherId));
                     paper.setUpdateTime(LocalDateTime.now());
                     paperInfoMapper.updateById(paper);
+                    
+                    // 更新学生学院和专业信息
+                    SysUser student = sysUserMapper.selectById(paper.getStudentId());
+                    if (student != null) {
+                        StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                        if (studentInfo == null) {
+                            studentInfo = new StudentInfo();
+                            studentInfo.setUserId(student.getId());
+                            studentInfo.setCreateTime(LocalDateTime.now());
+                        }
+                        // 从学生用户信息中获取学院信息
+                        if (student.getCollegeId() != null) {
+                            studentInfo.setCollegeId(student.getCollegeId());
+                        }
+                        if (student.getCollegeDisplayName() != null) {
+                            studentInfo.setCollegeName(student.getCollegeDisplayName());
+                        }
+                        studentInfo.setUpdateTime(LocalDateTime.now());
+                        studentInfoService.saveOrUpdate(studentInfo);
+                    }
+                    
                     successCount++;
                     
                 } catch (Exception e) {
@@ -449,6 +498,7 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result<String> saveAssignmentRules(AssignmentRuleConfigDTO config) {
         try {
             // 将配置保存到数据库字典表

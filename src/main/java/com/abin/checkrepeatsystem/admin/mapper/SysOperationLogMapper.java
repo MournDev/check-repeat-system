@@ -70,7 +70,14 @@ public interface SysOperationLogMapper extends BaseMapper<SysOperationLog> {
     int batchDeleteOperationLogs(@Param("ids") List<Long> ids);
 
     /**
-     * 清理过期操作日志
+     * 软删除过期操作日志（标记is_deleted=1）
+     * @param days 保留天数
+     * @return 软删除条数
+     */
+    int softDeleteExpiredLogs(@Param("days") Integer days);
+
+    /**
+     * 物理清理已软删除的过期日志
      * @param days 保留天数
      * @return 清理条数
      */

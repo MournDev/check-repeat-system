@@ -349,10 +349,10 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
         wrapper.likeRight(CheckTask::getTaskNo, seqPrefix)
                .eq(CheckTask::getIsDeleted, 0)
                .select(CheckTask::getTaskNo)
-               .orderByDesc(CheckTask::getTaskNo)
-               .last("LIMIT 1");
-        
-        CheckTask lastTask = getOne(wrapper);
+               .orderByDesc(CheckTask::getTaskNo);
+        Page<CheckTask> taskNoPage = new Page<>(0, 1);
+        CheckTask lastTask = page(taskNoPage, wrapper).getRecords()
+                .stream().findFirst().orElse(null);
         int seq = 1;
         if (lastTask != null) {
             String lastNo = lastTask.getTaskNo();
@@ -465,12 +465,30 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
     private void applyPermissionFilter(LambdaQueryWrapper<CheckTask> wrapper) {
         if (UserBusinessInfoUtils.isStudent()) {
             Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            wrapper.inSql(CheckTask::getPaperId,
-                    "SELECT id FROM paper_info WHERE student_id = " + studentId + " AND is_deleted = 0");
+            List<Long> paperIds = paperInfoMapper.selectList(
+                new LambdaQueryWrapper<PaperInfo>()
+                    .eq(PaperInfo::getStudentId, studentId)
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .select(PaperInfo::getId)
+            ).stream().map(PaperInfo::getId).collect(Collectors.toList());
+            if (!paperIds.isEmpty()) {
+                wrapper.in(CheckTask::getPaperId, paperIds);
+            } else {
+                wrapper.eq(CheckTask::getPaperId, -1L);
+            }
         } else if (UserBusinessInfoUtils.isTeacher()) {
             Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            wrapper.inSql(CheckTask::getPaperId,
-                    "SELECT id FROM paper_info WHERE teacher_id = " + teacherId + " AND is_deleted = 0");
+            List<Long> paperIds = paperInfoMapper.selectList(
+                new LambdaQueryWrapper<PaperInfo>()
+                    .eq(PaperInfo::getTeacherId, teacherId)
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .select(PaperInfo::getId)
+            ).stream().map(PaperInfo::getId).collect(Collectors.toList());
+            if (!paperIds.isEmpty()) {
+                wrapper.in(CheckTask::getPaperId, paperIds);
+            } else {
+                wrapper.eq(CheckTask::getPaperId, -1L);
+            }
         }
         // 管理员无过滤
     }

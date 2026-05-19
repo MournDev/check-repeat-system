@@ -12,6 +12,8 @@ import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.service.CheckTaskValidationService;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -26,7 +28,9 @@ import java.util.List;
  */
 @Service
 @Slf4j
-public class BatchCheckTaskServiceImpl {
+public class
+
+BatchCheckTaskServiceImpl {
 
     @Resource
     private CheckTaskValidationService validationService;
@@ -121,7 +125,8 @@ public class BatchCheckTaskServiceImpl {
             CheckTask checkTask = createCheckTask(paperId, paperInfo);
             
             // 3. 发布事件（异步执行）
-            eventPublisher.publishEvent(new CheckTaskCreatedEvent(this, checkTask.getId(), paperId));
+            Long operatorUserId = UserContextHolder.getUserId();
+            eventPublisher.publishEvent(new CheckTaskCreatedEvent(this, checkTask.getId(), paperId, operatorUserId));
 
             // 4. 计算预估时间
             int estimatedTime = estimateDuration(paperInfo.getWordCount());
@@ -178,9 +183,9 @@ public class BatchCheckTaskServiceImpl {
     private int getQueuePosition() {
         // 查询 PENDING 状态的任务数 +1
         long pendingCount = ((CheckTaskServiceImpl)checkTaskService).count(
-            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.abin.checkrepeatsystem.pojo.entity.CheckTask>()
-                .eq(com.abin.checkrepeatsystem.pojo.entity.CheckTask::getCheckStatus, "PENDING")
-                .eq(com.abin.checkrepeatsystem.pojo.entity.CheckTask::getIsDeleted, 0)
+            new LambdaQueryWrapper<CheckTask>()
+                .eq(CheckTask::getCheckStatus, "PENDING")
+                .eq(CheckTask::getIsDeleted, 0)
         );
         return (int)pendingCount + 1;
     }

@@ -17,7 +17,7 @@ public interface AdminPaperService {
      */
     Result<Page<PaperInfo>> getPaperList(Integer page, Integer size, String paperStatus, 
                                        String paperType, String keyword, String startDate, String endDate,
-                                       String majorName, String grade, String checkStatus, 
+                                       Long collegeId, Long majorId, String majorName, String grade, String checkStatus, 
                                        Double minSimilarity, Double maxSimilarity);
 
     /**
@@ -48,7 +48,7 @@ public interface AdminPaperService {
     /**
      * 导出论文列表
      */
-    void exportPaperList(Map<String, Object> params);
+    void exportPaperList(Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response);
     
     /**
      * 下载论文文件

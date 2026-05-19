@@ -81,7 +81,7 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
         Long currentStudentId = UserBusinessInfoUtils.getCurrentUserId();
         Integer currentPage = queryReq.getCurrentPage();
         Integer pageSize = queryReq.getPageSize();
-        Integer paperStatus = queryReq.getPaperStatus();
+        String paperStatus = queryReq.getPaperStatus();
 
         // 1. 构建分页查询条件（仅查询当前学生的论文）
         Page<PaperInfo> paperPage = new Page<>(currentPage, pageSize);
@@ -89,8 +89,8 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
         paperWrapper.eq(PaperInfo::getStudentId, currentStudentId)
                 .eq(PaperInfo::getIsDeleted, 0);
 
-        // 2. 按论文状态过滤（可选：2-待审核，3-通过，4-不通过）
-        if (paperStatus != null && Arrays.asList(2, 3, 4).contains(paperStatus)) {
+        // 2. 按论文状态过滤（可选：auditing-待审核，completed-通过，rejected-不通过）
+        if (paperStatus != null && !paperStatus.isEmpty()) {
             paperWrapper.eq(PaperInfo::getPaperStatus, paperStatus);
         }
 
@@ -194,9 +194,9 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
         if (!originalPaper.getStudentId().equals(currentStudentId)) {
             return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限重新提交他人论文");
         }
-        if (originalPaper.getPaperStatus()!= DictConstants.CheckStatus.FAILURE) {
+        if (!DictConstants.PaperStatus.REJECTED.equals(originalPaper.getPaperStatus())) {
             return Result.error(ResultCode.PERMISSION_NOT_STATUS,
-                    String.format("仅审核不通过（状态4）的论文可重新提交，当前状态：%s", getPaperStatusDesc(Integer.valueOf(originalPaper.getPaperStatus()))));
+                    String.format("仅审核不通过的论文可重新提交，当前状态：%s", getPaperStatusDesc(originalPaper.getPaperStatus())));
         }
 
         // 1.2 校验修改后文件
@@ -412,13 +412,16 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
     /**
      * 获取论文状态描述
      */
-    private String getPaperStatusDesc(Integer status) {
+    private String getPaperStatusDesc(String status) {
+        if (status == null) return "未知状态";
         return switch (status) {
-            case 0 -> "待查重";
-            case 1 -> "查重中";
-            case 2 -> "待审核";
-            case 3 -> "审核通过";
-            case 4 -> "审核不通过";
+            case "pending" -> "待分配";
+            case "assigned" -> "已分配";
+            case "checking" -> "待查重";
+            case "auditing" -> "待审核";
+            case "completed" -> "审核通过";
+            case "rejected" -> "审核不通过";
+            case "withdrawn" -> "已撤回";
             default -> "未知状态";
         };
     }

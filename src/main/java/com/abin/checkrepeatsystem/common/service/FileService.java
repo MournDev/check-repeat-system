@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.common.service;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.component.MinioProp;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.detection.service.PaperContentExtractor;
@@ -11,6 +12,7 @@ import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import io.minio.MinioClient;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -43,43 +46,29 @@ public class FileService {
     @Value("${kkfileview.base-url}")
     private String kkfileviewUrl;
     
+    @Autowired
+    private MinioClient minioClient;
+
+    @Autowired
+    private MinioProp minioProp;
+
     /**
-     * 初始化上传路径，确保目录存在
+     * 初始化MinIO存储，确保bucket存在
      */
     @PostConstruct
     private void init() {
         try {
-            // 如果是 Windows 环境且路径为 Unix 风格，转换为 Windows 路径
-            if (System.getProperty("os.name").toLowerCase().contains("win") && 
-                (uploadPath.startsWith("/") || uploadPath.startsWith("data"))) {
-                // 使用用户主目录下的临时上传目录
-                String userHome = System.getProperty("user.home");
-                uploadPath = Paths.get(userHome, "check-repeat-system", "upload").toString();
-                log.info("检测到 Windows 环境，使用上传路径：{}", uploadPath);
-            }
-            
-            // 创建上传根目录
-            File uploadDir = new File(uploadPath);
-            if (!uploadDir.exists()) {
-                boolean created = uploadDir.mkdirs();
-                if (created) {
-                    log.info("创建上传目录成功：{}", uploadPath);
-                } else {
-                    log.warn("创建上传目录失败：{}", uploadPath);
-                }
+            String bucketName = minioProp.getBucket().getFile();
+            boolean bucketExists = minioClient.bucketExists(io.minio.BucketExistsArgs.builder().bucket(bucketName).build());
+            if (!bucketExists) {
+                minioClient.makeBucket(io.minio.MakeBucketArgs.builder().bucket(bucketName).build());
+                log.info("创建MinIO bucket成功：{}", bucketName);
             } else {
-                log.info("上传目录已存在：{}", uploadPath);
+                log.info("MinIO bucket已存在：{}", bucketName);
             }
-            
-            // 验证目录是否可写
-            if (!uploadDir.canWrite()) {
-                log.error("上传目录不可写：{}", uploadPath);
-                throw new RuntimeException("上传目录不可写：" + uploadPath);
-            }
-            
         } catch (Exception e) {
-            log.error("初始化上传路径失败", e);
-            throw new RuntimeException("初始化上传路径失败：" + e.getMessage());
+            log.error("初始化MinIO bucket失败", e);
+            throw new RuntimeException("初始化MinIO bucket失败：" + e.getMessage());
         }
     }
 
@@ -94,9 +83,6 @@ public class FileService {
     
     @Autowired
     private PaperContentMinioService paperContentMinioService;
-    
-    @Autowired
-    private PaperContentExtractor paperContentExtractor;
 
     // 用于异步处理的线程池
     private final ExecutorService executorService = Executors.newFixedThreadPool(3);
@@ -105,7 +91,7 @@ public class FileService {
     private final Tika tika = new Tika();
 
     /**
-     * 上传文件 - 改进版本
+     * 上传文件 - MinIO存储版本
      */
     public Long uploadFile(MultipartFile file, Long userId) {
         String originalFilename = file.getOriginalFilename();
@@ -125,16 +111,33 @@ public class FileService {
                     return existingFile.getId();
                 }
 
-                // 3. 生成文件 ID
-                Long fileId = generateFileId();
+                // 3. 先创建 FileInfo 对象用于生成雪花ID
+                FileInfo fileInfo = new FileInfo();
+                fileInfo.setMd5(fileMd5);
+                fileInfo.setOriginalFilename(originalFilename);
+                fileInfo.setFileSize(file.getSize());
+                fileInfo.setFileSizeDesc(formatFileSize(file.getSize()));
+                fileInfo.setUploadTime(LocalDateTime.now());
+                fileInfo.setUploadUserId(String.valueOf(userId));
+                fileInfo.setWordCount(0);
+                fileInfo.setPageCount(0);
+                fileInfo.setCreateTime(LocalDateTime.now());
+                fileInfo.setUpdateTime(LocalDateTime.now());
 
-                // 4. 保存文件到磁盘
-                String filePath = saveFileToDisk(file, fileId, String.valueOf(userId));
+                // 插入数据库，MyBatis-Plus 会自动生成雪花ID
+                fileInfoMapper.insert(fileInfo);
+                Long fileId = fileInfo.getId();
+                log.info("文件ID生成成功：{}", fileId);
 
-                // 5. 保存文件基本信息到数据库（先不统计字数）
-                FileInfo fileInfo = saveBasicFileInfo(file, fileId, fileMd5, filePath, String.valueOf(userId));
+                // 4. 保存文件到MinIO
+                String filePath = saveFileToMinio(file, fileId, String.valueOf(userId), fileBytes);
 
-                // 6. 异步处理：统计字数和提取内容到Minio
+                // 5. 更新文件路径
+                fileInfo.setStoragePath(filePath);
+                fileInfo.setAccessUrl(minioProp.getEndpoint() + "/" + minioProp.getBucket().getFile() + "/" + filePath);
+                fileInfoMapper.updateById(fileInfo);
+
+                // 6. 异步处理：统计字数和页数
                 asyncProcessFile(fileBytes, fileInfo);
 
                 log.info("文件上传成功 - 文件 ID: {}, 文件名：{}, 用户 ID: {}", fileId, originalFilename, userId);
@@ -148,10 +151,7 @@ public class FileService {
     }
 
     /**
-     * 异步统计字数并更新数据库
-     */
-    /**
-     * 异步处理文件：统计字数和提取内容到Minio
+     * 异步处理文件：统计字数、页数和提取内容到Minio
      */
     private void asyncProcessFile(byte[] fileBytes, FileInfo fileInfo) {
         CompletableFuture.runAsync(() -> {
@@ -162,14 +162,19 @@ public class FileService {
                 int wordCount = countWordsFromBytes(fileBytes);
                 log.info("字数统计完成 - 文件 ID: {}, 字数: {}", fileInfo.getId(), wordCount);
 
-                // 更新数据库中的字数
+                // 2. 统计页数
+                int pageCount = countPagesFromBytes(fileBytes, fileInfo.getOriginalFilename());
+                log.info("页数统计完成 - 文件 ID: {}, 页数: {}", fileInfo.getId(), pageCount);
+
+                // 更新数据库中的字数和页数
                 FileInfo updateInfo = new FileInfo();
                 updateInfo.setId(fileInfo.getId());
                 updateInfo.setWordCount(wordCount);
+                updateInfo.setPageCount(pageCount);
                 updateInfo.setUpdateTime(LocalDateTime.now());
 
                 int updateResult = fileInfoMapper.updateById(updateInfo);
-                log.info("字数更新到数据库 - 文件 ID: {}, 更新结果: {}", fileInfo.getId(), updateResult);
+                log.info("字数和页数更新到数据库 - 文件 ID: {}, 更新结果: {}", fileInfo.getId(), updateResult);
 
                 // 2. 提取内容并存储到Minio
                 try {
@@ -195,10 +200,11 @@ public class FileService {
                 log.error("异步处理文件失败 - 文件 ID: {}, 文件名: {}",
                         fileInfo.getId(), fileInfo.getOriginalFilename(), e);
 
-                // 失败时设置字数为0
+                // 失败时设置字数和页数为0
                 FileInfo updateInfo = new FileInfo();
                 updateInfo.setId(fileInfo.getId());
                 updateInfo.setWordCount(0);
+                updateInfo.setPageCount(0);
                 fileInfoMapper.updateById(updateInfo);
             }
         }, executorService);
@@ -230,10 +236,195 @@ public class FileService {
     }
 
     /**
-     * 生成文件 ID
+     * 从字节数组统计页数
      */
-    private Long generateFileId() {
-        return System.currentTimeMillis();
+    private int countPagesFromBytes(byte[] fileBytes, String fileName) {
+        try {
+            // 验证字节数组不为空
+            if (fileBytes == null || fileBytes.length == 0) {
+                return 0;
+            }
+
+            // 根据文件扩展名判断文件类型
+            String fileExtension = getFileExtension(fileName).toLowerCase();
+            log.info("文件类型: {}", fileExtension);
+
+            switch (fileExtension) {
+                case "pdf":
+                    return countPdfPages(fileBytes);
+                case "docx":
+                    return countDocxPages(fileBytes);
+                case "doc":
+                    return countDocPages(fileBytes);
+                case "txt":
+                    // 文本文件按默认每页30行估算
+                    return countTxtPages(fileBytes);
+                default:
+                    // 其他文件类型，返回1页
+                    log.warn("不支持的文件类型，返回1页: {}", fileExtension);
+                    return 1;
+            }
+
+        } catch (Exception e) {
+            log.warn("统计页数失败", e);
+            return 1;
+        }
+    }
+
+    /**
+     * 获取文件扩展名
+     */
+    private String getFileExtension(String fileName) {
+        if (fileName == null || !fileName.contains(".")) {
+            return "";
+        }
+        return fileName.substring(fileName.lastIndexOf(".") + 1);
+    }
+
+    /**
+     * 统计PDF文件页数
+     */
+    private int countPdfPages(byte[] fileBytes) throws Exception {
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(fileBytes)) {
+            // 简单的PDF页数检测：搜索PDF文件中的页数标记
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            StringBuilder content = new StringBuilder();
+
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                content.append(new String(buffer, 0, bytesRead));
+            }
+
+            // 搜索PDF中的页数信息
+            // 注意：这是一个简化的实现，可能不适用于所有PDF文件
+            String pdfContent = content.toString();
+            
+            // 方法1：查找 /Pages 字典中的 Count 条目
+            int pagesIndex = pdfContent.indexOf("/Pages");
+            if (pagesIndex != -1) {
+                int countIndex = pdfContent.indexOf("/Count", pagesIndex);
+                if (countIndex != -1) {
+                    int start = countIndex + 6;
+                    int end = pdfContent.indexOf(" ", start);
+                    if (end != -1) {
+                        String countStr = pdfContent.substring(start, end).trim();
+                        try {
+                            return Integer.parseInt(countStr);
+                        } catch (NumberFormatException e) {
+                            // 解析失败，继续尝试其他方法
+                        }
+                    }
+                }
+            }
+
+            // 方法2：计算 %%Page: 标记的数量
+            int pageCount = 0;
+            int pageMarkerIndex = pdfContent.indexOf("%%Page:");
+            while (pageMarkerIndex != -1) {
+                pageCount++;
+                pageMarkerIndex = pdfContent.indexOf("%%Page:", pageMarkerIndex + 1);
+            }
+
+            if (pageCount > 0) {
+                return pageCount;
+            }
+
+            // 方法3：估算：按文件大小估算，每100KB一页
+            int estimatedPages = (int) Math.ceil(fileBytes.length / 102400.0);
+            return Math.max(1, estimatedPages);
+        }
+    }
+
+    /**
+     * 统计DOCX文件页数
+     */
+    private int countDocxPages(byte[] fileBytes) throws Exception {
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(fileBytes);
+             java.util.zip.ZipInputStream zipInputStream = new java.util.zip.ZipInputStream(inputStream)) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                if (entry.getName().equals("docProps/app.xml")) {
+                    // 读取app.xml文件，其中包含页数信息
+                    StringBuilder content = new StringBuilder();
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = zipInputStream.read(buffer)) != -1) {
+                        content.append(new String(buffer, 0, bytesRead));
+                    }
+
+                    String xmlContent = content.toString();
+                    // 查找页数信息
+                    int pagesStart = xmlContent.indexOf("<Pages>");
+                    int pagesEnd = xmlContent.indexOf("</Pages>", pagesStart);
+                    if (pagesStart != -1 && pagesEnd != -1) {
+                        String pagesStr = xmlContent.substring(pagesStart + 7, pagesEnd).trim();
+                        try {
+                            return Integer.parseInt(pagesStr);
+                        } catch (NumberFormatException e) {
+                            // 解析失败，继续
+                        }
+                    }
+                    break;
+                }
+                zipInputStream.closeEntry();
+            }
+        }
+
+        // 如果无法从app.xml获取页数，按字数估算
+        try {
+            int wordCount = countWordsFromBytes(fileBytes);
+            // 假设每页500字
+            return Math.max(1, (int) Math.ceil(wordCount / 500.0));
+        } catch (Exception e) {
+            // 估算失败，返回1
+            return 1;
+        }
+    }
+
+    /**
+     * 统计DOC文件页数
+     */
+    private int countDocPages(byte[] fileBytes) {
+        // DOC文件格式复杂，这里使用简单估算
+        // 按文件大小估算，每50KB一页
+        int estimatedPages = (int) Math.ceil(fileBytes.length / 51200.0);
+        return Math.max(1, estimatedPages);
+    }
+
+    /**
+     * 统计TXT文件页数
+     */
+    private int countTxtPages(byte[] fileBytes) throws Exception {
+        String content = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8);
+        String[] lines = content.split("\\r?\\n");
+        // 假设每页30行
+        int estimatedPages = (int) Math.ceil(lines.length / 30.0);
+        return Math.max(1, estimatedPages);
+    }
+
+    /**
+     * 保存文件到MinIO
+     */
+    private String saveFileToMinio(MultipartFile file, Long fileId, String userId, byte[] fileBytes) throws Exception {
+        String datePath = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        
+        String safeFilename = file.getOriginalFilename()
+                .replaceAll("[<>:\"|?*]", "_")
+                .replaceAll("[/\\\\]", "_");
+        
+        String objectName = "files/" + userId + "/" + datePath + "/" + fileId + "_" + safeFilename;
+        
+        try (InputStream inputStream = new ByteArrayInputStream(fileBytes)) {
+            minioClient.putObject(io.minio.PutObjectArgs.builder()
+                    .bucket(minioProp.getBucket().getFile())
+                    .object(objectName)
+                    .stream(inputStream, fileBytes.length, -1)
+                    .contentType(file.getContentType())
+                    .build());
+        }
+        
+        log.info("文件上传到MinIO成功：{}", objectName);
+        return objectName;
     }
 
     /**
@@ -256,99 +447,6 @@ public class FileService {
         }
     }
 
-
-    /**
-     * 保存文件到磁盘
-     */
-    private String saveFileToDisk(MultipartFile file, Long fileId, String userId) throws IOException {
-        // 生成文件存储路径
-        String datePath = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
-    
-        // 清理文件名中的非法字符
-        String safeFilename = file.getOriginalFilename()
-                .replaceAll("[<>:\"|?*]", "_") // Windows 非法字符
-                .replaceAll("[/\\\\]", "_");   // 路径分隔符
-    
-        String fileName = fileId + "_" + safeFilename;
-        String relativePath = Paths.get(userId, datePath, fileName).toString();
-        String fullPath = Paths.get(uploadPath, relativePath).toString();
-
-        // 创建目录
-        File destFile = new File(fullPath);
-        File parentDir = destFile.getParentFile();
-        if (parentDir != null && !parentDir.exists()) {
-            boolean created = parentDir.mkdirs();
-            if (!created) {
-                log.error("创建目录失败: {}", parentDir.getAbsolutePath());
-                throw new IOException("创建目录失败: " + parentDir.getAbsolutePath());
-            }
-            log.debug("创建目录成功: {}", parentDir.getAbsolutePath());
-        }
-
-        // 保存文件
-        file.transferTo(destFile);
-        log.debug("文件保存到磁盘成功: {}", fullPath);
-
-        return relativePath;
-    }
-
-    /**
-     * 保存基本文件信息到数据库（不包含字数统计）
-     */
-    private FileInfo saveBasicFileInfo(MultipartFile file, Long fileId, String fileMd5,
-                                       String filePath, String userId) throws IOException {
-        FileInfo fileInfo = new FileInfo();
-        fileInfo.setId(fileId);
-        fileInfo.setOriginalFilename(file.getOriginalFilename());
-        fileInfo.setFileSize(file.getSize());
-        fileInfo.setFileSizeDesc(formatFileSize(file.getSize()));
-        fileInfo.setStoragePath(filePath);
-        fileInfo.setMd5(fileMd5);
-        fileInfo.setUploadTime(LocalDateTime.now());
-        fileInfo.setUploadUserId(userId);
-
-        // 初始化字数为0，异步更新
-        fileInfo.setWordCount(0);
-        fileInfo.setCreateTime(LocalDateTime.now());
-        fileInfo.setUpdateTime(LocalDateTime.now());
-
-        fileInfoMapper.insert(fileInfo);
-        // 异步或延迟进行字数统计，避免重复读取已删除的临时文件
-        try {
-            int wordCount = countWordsFromFile(new File(uploadPath, filePath));
-            fileInfo.setWordCount(wordCount);
-            fileInfoMapper.updateById(fileInfo);
-        } catch (Exception e) {
-            log.warn("文件字数统计失败 - 文件 ID: {}", fileId, e);
-            fileInfo.setWordCount(0);
-            fileInfoMapper.updateById(fileInfo);
-        }
-        return fileInfo;
-    }
-    /**
-     * 从已保存的文件中统计字数
-     */
-    private int countWordsFromFile(File savedFile) throws IOException {
-        try {
-            // 使用 Apache Tika 提取文本内容
-            org.apache.tika.Tika tika = new org.apache.tika.Tika();
-
-            // 从已保存的文件中提取文本内容
-            String content = tika.parseToString(savedFile);
-
-            // 如果内容为空，返回0
-            if (content == null || content.trim().isEmpty()) {
-                return 0;
-            }
-
-            // 统计字数
-            return countChineseAndEnglish(content.trim());
-
-        } catch (Exception e) {
-            log.warn("文件字数统计失败 - 文件路径: {}", savedFile.getAbsolutePath(), e);
-            return 0;
-        }
-    }
 
     /**
      * 中文按字符统计，英文按单词统计 - 优化版本
@@ -484,12 +582,17 @@ public class FileService {
         try {
             FileInfo fileInfo = getById(fileId);
             if (fileInfo != null) {
-                // 删除磁盘文件
-                String fullPath = Paths.get(uploadPath, fileInfo.getStoragePath()).toString();
-                boolean deleted = Files.deleteIfExists(Paths.get(fullPath));
-    
-                if (deleted) {
-                    log.debug("磁盘文件删除成功：{}", fullPath);
+                // 从MinIO删除文件
+                try {
+                    minioClient.removeObject(
+                        io.minio.RemoveObjectArgs.builder()
+                            .bucket(minioProp.getBucket().getFile())
+                            .object(fileInfo.getStoragePath())
+                            .build()
+                    );
+                    log.debug("MinIO文件删除成功：{}", fileInfo.getStoragePath());
+                } catch (Exception e) {
+                    log.warn("MinIO文件删除失败：{}", fileInfo.getStoragePath(), e);
                 }
     
                 // 删除数据库记录
@@ -540,5 +643,41 @@ public class FileService {
             return Result.error(ResultCode.SYSTEM_ERROR, "生成预览URL失败");
         }
 
+    }
+
+    /**
+     * 从MinIO读取文件内容
+     */
+    public byte[] getFileContentFromMinio(String objectName) throws Exception {
+        try (InputStream inputStream = minioClient.getObject(
+                io.minio.GetObjectArgs.builder()
+                        .bucket(minioProp.getBucket().getFile())
+                        .object(objectName)
+                        .build())) {
+            return inputStream.readAllBytes();
+        }
+    }
+
+    /**
+     * 从本地或MinIO读取文件内容
+     */
+    public byte[] getFileContent(Long fileId) throws Exception {
+        FileInfo fileInfo = getById(fileId);
+        if (fileInfo == null) {
+            throw new RuntimeException("文件不存在");
+        }
+
+        String storagePath = fileInfo.getStoragePath();
+        if (storagePath.startsWith("files/")) {
+            // 从MinIO读取
+            return getFileContentFromMinio(storagePath);
+        } else {
+            // 从本地读取
+            File file = new File(uploadPath, storagePath);
+            if (!file.exists()) {
+                throw new RuntimeException("文件不存在");
+            }
+            return Files.readAllBytes(file.toPath());
+        }
     }
 }

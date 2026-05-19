@@ -92,4 +92,29 @@ public class TeacherAllocationRecord extends BaseEntity {
      */
     @TableField(exist = false)
     private String operatorName;
+    
+    // 学生学院和专业信息（冗余字段，便于查询显示）
+    /**
+     * 学生学院ID
+     */
+    @TableField("college_id")
+    private Long collegeId;
+    
+    /**
+     * 学生学院名称
+     */
+    @TableField("college_name")
+    private String collegeName;
+    
+    /**
+     * 学生专业ID
+     */
+    @TableField("major_id")
+    private Long majorId;
+    
+    /**
+     * 学生专业名称
+     */
+    @TableField("major_name")
+    private String majorName;
 }

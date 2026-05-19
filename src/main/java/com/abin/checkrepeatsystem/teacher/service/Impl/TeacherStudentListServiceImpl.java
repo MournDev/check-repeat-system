@@ -9,6 +9,7 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherStudentListService;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
 import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -38,8 +39,8 @@ public class TeacherStudentListServiceImpl extends ServiceImpl<SysUserMapper, Sy
     @Override
     public PageResultVO<StudentListDTO> getStudentsByTeacherId(Long teacherId, Integer current, Integer pageSize) {
         // 直接从PaperInfo表查询，因为teacher_id在该表中
-        QueryWrapper<PaperInfo> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("teacher_id", teacherId);
+        LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperInfo::getTeacherId, teacherId);
 
         // 创建分页对象
         Page<PaperInfo> page = new Page<>(current, pageSize);
@@ -67,9 +68,9 @@ public class TeacherStudentListServiceImpl extends ServiceImpl<SysUserMapper, Sy
     @Transactional
     public boolean deleteStudent(Long studentId) {
         // 检查用户是否存在（未被软删除）
-        QueryWrapper<SysUser> wrapper = new QueryWrapper<>();
-        wrapper.eq("id", studentId)
-                .eq("is_deleted", 0);
+        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SysUser::getId, studentId)
+                .eq(SysUser::getIsDeleted, 0);
         SysUser existingUser = sysUserMapper.selectOne(wrapper);
 
         if (existingUser == null) {

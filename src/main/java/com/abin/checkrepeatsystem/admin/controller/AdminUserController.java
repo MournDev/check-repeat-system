@@ -181,4 +181,17 @@ public class AdminUserController {
             return Result.error(ResultCode.SYSTEM_ERROR, "获取用户登录历史失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 导出用户列表
+     */
+    @GetMapping("/export")
+    public void exportUserList(@RequestParam Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response) {
+        log.info("接收导出用户列表请求: params={}", params);
+        try {
+            adminUserService.exportUserList(params, response);
+        } catch (Exception e) {
+            log.error("导出用户列表失败: {}", e.getMessage(), e);
+        }
+    }
 }

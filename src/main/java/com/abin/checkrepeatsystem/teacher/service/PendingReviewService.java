@@ -23,7 +23,7 @@ public interface PendingReviewService {
      * @param teacherId 教师ID
      * @return 统计信息
      */
-    Result<PendingStatsVO> getPendingStats(String teacherId);
+    Result<PendingStatsVO> getPendingStats(Long teacherId);
     
     /**
      * 论文审核
@@ -31,7 +31,7 @@ public interface PendingReviewService {
      * @param reviewDTO 审核参数
      * @return 审核结果
      */
-    Result<ReviewResultDetailVO> reviewPaper(String teacherId, PaperReviewDTO reviewDTO);
+    Result<ReviewResultDetailVO> reviewPaper(Long teacherId, PaperReviewDTO reviewDTO);
     
     /**
      * 重新查重检测
@@ -39,7 +39,7 @@ public interface PendingReviewService {
      * @param paperId 论文ID
      * @return 检测结果
      */
-    Result<Map<String, Object>> recheckPlagiarism(String teacherId, String paperId);
+    Result<Map<String, Object>> recheckPlagiarism(Long teacherId, Long paperId);
     
     /**
      * 发送提醒消息
@@ -47,7 +47,7 @@ public interface PendingReviewService {
      * @param reminderDTO 提醒参数
      * @return 发送结果
      */
-    Result<Map<String, Object>> sendReminder(String teacherId, SendReminderDTO reminderDTO);
+    Result<Map<String, Object>> sendReminder(Long teacherId, SendReminderDTO reminderDTO);
     
     /**
      * 联系学生
@@ -55,7 +55,7 @@ public interface PendingReviewService {
      * @param contactDTO 联系参数
      * @return 联系结果
      */
-    Result<Map<String, Object>> contactStudent(String teacherId, ContactStudentDTO contactDTO);
+    Result<Map<String, Object>> contactStudent(Long teacherId, ContactStudentDTO contactDTO);
     
     /**
      * 下载论文文件
@@ -63,7 +63,7 @@ public interface PendingReviewService {
      * @param paperId 论文ID
      * @param response HTTP响应
      */
-    void downloadPaper(String teacherId, String paperId, HttpServletResponse response);
+    void downloadPaper(Long teacherId, Long paperId, HttpServletResponse response);
     
     /**
      * 获取查重报告
@@ -71,14 +71,14 @@ public interface PendingReviewService {
      * @param paperId 论文ID
      * @return 查重报告
      */
-    Result<PlagiarismReportVO> getPlagiarismReport(String teacherId, String paperId);
+    Result<PlagiarismReportVO> getPlagiarismReport(Long teacherId, Long paperId);
     
     /**
      * 获取今日审核统计
      * @param teacherId 教师ID
      * @return 今日审核统计
      */
-    Result<TodayReviewedVO> getTodayReviewedCount(String teacherId);
+    Result<TodayReviewedVO> getTodayReviewedCount(Long teacherId);
     
     /**
      * 委托审核
@@ -86,7 +86,7 @@ public interface PendingReviewService {
      * @param delegateDTO 委托参数
      * @return 委托结果
      */
-    Result<Map<String, Object>> delegateReview(String teacherId, DelegateReviewDTO delegateDTO);
+    Result<Map<String, Object>> delegateReview(Long teacherId, DelegateReviewDTO delegateDTO);
     
     /**
      * 获取论文原文内容
@@ -94,7 +94,7 @@ public interface PendingReviewService {
      * @param paperId 论文ID
      * @return 论文内容信息
      */
-    Result<PaperContentDTO> getPaperContent(String teacherId, String paperId);
+    Result<PaperContentDTO> getPaperContent(Long teacherId, Long paperId);
     
     /**
      * 获取论文预览URL
@@ -102,7 +102,7 @@ public interface PendingReviewService {
      * @param paperId 论文ID
      * @return 预览URL信息
      */
-    Result<PaperPreviewUrlDTO> getPaperPreviewUrl(String teacherId, String paperId);
+    Result<PaperPreviewUrlDTO> getPaperPreviewUrl(Long teacherId, Long paperId);
     
     /**
      * 获取论文审核历史
@@ -110,7 +110,7 @@ public interface PendingReviewService {
      * @param paperId 论文ID
      * @return 审核历史信息
      */
-    Result<PaperReviewHistoryDTO> getPaperReviewHistory(String teacherId, String paperId);
+    Result<PaperReviewHistoryDTO> getPaperReviewHistory(Long teacherId, Long paperId);
     
     /**
      * 获取教师审核历史统计
@@ -121,6 +121,6 @@ public interface PendingReviewService {
      * @param pageSize 每页大小
      * @return 审核统计信息
      */
-    Result<TeacherReviewStatisticsDTO> getTeacherReviewStatistics(String teacherId, String startDate, 
+    Result<TeacherReviewStatisticsDTO> getTeacherReviewStatistics(Long teacherId, String startDate,
                                                                   String endDate, Integer page, Integer pageSize);
 }

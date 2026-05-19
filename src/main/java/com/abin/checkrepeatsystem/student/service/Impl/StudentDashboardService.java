@@ -145,10 +145,13 @@ public class StudentDashboardService {
         LatestPaperDTO dto = new LatestPaperDTO();
         dto.setId(latestPaper.getId());
         dto.setWordCount(fileInfo.getWordCount());
+        dto.setPageCount(fileInfo.getPageCount());
         dto.setTitle(latestPaper.getPaperTitle());
         dto.setStatus(latestPaper.getPaperStatus());
         dto.setSubmitTime(latestPaper.getSubmitTime());
         dto.setApproveTime(latestPaper.getSubmitTime());
+        dto.setAllocationStatus(latestPaper.getAllocationStatus());
+        dto.setAllocationTime(latestPaper.getAllocationTime());
         // 获取导师信息
         if (latestPaper.getTeacherId() != null) {
             SysUser advisor = sysUserMapper.selectById(latestPaper.getTeacherId());
@@ -163,11 +166,13 @@ public class StudentDashboardService {
 //            dto.setFeedback(feedback.getContent());
 //        }
 
-        // 获取查重率
+        // 获取查重率：优先使用已完成查重任务的数据，否则回退到论文本身的相似度
         Long latestPaperId = latestPaper.getId();
         CheckTask checkTask = checkTaskMapper.selectLatestByPaperId(latestPaperId);
-        if (checkTask != null && checkTask.getCheckRate() != null) {
+        if (checkTask != null && "completed".equals(checkTask.getCheckStatus()) && checkTask.getCheckRate() != null) {
             dto.setSimilarity(checkTask.getCheckRate());
+        } else if (latestPaper.getSimilarityRate() != null) {
+            dto.setSimilarity(latestPaper.getSimilarityRate());
         }
 
         return dto;
@@ -256,7 +261,7 @@ public class StudentDashboardService {
         return papers.stream()
                 .mapToInt(paper -> {
                     FileInfo fileInfo = fileInfoMapper.selectById(paper.getFileId());
-                    return fileInfo != null ? fileInfo.getWordCount() : 0;
+                    return fileInfo != null && fileInfo.getWordCount() != null ? fileInfo.getWordCount() : 0;
                 })
                 .sum();
     }
@@ -388,44 +393,54 @@ public class StudentDashboardService {
     }
     
     /**
-     * 获取相似度变化趋势
+     * 获取相似度变化趋势（跨所有论文，按查重完成时间汇总）
      */
     public SimilarityTrendDTO getSimilarityTrend(Long studentId) {
         SimilarityTrendDTO trend = new SimilarityTrendDTO();
-        
-        // 获取该学生的所有论文，按提交时间排序
+
+        // 获取该学生所有未删除的论文ID
         List<PaperInfo> papers = paperInfoMapper.selectList(
             new LambdaQueryWrapper<PaperInfo>()
                 .eq(PaperInfo::getStudentId, studentId)
                 .eq(PaperInfo::getIsDeleted, 0)
-                .orderByAsc(PaperInfo::getSubmitTime)
         );
-        
+
+        if (papers.isEmpty()) {
+            trend.setVersions(new ArrayList<>());
+            trend.setSimilarities(new ArrayList<>());
+            return trend;
+        }
+
+        List<Long> paperIds = papers.stream().map(PaperInfo::getId).toList();
+
+        // 获取这些论文的所有已完成查重任务，按时间升序
+        List<CheckTask> tasks = checkTaskMapper.selectList(
+            new LambdaQueryWrapper<CheckTask>()
+                .in(CheckTask::getPaperId, paperIds)
+                .eq(CheckTask::getIsDeleted, 0)
+                .eq(CheckTask::getCheckStatus, "completed")
+                .isNotNull(CheckTask::getCheckRate)
+                .orderByAsc(CheckTask::getCreateTime)
+        );
+
         List<String> versions = new ArrayList<>();
         List<BigDecimal> similarities = new ArrayList<>();
-        
-        // 为每篇论文生成版本数据
-        for (int i = 0; i < Math.min(papers.size(), 5); i++) { // 最多显示5个版本
-            PaperInfo paper = papers.get(i);
-            versions.add("V" + (i + 1));
-            
-            CheckTask task = checkTaskMapper.selectLatestByPaperId(paper.getId());
-            if (task != null && task.getCheckRate() != null) {
-                similarities.add(task.getCheckRate());
-            } else {
-                similarities.add(BigDecimal.ZERO);
-            }
+
+        int i = 1;
+        for (CheckTask task : tasks) {
+            versions.add("第" + i + "次");
+            similarities.add(task.getCheckRate());
+            i++;
         }
-        
-        // 如果没有数据，提供空列表
+
         if (versions.isEmpty()) {
             versions = new ArrayList<>();
             similarities = new ArrayList<>();
         }
-        
+
         trend.setVersions(versions);
         trend.setSimilarities(similarities);
-        
+
         return trend;
     }
     
@@ -434,13 +449,114 @@ public class StudentDashboardService {
      */
     public MajorComparisonDTO getMajorComparison(Long studentId) {
         MajorComparisonDTO comparison = new MajorComparisonDTO();
-        
-        // 从数据库获取专业对比数据
-        // 暂时返回空数据，后续实现从数据库获取
-        comparison.setDimensions(new ArrayList<>());
-        comparison.setMyLevel(new ArrayList<>());
-        comparison.setMajorAverage(new ArrayList<>());
-        
+
+        List<String> dimensions = Arrays.asList("论文质量", "创新性", "规范性", "工作量", "答辩表现");
+        comparison.setDimensions(dimensions);
+
+        LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PaperInfo::getStudentId, studentId)
+               .eq(PaperInfo::getIsDeleted, 0)
+               .orderByDesc(PaperInfo::getSubmitTime)
+               .last("LIMIT 1");
+        PaperInfo myPaper = paperInfoMapper.selectOne(wrapper);
+
+        int myQuality = 75;
+        int myInnovation = 70;
+        int myNormative = 75;
+        int myWorkload = 70;
+        int myDefense = 75;
+
+        if (myPaper != null) {
+            if (myPaper.getFinalScore() != null) {
+                myQuality = myPaper.getFinalScore().intValue();
+                myDefense = myPaper.getFinalScore().intValue();
+            }
+            if (myPaper.getSimilarityRate() != null) {
+                myQuality = Math.max(0, 100 - myPaper.getSimilarityRate().intValue());
+            }
+            if (myPaper.getVersion() != null) {
+                myInnovation = Math.min(100, myPaper.getVersion() * 20);
+            }
+            if (myPaper.getWordCount() != null) {
+                if (myPaper.getWordCount() > 10000) {
+                    myWorkload = 90;
+                } else if (myPaper.getWordCount() > 5000) {
+                    myWorkload = 75;
+                } else {
+                    myWorkload = 60;
+                }
+                myNormative = Math.min(100, 60 + (myPaper.getWordCount() / 500));
+            }
+        }
+
+        List<Integer> myLevel = Arrays.asList(myQuality, myInnovation, myNormative, myWorkload, myDefense);
+
+        List<Integer> majorAverage = new ArrayList<>();
+        majorAverage.add(75);
+        majorAverage.add(70);
+        majorAverage.add(72);
+        majorAverage.add(68);
+        majorAverage.add(73);
+
+        if (myPaper != null && myPaper.getMajorId() != null) {
+            wrapper.clear();
+            wrapper.eq(PaperInfo::getMajorId, myPaper.getMajorId())
+                   .eq(PaperInfo::getIsDeleted, 0);
+            List<PaperInfo> majorPapers = paperInfoMapper.selectList(wrapper);
+
+            if (!majorPapers.isEmpty()) {
+                int sumQuality = 0, sumInnovation = 0, sumNormative = 0, sumWorkload = 0, sumDefense = 0;
+                int countWithScore = 0;
+
+                for (PaperInfo paper : majorPapers) {
+                    int quality = 75;
+                    int innovation = 70;
+                    int normative = 75;
+                    int workload = 70;
+                    int defense = 75;
+
+                    if (paper.getFinalScore() != null) {
+                        quality = paper.getFinalScore().intValue();
+                        defense = paper.getFinalScore().intValue();
+                    }
+                    if (paper.getSimilarityRate() != null) {
+                        quality = Math.max(0, 100 - paper.getSimilarityRate().intValue());
+                    }
+                    if (paper.getVersion() != null) {
+                        innovation = Math.min(100, paper.getVersion() * 20);
+                    }
+                    if (paper.getWordCount() != null) {
+                        if (paper.getWordCount() > 10000) {
+                            workload = 90;
+                        } else if (paper.getWordCount() > 5000) {
+                            workload = 75;
+                        } else {
+                            workload = 60;
+                        }
+                        normative = Math.min(100, 60 + (paper.getWordCount() / 500));
+                    }
+
+                    sumQuality += quality;
+                    sumInnovation += innovation;
+                    sumNormative += normative;
+                    sumWorkload += workload;
+                    sumDefense += defense;
+                    countWithScore++;
+                }
+
+                if (countWithScore > 0) {
+                    majorAverage.set(0, sumQuality / countWithScore);
+                    majorAverage.set(1, sumInnovation / countWithScore);
+                    majorAverage.set(2, sumNormative / countWithScore);
+                    majorAverage.set(3, sumWorkload / countWithScore);
+                    majorAverage.set(4, sumDefense / countWithScore);
+                }
+            }
+        }
+
+        comparison.setMyLevel(myLevel);
+        comparison.setMajorAverage(majorAverage);
+
         return comparison;
     }
     

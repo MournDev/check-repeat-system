@@ -34,8 +34,8 @@ public class PersonalAdviceDTO {
         @ApiModelProperty(value = "章节名称")
         private String section;
         
-        @ApiModelProperty(value = "相似度")
-        private Double similarity;
+        @ApiModelProperty(value = "相似度描述")
+        private String similarity;
         
         @ApiModelProperty(value = "问题描述")
         private String issue;
@@ -53,8 +53,8 @@ public class PersonalAdviceDTO {
         @ApiModelProperty(value = "章节名称")
         private String section;
         
-        @ApiModelProperty(value = "相似度")
-        private Double similarity;
+        @ApiModelProperty(value = "相似度描述")
+        private String similarity;
         
         @ApiModelProperty(value = "优势描述")
         private String strength;

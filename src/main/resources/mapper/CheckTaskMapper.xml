@@ -2,6 +2,6 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper">
     <select id="selectLatestByPaperId" resultType="com.abin.checkrepeatsystem.pojo.entity.CheckTask">
-        SELECT * FROM check_task WHERE paper_id = #{paperId} ORDER BY create_time DESC LIMIT 1
+        SELECT * FROM check_task WHERE paper_id = #{paperId} AND is_deleted = 0 ORDER BY create_time DESC LIMIT 1
     </select>
 </mapper>

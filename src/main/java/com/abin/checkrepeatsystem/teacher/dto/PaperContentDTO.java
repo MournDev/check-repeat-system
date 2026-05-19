@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.teacher.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import java.util.List;
 
@@ -12,12 +13,29 @@ public class PaperContentDTO {
     /**
      * 论文ID
      */
-    private String paperId;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long paperId;
+
+    /**
+     * 论文作者ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long studentId;
+
+    /**
+     * 论文作者姓名
+     */
+    private String studentName;
     
     /**
      * 论文标题
      */
-    private String title;
+    private String paperTitle;
+
+    /**
+     * 文件名
+     */
+    private String fileName;
     
     /**
      * 论文正文内容
@@ -47,7 +65,7 @@ public class PaperContentDTO {
     /**
      * 文件大小
      */
-    private String fileSize;
+    private String fileSizeDesc;
     
     /**
      * 文件类型

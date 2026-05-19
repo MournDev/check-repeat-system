@@ -23,6 +23,12 @@ public class UserInfoDTO {
     private String major;
     private String grade;
     private String className;
+    
+    // 管理员专用字段
+    private String position;
+    private String department;
+    private String officeAddress;
+    
     private LocalDateTime createTime;
     private LocalDateTime lastLoginTime;
 }

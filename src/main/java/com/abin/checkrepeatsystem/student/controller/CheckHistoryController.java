@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.Resource;
@@ -19,6 +20,7 @@ import jakarta.validation.Valid;
 @RestController
 @RequestMapping("/api/student/papers")
 @Api(tags = "学生查重历史管理")
+@PreAuthorize("hasAnyAuthority('STUDENT', 'TEACHER', 'ADMIN')")
 public class CheckHistoryController {
 
     @Resource

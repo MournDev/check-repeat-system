@@ -55,17 +55,19 @@ public class CheckProgressWebSocketHandler extends TextWebSocketHandler {
 
     /**
      * 从路径中提取任务ID
-     * @param path WebSocket 连接路径
+     * @param path WebSocket 连接路径（可能包含context-path，如 /check/ws/check-progress/{taskId}）
      * @return 任务ID
      */
     private String extractTaskId(String path) {
         if (path == null) {
             return null;
         }
-        // 路径格式: /ws/check-progress/{taskId}
+        // 取路径最后一段作为 taskId，兼容有无 context-path 的情况
         String[] parts = path.split("/");
-        if (parts.length >= 4) {
-            return parts[3];
+        for (int i = parts.length - 1; i >= 0; i--) {
+            if (!parts[i].isEmpty()) {
+                return parts[i];
+            }
         }
         return null;
     }

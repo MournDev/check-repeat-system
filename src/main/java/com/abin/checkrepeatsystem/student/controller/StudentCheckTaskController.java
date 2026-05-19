@@ -3,11 +3,15 @@ package com.abin.checkrepeatsystem.student.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
+import com.abin.checkrepeatsystem.student.dto.BatchCheckRequestDTO;
+import com.abin.checkrepeatsystem.student.dto.BatchCheckResultDTO;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
+import com.abin.checkrepeatsystem.student.service.Impl.BatchCheckTaskServiceImpl;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,6 +25,9 @@ public class StudentCheckTaskController {
 
     @Resource
     private CheckTaskService checkTaskService;
+
+    @Resource
+    private BatchCheckTaskServiceImpl batchCheckTaskService;
 
     /**
      * 1. 学生发起查重任务
@@ -112,5 +119,14 @@ public class StudentCheckTaskController {
     @GetMapping("/status")
     public Result<CheckTaskResultDTO> getCheckStatus(@RequestParam Long taskId) {
         return checkTaskService.getCheckTaskById(taskId);
+    }
+
+    /**
+     * 批量创建查重任务（合并自 BatchCheckTaskController）
+     */
+    @PostMapping("/batch-create")
+    @PreAuthorize("hasAuthority('STUDENT')")
+    public Result<BatchCheckResultDTO> batchCreate(@RequestBody BatchCheckRequestDTO request) {
+        return batchCheckTaskService.batchCreateCheckTasks(request);
     }
 }

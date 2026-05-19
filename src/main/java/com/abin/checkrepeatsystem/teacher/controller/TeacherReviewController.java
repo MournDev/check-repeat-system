@@ -1,24 +1,30 @@
 package com.abin.checkrepeatsystem.teacher.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.teacher.dto.PaperContentDTO;
+import com.abin.checkrepeatsystem.teacher.dto.PaperPreviewUrlDTO;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewOperateReq;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewQueryReq;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewResultDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 教师审核控制器：仅教师角色可访问，统一用@RequestParam传参
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/teacher/reviews")
 @PreAuthorize("hasAuthority('TEACHER')") // 权限控制：仅教师可访问
@@ -119,5 +125,67 @@ public class TeacherReviewController {
     public Result<String> reInitiateReview(
             @RequestParam("paperId") Long paperId) {
         return teacherReviewService.reInitiateReview(paperId);
+    }
+
+    /**
+     * 7. 获取论文内容
+     * @param paperId 论文ID
+     */
+    @GetMapping("/paper-content/{paperId}")
+    public Result<PaperContentDTO> getPaperContent(@PathVariable Long paperId) {
+        try {
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("教师{}获取论文内容: paperId={}", teacherId, paperId);
+            return teacherReviewService.getPaperContent(teacherId, paperId);
+        } catch (Exception e) {
+            log.error("获取论文内容失败: paperId={}", paperId, e);
+            return Result.error(500, "获取论文内容失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 8. 获取论文预览URL
+     * @param paperId 论文ID
+     */
+    @GetMapping("/paper-preview/{paperId}")
+    public Result<PaperPreviewUrlDTO> getPaperPreview(@PathVariable Long paperId) {
+        try {
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("教师{}获取论文预览URL: paperId={}", teacherId, paperId);
+            return teacherReviewService.getPaperPreviewUrl(teacherId, paperId);
+        } catch (Exception e) {
+            log.error("获取论文预览URL失败: paperId={}", paperId, e);
+            return Result.error(500, "获取论文预览URL失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 9. 导出审核记录
+     * @param studentName 学生姓名（可选）
+     * @param paperTitle 论文标题（可选）
+     */
+    @GetMapping("/export")
+    public void exportReviewedList(
+            @RequestParam(value = "studentName", required = false) String studentName,
+            @RequestParam(value = "paperTitle", required = false) String paperTitle,
+            HttpServletResponse response) {
+        try {
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("导出审核记录: teacherId={}, studentName={}, paperTitle={}", teacherId, studentName, paperTitle);
+
+            ReviewQueryReq queryReq = new ReviewQueryReq();
+            queryReq.setStudentName(studentName);
+            queryReq.setPaperTitle(paperTitle);
+
+            teacherReviewService.exportReviewedList(queryReq, response);
+        } catch (Exception e) {
+            log.error("导出审核记录失败", e);
+            try {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.getWriter().write("导出失败: " + e.getMessage());
+            } catch (IOException ioException) {
+                log.error("发送错误响应失败", ioException);
+            }
+        }
     }
 }

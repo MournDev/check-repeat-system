@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.teacher.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,7 +14,8 @@ public class PaperReviewHistoryDTO {
     /**
      * 论文ID
      */
-    private String paperId;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long paperId;
     
     /**
      * 论文标题
@@ -33,7 +35,8 @@ public class PaperReviewHistoryDTO {
         /**
          * 审核记录ID
          */
-        private String reviewId;
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
+        private Long reviewId;
         
         /**
          * 审核教师姓名

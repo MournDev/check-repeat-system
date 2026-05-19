@@ -16,8 +16,7 @@ import java.util.List;
 @ApiModel("消息发送请求")
 public class MessageSendDTO {
 
-    @ApiModelProperty("会话ID")
-    @NotNull(message = "会话ID不能为空")
+    @ApiModelProperty("会话ID（可选，如果为空则自动创建）")
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long sessionId;
 

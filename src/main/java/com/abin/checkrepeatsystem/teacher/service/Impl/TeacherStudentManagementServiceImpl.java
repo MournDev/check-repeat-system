@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.teacher.service.Impl;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
@@ -61,18 +62,32 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             // 添加搜索条件
             if (requestDTO.getSearch() != null && !requestDTO.getSearch().trim().isEmpty()) {
                 // 需要关联查询学生信息
+                String searchValue = "%" + requestDTO.getSearch() + "%";
                 queryWrapper.and(wrapper -> 
                     wrapper.like(PaperInfo::getPaperTitle, requestDTO.getSearch())
                            .or()
-                           .exists("SELECT 1 FROM sys_user su WHERE su.id = paper_info.student_id " +
-                                 "AND (su.username LIKE '%" + requestDTO.getSearch() + "%' " +
-                                 "OR su.real_name LIKE '%" + requestDTO.getSearch() + "%')")
+                           .apply("EXISTS (SELECT 1 FROM sys_user su WHERE su.id = paper_info.student_id AND (su.username LIKE {0} OR su.real_name LIKE {0}))", searchValue)
+                           .or()
+                           .apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND (si.major LIKE {0} OR si.college_name LIKE {0}))", searchValue)
                 );
             }
 
             // 添加状态筛选
             if (requestDTO.getStatus() != null && !requestDTO.getStatus().trim().isEmpty()) {
                 queryWrapper.eq(PaperInfo::getPaperStatus, requestDTO.getStatus());
+            }
+
+            // 添加学院筛选（优先使用collegeId精确匹配）
+            if (requestDTO.getCollegeId() != null && requestDTO.getCollegeId() > 0) {
+                queryWrapper.apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND si.college_id = {0})", requestDTO.getCollegeId());
+            } else if (requestDTO.getCollege() != null && !requestDTO.getCollege().trim().isEmpty()) {
+                String collegeValue = "%" + requestDTO.getCollege() + "%";
+                queryWrapper.apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND si.college_name LIKE {0})", collegeValue);
+            }
+
+            // 添加专业筛选
+            if (requestDTO.getMajorId() != null && requestDTO.getMajorId() > 0) {
+                queryWrapper.apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND si.major_id = {0})", requestDTO.getMajorId());
             }
 
             // 创建分页对象
@@ -149,22 +164,26 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             // 统计总学生数（去重）
             Set<Long> studentIds = papers.stream()
                     .map(PaperInfo::getStudentId)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
             
-            // 统计各种状态的学生数
+            // 已提交论文数（submit_time IS NOT NULL，去重学生数）
             long submittedCount = papers.stream()
-                    .filter(paper -> paper.getPaperStatus() != null && 
-                           (paper.getPaperStatus().equals("submitted") || 
-                            paper.getPaperStatus().equals("auditing") ||
-                            paper.getPaperStatus().equals("reviewed")))
+                    .filter(paper -> paper.getStudentId() != null && paper.getSubmitTime() != null)
                     .map(PaperInfo::getStudentId)
                     .distinct()
                     .count();
 
-            long assignedCount = papers.size(); // 有论文的就是已分配的
+            // 已分配导师数（paper_status = 'assigned'，去重学生数）
+            long assignedCount = papers.stream()
+                    .filter(paper -> paper.getStudentId() != null && "assigned".equals(paper.getPaperStatus()))
+                    .map(PaperInfo::getStudentId)
+                    .distinct()
+                    .count();
             
+            // 已完成审核数（completed状态，去重学生数）
             long completedCount = papers.stream()
-                    .filter(paper -> "reviewed".equals(paper.getPaperStatus()))
+                    .filter(paper -> paper.getStudentId() != null && PaperStatusEnum.COMPLETED.getCode().equals(paper.getPaperStatus()))
                     .map(PaperInfo::getStudentId)
                     .distinct()
                     .count();
@@ -422,8 +441,14 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             if (addStudentDTO.getStudentName() == null || addStudentDTO.getStudentName().trim().isEmpty()) {
                 return Result.error(ResultCode.PARAM_ERROR, "学生姓名不能为空");
             }
+            if (addStudentDTO.getCollegeId() == null || addStudentDTO.getCollegeId() <= 0) {
+                return Result.error(ResultCode.PARAM_ERROR, "学院ID不合法");
+            }
             if (addStudentDTO.getCollegeName() == null || addStudentDTO.getCollegeName().trim().isEmpty()) {
                 return Result.error(ResultCode.PARAM_ERROR, "学院名称不能为空");
+            }
+            if (addStudentDTO.getMajorId() == null || addStudentDTO.getMajorId() <= 0) {
+                return Result.error(ResultCode.PARAM_ERROR, "专业ID不合法");
             }
             if (addStudentDTO.getMajor() == null || addStudentDTO.getMajor().trim().isEmpty()) {
                 return Result.error(ResultCode.PARAM_ERROR, "专业不能为空");
@@ -431,17 +456,17 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             if (addStudentDTO.getGrade() == null || addStudentDTO.getGrade().trim().isEmpty()) {
                 return Result.error(ResultCode.PARAM_ERROR, "年级不能为空");
             }
-            
+
             // 检查学号是否已存在
             LambdaQueryWrapper<SysUser> userWrapper = new LambdaQueryWrapper<>();
             userWrapper.eq(SysUser::getUsername, addStudentDTO.getUsername().trim())
                       .eq(SysUser::getIsDeleted, 0);
-            
+
             SysUser existingUser = sysUserMapper.selectOne(userWrapper);
             if (existingUser != null) {
                 return Result.error(ResultCode.PARAM_ERROR, "学号已存在");
             }
-            
+
             // 创建新学生用户
             SysUser newUser = new SysUser();
             newUser.setUsername(addStudentDTO.getUsername().trim());
@@ -452,16 +477,18 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             newUser.setIsDeleted(0);
             newUser.setCreateTime(LocalDateTime.now());
             newUser.setUpdateTime(LocalDateTime.now());
-            
+
             int insertResult = sysUserMapper.insert(newUser);
             if (insertResult > 0) {
-                log.info("成功添加学生: username={}, studentName={}", 
+                log.info("成功添加学生: username={}, studentName={}",
                         addStudentDTO.getUsername(), addStudentDTO.getStudentName());
-                
+
                 // 创建学生信息
                 StudentInfo studentInfo = new StudentInfo();
                 studentInfo.setUserId(newUser.getId());
+                studentInfo.setCollegeId(addStudentDTO.getCollegeId());
                 studentInfo.setCollegeName(addStudentDTO.getCollegeName().trim());
+                studentInfo.setMajorId(addStudentDTO.getMajorId());
                 studentInfo.setMajor(addStudentDTO.getMajor().trim());
                 studentInfo.setGrade(addStudentDTO.getGrade().trim());
                 studentInfo.setClassName(addStudentDTO.getClassName() != null ? addStudentDTO.getClassName().trim() : null);
@@ -469,17 +496,19 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
                 studentInfo.setCreateTime(LocalDateTime.now());
                 studentInfo.setUpdateTime(LocalDateTime.now());
                 studentInfoService.save(studentInfo);
-                
+
                 // 构建返回数据
                 Map<String, Object> responseData = new HashMap<>();
                 responseData.put("studentId", newUser.getId());
                 responseData.put("username", newUser.getUsername());
                 responseData.put("studentName", newUser.getRealName());
+                responseData.put("collegeId", addStudentDTO.getCollegeId());
                 responseData.put("collegeName", addStudentDTO.getCollegeName().trim());
+                responseData.put("majorId", addStudentDTO.getMajorId());
                 responseData.put("major", addStudentDTO.getMajor().trim());
                 responseData.put("grade", addStudentDTO.getGrade().trim());
                 responseData.put("createTime", newUser.getCreateTime());
-                
+
                 return Result.success("学生添加成功", responseData);
             } else {
                 return Result.error(ResultCode.SYSTEM_ERROR, "添加学生失败");
@@ -602,12 +631,16 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             
             // 从StudentInfo获取学院、专业、年级等信息
             if (studentInfo != null) {
+                dto.setCollegeId(studentInfo.getCollegeId());
                 dto.setCollegeName(studentInfo.getCollegeName());
+                dto.setMajorId(studentInfo.getMajorId());
                 dto.setMajor(studentInfo.getMajor());
                 dto.setGrade(studentInfo.getGrade());
             } else {
                 // 如果StudentInfo不存在，设置默认值
+                dto.setCollegeId(null);
                 dto.setCollegeName("");
+                dto.setMajorId(null);
                 dto.setMajor("");
                 dto.setGrade("");
             }

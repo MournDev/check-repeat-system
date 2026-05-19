@@ -10,10 +10,10 @@ server:
       min-spare: 20
 # 预览服务
 kkfileview:
-  base-url: http://192.168.30.140:8080
+  base-url: http://192.168.30.128:8080
 # 对象存储
 minio:
-  endpoint: http://192.168.30.140:9000
+  endpoint: http://192.168.30.128:9000
   accessKey: admin
   secretKey: 12345678
   bucket:
@@ -119,7 +119,19 @@ check:
     enabled: false # 是否启用深度学习引擎
     model-path: /models/bert-similarity # 模型文件路径
     gpu-enabled: false # 是否使用GPU加速
-  # MyBatis-Plus配置
+
+# AI 配置（DeepSeek）
+ai:
+  deepseek:
+    enabled: true
+    api-key: sk-2ae4f1b5ab5c45f6b26727b30d248686
+    base-url: https://api.deepseek.com
+    model: deepseek-chat
+    timeout: 30s
+    max-tokens: 2048
+    temperature: 0.3
+
+# MyBatis-Plus配置
 mybatis-plus:
     mapper-locations: classpath*:mapper/**/*.xml # Mapper.xml文件路径
     type-aliases-package: com.abin.checkrepeatsystem.pojo.entity
@@ -136,7 +148,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,env,logfile
+        include: health,info,metrics,env,logfile,prometheus
   endpoint:
     health:
       show-details: always

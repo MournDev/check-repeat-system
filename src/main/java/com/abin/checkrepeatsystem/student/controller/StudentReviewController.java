@@ -29,13 +29,13 @@ public class StudentReviewController {
 
     /**
      * 1. 学生查询自己的论文审核结果列表（分页）
-     * @param paperStatus 论文状态（可选：2-待审核，3-通过，4-不通过）
+     * @param paperStatus 论文状态（可选：auditing-待审核，completed-通过，rejected-不通过）
      * @param currentPage 当前页码（可选，默认1）
      * @param pageSize 每页条数（可选，默认10）
      */
     @GetMapping("/list")
     public Result<Page<StudentReviewDetailDTO>> getMyReviewList(
-            @RequestParam(value = "paperStatus", required = false) Integer paperStatus,
+            @RequestParam(value = "paperStatus", required = false) String paperStatus,
             @RequestParam(value = "currentPage", required = false, defaultValue = "1") Integer currentPage,
             @RequestParam(value = "pageSize", required = false, defaultValue = "10") Integer pageSize) {
         StudentReviewQueryReq queryReq = new StudentReviewQueryReq();

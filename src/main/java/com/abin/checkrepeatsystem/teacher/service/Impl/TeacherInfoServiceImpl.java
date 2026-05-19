@@ -5,10 +5,12 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
+import com.abin.checkrepeatsystem.pojo.entity.College;
+import com.abin.checkrepeatsystem.pojo.entity.Major;
 import com.abin.checkrepeatsystem.teacher.dto.UpdateTeacherInfoReq;
 import com.abin.checkrepeatsystem.teacher.service.TeacherInfoService;
 import com.abin.checkrepeatsystem.user.mapper.TeacherInfoMapper;
-import com.abin.checkrepeatsystem.user.service.Impl.UserQueryService;
+import com.abin.checkrepeatsystem.common.service.CollegeAndMajorService;
 import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
 import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -36,6 +38,9 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
 
     @Resource
     private PasswordEncoder passwordEncoder;
+    
+    @Resource
+    private CollegeAndMajorService collegeAndMajorService;
     
     @Resource
     private ConversationMemberMapper conversationMemberMapper;
@@ -80,6 +85,11 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
             teacherInfo.setOfficeHours(updateReq.getOfficeHours());
             teacherInfo.setMaxReviewCount(updateReq.getMaxReviewCount());
             teacherInfo.setReviewDeadline(updateReq.getReviewDeadline());
+            
+            // 设置学院和专业信息
+            teacherInfo.setCollegeName(updateReq.getCollegeName());
+            teacherInfo.setMajorId(updateReq.getMajorId());
+            teacherInfo.setMajor(updateReq.getMajor());
             
             if (teacherInfo.getId() == null) {
                 teacherInfoMapper.insert(teacherInfo);
@@ -140,13 +150,10 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
                 info.setOfficeHours(teacherInfo.getOfficeHours());
                 info.setMaxReviewCount(teacherInfo.getMaxReviewCount());
                 info.setReviewDeadline(teacherInfo.getReviewDeadline());
-            } else {
-                info.setTitle("");
-                info.setResearchFields(new ArrayList<>());
-                info.setOffice("");
-                info.setOfficeHours("");
-                info.setMaxReviewCount(5); // 默认值
-                info.setReviewDeadline(7); // 默认值
+                // 获取学院和专业信息
+                info.setCollegeName(teacherInfo.getCollegeName());
+                info.setMajorId(teacherInfo.getMajorId());
+                info.setMajor(teacherInfo.getMajor());
             }
 
             log.info("获取用户信息成功：用户ID={}", userId);

@@ -28,8 +28,8 @@ public interface AssignmentHistoryService {
     Result<Page<AssignmentRecordDTO>> getAssignmentRecordList(
             String startDate,
             String endDate,
+            Long collegeId,
             String assignmentType,
-            String major,
             String status,
             String keyword,
             Integer page,

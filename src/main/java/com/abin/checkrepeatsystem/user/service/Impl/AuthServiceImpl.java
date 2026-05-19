@@ -19,15 +19,21 @@ import com.abin.checkrepeatsystem.pojo.entity.SysRole;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
+import com.abin.checkrepeatsystem.pojo.entity.AdminInfo;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.abin.checkrepeatsystem.user.service.AuthService;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
+import com.abin.checkrepeatsystem.user.service.AdminInfoService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.user.vo.RefreshTokenVO;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -74,7 +80,19 @@ public class AuthServiceImpl implements AuthService {
     private StudentInfoService studentInfoService;
 
     @Resource
+    private AdminInfoService adminInfoService;
+
+    @Resource
     SysOperationLogMapper sysOperationLogMapper;
+
+    @Resource
+    private RedisTemplate<String, String> redisTemplate;
+
+    @Resource
+    private JavaMailSender mailSender;
+
+    @Value("${spring.mail.username}")
+    private String fromEmail;
 
     /**
      * 用户注册（事务保证：确保用户插入成功，避免脏数据）
@@ -238,6 +256,14 @@ public class AuthServiceImpl implements AuthService {
                 loginVO.setClassName(studentInfo.getClassName());
                 loginVO.setCollegeName(studentInfo.getCollegeName());
             }
+        } else if ("ADMIN".equals(sysUser.getUserType())) {
+            // 如果是管理员用户，从AdminInfo表获取管理员特有信息
+            AdminInfo adminInfo = adminInfoService.getByUserId(sysUser.getId());
+            if (adminInfo != null) {
+                loginVO.setPosition(adminInfo.getPosition());
+                loginVO.setDepartment(adminInfo.getDepartment());
+                loginVO.setOfficeAddress(adminInfo.getOfficeAddress());
+            }
         }
 
         log.info("用户登录成功：用户名={}，角色={}，令牌过期时间={}",
@@ -254,11 +280,11 @@ public class AuthServiceImpl implements AuthService {
 
         // 1. 校验旧令牌有效性（格式+是否过期）
         if (!jwtUtils.validateTokenFormat(oldToken)) {
-            log.warn("令牌刷新失败：旧令牌格式错误，token={}", oldToken);
+            log.warn("令牌刷新失败：旧令牌格式错误，token={}", maskToken(oldToken));
             return Result.error(ResultCode.PARAM_ERROR, "令牌格式错误，请重新登录");
         }
         if (jwtUtils.isTokenExpired(oldToken)) {
-            log.warn("令牌刷新失败：旧令牌已过期，token={}", oldToken);
+            log.warn("令牌刷新失败：旧令牌已过期，token={}", maskToken(oldToken));
             return Result.error(ResultCode.PARAM_VALUE_INVALID, "旧令牌已过期，请重新登录");
         }
 
@@ -268,7 +294,7 @@ public class AuthServiceImpl implements AuthService {
         String roleCode = jwtUtils.extractRoleCode(oldToken);
         // 兜底：校验令牌中的用户信息是否完整
         if (userId == null || username == null || roleCode == null) {
-            log.error("令牌刷新失败：旧令牌信息不完整，token={}", oldToken);
+            log.error("令牌刷新失败：旧令牌信息不完整，token={}", maskToken(oldToken));
             return Result.error(ResultCode.PARAM_ERROR, "令牌信息损坏，请重新登录");
         }
 
@@ -281,51 +307,138 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenVO.setNewToken(newToken);
         refreshTokenVO.setExpireTime(newExpireTime);
 
+        // 将旧令牌加入黑名单
+        try {
+            long remainingTtl = jwtUtils.getExpirationDate(oldToken).getTime() - System.currentTimeMillis();
+            if (remainingTtl > 0) {
+                redisTemplate.opsForValue().set("token_blacklist:" + oldToken, "1",
+                    remainingTtl, java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+        } catch (Exception e) {
+            log.warn("旧令牌加入黑名单失败", e);
+        }
+
         log.info("令牌刷新成功：用户名={}，旧令牌过期时间={}，新令牌过期时间={}",
                 username, jwtUtils.getExpirationDate(oldToken), newExpireTime);
         return Result.success("令牌刷新成功", refreshTokenVO);
     }
 
     /**
-     * 用户退出登录（清除上下文，前端需同步清除令牌）
+     * 用户退出登录（清除上下文并加入黑名单，前端需同步清除令牌）
      */
     @Override
     public Result<String> logout() {
+        // 从当前Security上下文获取JWT令牌并加入黑名单
+        String token = null;
+        try {
+            String headerAuth = request.getHeader("Authorization");
+            if (headerAuth != null && headerAuth.startsWith("Bearer ")) {
+                token = headerAuth.substring(7);
+                long remainingTtl = jwtUtils.getExpirationDate(token).getTime() - System.currentTimeMillis();
+                if (remainingTtl > 0) {
+                    redisTemplate.opsForValue().set("token_blacklist:" + token, "1",
+                        remainingTtl, java.util.concurrent.TimeUnit.MILLISECONDS);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("令牌加入黑名单失败", e);
+        }
         SecurityContextHolder.clearContext();
-        log.info("用户退出登录成功：清除Security上下文");
+        log.info("用户退出登录成功：清除Security上下文，令牌已加入黑名单");
         return Result.success("退出登录成功");
     }
 
-    // AuthServiceImpl.java
     @Override
     public Result<String> forgotPassword(ForgotPasswordReq forgotPasswordReq) {
-        // 1. 根据用户名查询用户信息
+        String username = forgotPasswordReq.getUsername();
+        String clientIp = HttpIpUtils.getRealIp(request);
+
+        // 1. 频率限制：单IP每小时最多5次重置尝试
+        String rateLimitKey = "pwd_reset_limit:" + clientIp;
+        Long attemptCount = redisTemplate.opsForValue().increment(rateLimitKey, 1);
+        if (attemptCount == 1) {
+            redisTemplate.expire(rateLimitKey, 1, java.util.concurrent.TimeUnit.HOURS);
+        }
+        if (attemptCount != null && attemptCount > 5) {
+            log.warn("密码重置频率限制触发: IP={}, username={}", clientIp, username);
+            return Result.error(ResultCode.TOO_MANY_REQUESTS, "操作过于频繁，请1小时后再试");
+        }
+
+        // 2. 校验验证码
+        String storedCode = redisTemplate.opsForValue().get("pwd_reset_code:" + username);
+        if (storedCode == null || !storedCode.equals(forgotPasswordReq.getVerificationCode())) {
+            return Result.error(ResultCode.PARAM_ERROR, "验证码错误或已过期");
+        }
+
+        // 3. 根据用户名查询用户信息
         SysUser sysUser = sysUserMapper.selectOne(
                 Wrappers.<SysUser>lambdaQuery()
-                        .eq(SysUser::getUsername, forgotPasswordReq.getUsername())
+                        .eq(SysUser::getUsername, username)
                         .eq(SysUser::getIsDeleted, 0)
         );
 
-        // 2. 校验用户是否存在
         if (sysUser == null) {
             return Result.error(ResultCode.PARAM_ERROR, "用户不存在");
         }
 
-        // 3. 校验邮箱是否匹配
+        // 4. 校验邮箱是否匹配
         if (!forgotPasswordReq.getEmail().equals(sysUser.getEmail())) {
             return Result.error(ResultCode.PARAM_ERROR, "邮箱验证失败");
         }
 
-        // 4. 更新密码（加密存储）
+        // 5. 更新密码（加密存储）
         try {
             sysUser.setPassword(passwordEncoder.encode(forgotPasswordReq.getNewPassword()));
             sysUserMapper.updateById(sysUser);
-            log.info("用户密码重置成功：用户名={}", forgotPasswordReq.getUsername());
+            redisTemplate.delete("pwd_reset_code:" + username);
+            log.info("用户密码重置成功：用户名={}", username);
             return Result.success("密码重置成功");
         } catch (Exception e) {
-            log.error("用户密码重置失败：用户名={}", forgotPasswordReq.getUsername(), e);
+            log.error("用户密码重置失败：用户名={}", username, e);
             return Result.error(ResultCode.SYSTEM_ERROR, "密码重置失败");
         }
+    }
+
+    /**
+     * 发送密码重置验证码到用户注册邮箱
+     */
+    public Result<String> sendPasswordResetCode(String username) {
+        SysUser sysUser = sysUserMapper.selectOne(
+                Wrappers.<SysUser>lambdaQuery()
+                        .eq(SysUser::getUsername, username)
+                        .eq(SysUser::getIsDeleted, 0)
+        );
+
+        if (sysUser == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "用户不存在");
+        }
+
+        String email = sysUser.getEmail();
+        if (email == null || email.isEmpty()) {
+            return Result.error(ResultCode.PARAM_ERROR, "该账户未绑定邮箱");
+        }
+
+        String code = String.valueOf((int) ((Math.random() * 9 + 1) * 100000));
+        redisTemplate.opsForValue().set("pwd_reset_code:" + username, code, 300, java.util.concurrent.TimeUnit.SECONDS);
+
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(email);
+            message.setSubject("密码重置验证码");
+            message.setText("您的密码重置验证码是：" + code + "，5分钟内有效。如非本人操作，请忽略此邮件。");
+            mailSender.send(message);
+            log.info("密码重置验证码已发送：用户名={}", username);
+            return Result.success("验证码已发送至注册邮箱");
+        } catch (Exception e) {
+            log.error("发送密码重置验证码失败：用户名={}", username, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "验证码发送失败");
+        }
+    }
+
+    private static String maskToken(String token) {
+        if (token == null || token.length() <= 8) return "***";
+        return token.substring(0, 4) + "****" + token.substring(token.length() - 4);
     }
     /**
      * 记录登录日志

@@ -29,8 +29,16 @@ public class LoginVO {
     /** 专业名称（前端展示用） */
     private String major;
 
+    /** 专业ID */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long majorId;
+
     /** 学院名称（前端展示用） */
     private String collegeName;
+
+    /** 学院ID */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long collegeId;
 
     /** 年级名称（前端展示用） */
     private String grade;
@@ -58,5 +66,15 @@ public class LoginVO {
 
     /** 最后登录时间（展示用） */
     private LocalDateTime lastLoginTime;
+
+    // 管理员专用字段
+    /** 职位名称（前端展示用） */
+    private String position;
+
+    /** 部门名称（前端展示用） */
+    private String department;
+
+    /** 办公地址（前端展示用） */
+    private String officeAddress;
 
 }

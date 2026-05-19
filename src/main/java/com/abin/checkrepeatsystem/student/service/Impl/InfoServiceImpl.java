@@ -105,6 +105,7 @@ public class InfoServiceImpl implements InfoService {
             }
 
             // 2. 更新用户信息（仅允许更新部分字段）
+            currentUser.setCollegeId(updateReq.getCollegeId());
             currentUser.setRealName(updateReq.getRealName());
             currentUser.setEmail(updateReq.getEmail());
             currentUser.setPhone(updateReq.getPhone());
@@ -115,8 +116,10 @@ public class InfoServiceImpl implements InfoService {
             // 3. 更新学生信息
             StudentInfo studentInfo = studentInfoService.getByUserId(currentUser.getId());
             if (studentInfo != null) {
-                studentInfo.setMajor(updateReq.getMajor());
+                studentInfo.setCollegeId(updateReq.getCollegeId());
                 studentInfo.setCollegeName(updateReq.getCollegeName());
+                studentInfo.setMajorId(updateReq.getMajorId());
+                studentInfo.setMajor(updateReq.getMajor());
                 studentInfo.setGrade(updateReq.getGrade());
                 studentInfo.setClassName(updateReq.getClassName());
                 studentInfoService.saveOrUpdate(studentInfo);
@@ -142,8 +145,10 @@ public class InfoServiceImpl implements InfoService {
             
             // 从StudentInfo表获取学生信息（复用上面已查询的studentInfo对象）
             if (studentInfo != null) {
-                loginVO.setMajor(studentInfo.getMajor());
+                loginVO.setCollegeId(studentInfo.getCollegeId());
                 loginVO.setCollegeName(studentInfo.getCollegeName());
+                loginVO.setMajorId(studentInfo.getMajorId());
+                loginVO.setMajor(studentInfo.getMajor());
                 loginVO.setGrade(studentInfo.getGrade());
                 loginVO.setClassName(studentInfo.getClassName());
             }
@@ -238,10 +243,39 @@ public class InfoServiceImpl implements InfoService {
     @Override
     public Result<Page<LoginHistoryVO>> getLoginHistory(LoginLogQueryReq queryReq) {
         try {
+            // 获取当前登录用户信息
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return Result.error(ResultCode.NOT_LOGIN, "用户未登录");
+            }
+
+            String currentUsername = authentication.getName();
+            SysUser currentUser = sysUserMapper.selectOne(
+                    Wrappers.<SysUser>lambdaQuery()
+                            .eq(SysUser::getUsername, currentUsername)
+                            .eq(SysUser::getIsDeleted, 0)
+            );
+
+            if (currentUser == null) {
+                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "当前用户不存在");
+            }
+
+            // 获取用户角色
+            SysRole sysRole = sysRoleMapper.selectById(currentUser.getRoleId());
+            String roleCode = sysRole != null ? sysRole.getRoleCode() : "";
+
             // 构建查询条件
-            LambdaQueryWrapper<SysLoginLog> queryWrapper = Wrappers.<SysLoginLog>lambdaQuery()
-                    .like(StringUtils.hasText(queryReq.getUsername()), SysLoginLog::getUsername, queryReq.getUsername())
-                    .like(StringUtils.hasText(queryReq.getLoginIp()), SysLoginLog::getLoginIp, queryReq.getLoginIp())
+            LambdaQueryWrapper<SysLoginLog> queryWrapper = Wrappers.<SysLoginLog>lambdaQuery();
+
+            // 管理员可以看到全部，学生和教师只能看到自己的
+            if (!"ADMIN".equals(roleCode)) {
+                queryWrapper.eq(SysLoginLog::getUsername, currentUsername);
+            } else if (StringUtils.hasText(queryReq.getUsername())) {
+                // 管理员可以按用户名筛选
+                queryWrapper.like(SysLoginLog::getUsername, queryReq.getUsername());
+            }
+
+            queryWrapper.like(StringUtils.hasText(queryReq.getLoginIp()), SysLoginLog::getLoginIp, queryReq.getLoginIp())
                     .eq(queryReq.getLoginStatus() != null, SysLoginLog::getLoginResult, queryReq.getLoginStatus())
                     .orderByDesc(SysLoginLog::getLoginTime);
 
@@ -259,7 +293,7 @@ public class InfoServiceImpl implements InfoService {
 
             voPage.setRecords(voList);
 
-            log.info("查询登录历史成功，查询条件：{}", queryReq);
+            log.info("查询登录历史成功，查询条件：{}，当前用户：{}，角色：{}", queryReq, currentUsername, roleCode);
             return Result.success("查询成功", voPage);
         } catch (Exception e) {
             log.error("查询登录历史失败：{}", e.getMessage(), e);

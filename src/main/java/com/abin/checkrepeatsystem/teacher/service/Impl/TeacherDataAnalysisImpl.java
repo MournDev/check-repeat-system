@@ -450,25 +450,31 @@ public class TeacherDataAnalysisImpl implements TeacherDataAnalysisService {
         Map<String, Object> stats = new HashMap<>();
 
         // 基础统计数据
-        stats.put("totalReviews", currentTotal);
-        stats.put("approvedReviews", approvedReviews != null ? approvedReviews : 0);
-        stats.put("rejectedReviews", rejectedReviews != null ? rejectedReviews : 0);
-        stats.put("currentStudents", currentStudents != null ? currentStudents : 0);
+        int approvedCount = approvedReviews != null ? approvedReviews : 0;
+        int rejectedCount = rejectedReviews != null ? rejectedReviews : 0;
+        int currentTotalCount = currentTotal;
+        int studentsCount = currentStudents != null ? currentStudents : 0;
+        
+        stats.put("totalReviews", currentTotalCount);
+        stats.put("pendingReviews", 0); // 待审核数，实际应从数据库查询
+        stats.put("approvedReviews", approvedCount);
+        stats.put("currentStudents", studentsCount);
 
         // 趋势数据
-        stats.put("totalTrend", totalTrend);
-        stats.put("approvedTrend", approvedTrend != null ? approvedTrend : BigDecimal.ZERO);
-        stats.put("rejectedTrend", rejectedTrend != null ? rejectedTrend : BigDecimal.ZERO);
+        Map<String, Object> totalReviewsTrend = new HashMap<>();
+        totalReviewsTrend.put("type", getTrendType(totalTrend));
+        totalReviewsTrend.put("text", generateTrendMessage(totalTrend));
+        stats.put("totalReviewsTrend", totalReviewsTrend);
 
-        // 为ECharts准备的图表数据格式
-        Map<String, Object> chartData = new HashMap<>();
-        chartData.put("labels", new String[]{"通过", "拒绝"});
-        chartData.put("values", new Integer[]{
-                approvedReviews != null ? approvedReviews : 0,
-                rejectedReviews != null ? rejectedReviews : 0
-        });
-        chartData.put("colors", new String[]{"#52c41a", "#ff4d4f"}); // 绿色表示通过，红色表示拒绝
-        stats.put("chartData", chartData);
+        Map<String, Object> approvedReviewsTrend = new HashMap<>();
+        approvedReviewsTrend.put("type", getTrendType(approvedTrend != null ? approvedTrend : BigDecimal.ZERO));
+        approvedReviewsTrend.put("text", generateTrendMessage(approvedTrend != null ? approvedTrend : BigDecimal.ZERO));
+        stats.put("approvedReviewsTrend", approvedReviewsTrend);
+
+        Map<String, Object> currentStudentsTrend = new HashMap<>();
+        currentStudentsTrend.put("type", "flat");
+        currentStudentsTrend.put("text", "无变化");
+        stats.put("currentStudentsTrend", currentStudentsTrend);
 
         return stats;
     }

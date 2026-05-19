@@ -10,11 +10,13 @@ import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.student.mapper.MajorMapper;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -24,19 +26,39 @@ import java.util.stream.Collectors;
 @Service
 public class CommonDictServiceImpl implements CommonDictService {
 
-    @Resource
+    private static final String CACHE_KEY_COLLEGES = "common:dict:colleges";
+    private static final String CACHE_KEY_MAJORS = "common:dict:majors";
+    private static final String CACHE_KEY_MAJOR_MAP = "common:dict:major:map";
+    private static final long CACHE_EXPIRE_HOURS = 24;
+
+    @Autowired
     private CollegeMapper collegeMapper;
 
-    @Resource
+    @Autowired
     private MajorMapper majorMapper;
 
-    @Resource
+    @Autowired
     private SysUserService sysUserService;
+
+    @Autowired(required = false)
+    private RedisTemplate<String, Object> redisTemplate;
 
     @Override
     public Result<List<Map<String, Object>>> getColleges() {
         try {
-            // 从 college 表查询所有学院
+            if (redisTemplate != null) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> cached = (List<Map<String, Object>>) redisTemplate.opsForValue().get(CACHE_KEY_COLLEGES);
+                    if (cached != null) {
+                        log.debug("从缓存获取学院列表: count={}", cached.size());
+                        return Result.success("学院列表获取成功", cached);
+                    }
+                } catch (Exception e) {
+                    log.warn("读取学院缓存失败，使用数据库查询", e);
+                }
+            }
+
             LambdaQueryWrapper<College> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(College::getIsDeleted, 0)
                    .orderByAsc(College::getCollegeName);
@@ -53,6 +75,14 @@ public class CommonDictServiceImpl implements CommonDictService {
                     })
                     .collect(Collectors.toList());
 
+            if (redisTemplate != null) {
+                try {
+                    redisTemplate.opsForValue().set(CACHE_KEY_COLLEGES, result, CACHE_EXPIRE_HOURS, TimeUnit.HOURS);
+                } catch (Exception e) {
+                    log.warn("写入学院缓存失败", e);
+                }
+            }
+
             log.debug("获取学院列表成功: count={}", result.size());
             return Result.success("学院列表获取成功", result);
         } catch (Exception e) {
@@ -64,15 +94,30 @@ public class CommonDictServiceImpl implements CommonDictService {
     @Override
     public Result<List<Map<String, Object>>> getMajors(Long collegeId) {
         try {
-            // 从 major 表查询专业
+            String cacheKey = collegeId != null && collegeId > 0
+                    ? CACHE_KEY_MAJORS + ":" + collegeId
+                    : CACHE_KEY_MAJORS;
+
+            if (redisTemplate != null) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> cached = (List<Map<String, Object>>) redisTemplate.opsForValue().get(cacheKey);
+                    if (cached != null) {
+                        log.debug("从缓存获取专业列表: cacheKey={}, count={}", cacheKey, cached.size());
+                        return Result.success("专业列表获取成功", cached);
+                    }
+                } catch (Exception e) {
+                    log.warn("读取专业缓存失败，使用数据库查询", e);
+                }
+            }
+
             LambdaQueryWrapper<Major> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(Major::getIsDeleted, 0);
-            
-            // 如果指定了学院ID，则筛选该学院下的专业
+
             if (collegeId != null && collegeId > 0) {
                 wrapper.eq(Major::getCollegeId, collegeId);
             }
-            
+
             wrapper.orderByAsc(Major::getMajorName);
 
             List<Major> majors = majorMapper.selectList(wrapper);
@@ -87,6 +132,14 @@ public class CommonDictServiceImpl implements CommonDictService {
                         return map;
                     })
                     .collect(Collectors.toList());
+
+            if (redisTemplate != null) {
+                try {
+                    redisTemplate.opsForValue().set(cacheKey, result, CACHE_EXPIRE_HOURS, TimeUnit.HOURS);
+                } catch (Exception e) {
+                    log.warn("写入专业缓存失败", e);
+                }
+            }
 
             log.debug("获取专业列表成功: count={}, collegeId={}", result.size(), collegeId);
             return Result.success("专业列表获取成功", result);
@@ -135,7 +188,19 @@ public class CommonDictServiceImpl implements CommonDictService {
     @Override
     public Result<Map<String, String>> getMajorNameMap() {
         try {
-            // 从 major 表查询专业ID和名称的映射
+            if (redisTemplate != null) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> cached = (Map<String, String>) redisTemplate.opsForValue().get(CACHE_KEY_MAJOR_MAP);
+                    if (cached != null) {
+                        log.debug("从缓存获取专业名称映射: count={}", cached.size());
+                        return Result.success("专业名称映射获取成功", cached);
+                    }
+                } catch (Exception e) {
+                    log.warn("读取专业名称映射缓存失败", e);
+                }
+            }
+
             LambdaQueryWrapper<Major> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(Major::getIsDeleted, 0);
 
@@ -147,6 +212,14 @@ public class CommonDictServiceImpl implements CommonDictService {
                             Major::getMajorName,
                             (existing, replacement) -> existing
                     ));
+
+            if (redisTemplate != null) {
+                try {
+                    redisTemplate.opsForValue().set(CACHE_KEY_MAJOR_MAP, majorMap, CACHE_EXPIRE_HOURS, TimeUnit.HOURS);
+                } catch (Exception e) {
+                    log.warn("写入专业名称映射缓存失败", e);
+                }
+            }
 
             log.debug("获取专业名称映射成功: count={}", majorMap.size());
             return Result.success("专业名称映射获取成功", majorMap);

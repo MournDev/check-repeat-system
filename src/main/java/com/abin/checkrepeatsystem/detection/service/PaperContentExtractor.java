@@ -231,10 +231,11 @@ public class PaperContentExtractor {
         // 从本地存储路径读取（使用完整路径）
         String storagePath = fileInfo.getStoragePath();
         if (storagePath != null && !storagePath.isEmpty()) {
-            // 使用Path类拼接路径，确保跨平台兼容性
-            Path basePath = Paths.get(uploadBasePath);
-            Path relativePath = Paths.get(storagePath);
-            Path fullPath = basePath.resolve(relativePath);
+            // 规范化存储路径：统一分隔符并去除开头的路径分隔符
+            // storagePath在数据库中可能以 / 开头（Unix风格），在Windows上Paths.get()会将其解析为绝对路径
+            // 导致basePath.resolve()丢弃basePath，因此需要先去除开头分隔符
+            String normalizedPath = storagePath.replace('\\', '/').replaceAll("^/+", "");
+            Path fullPath = Paths.get(uploadBasePath, normalizedPath);
             String fullPathStr = fullPath.toString();
             
             log.info("从本地存储路径读取: basePath={}, storagePath={}, fullPath={}", 

@@ -1,8 +1,8 @@
 package com.abin.checkrepeatsystem.pojo.entity;
 
+import com.abin.checkrepeatsystem.common.handler.ListStringTypeHandler;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -36,7 +36,7 @@ public class ReviewTemplate extends BaseEntity implements Serializable {
     /**
      * 使用场景
      */
-    @TableField(typeHandler = JacksonTypeHandler.class)
+    @TableField(typeHandler = ListStringTypeHandler.class)
     private List<String> scenarios;
 
     /**

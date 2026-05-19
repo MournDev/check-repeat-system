@@ -10,6 +10,7 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherReviewTemplateService;
 import com.abin.checkrepeatsystem.teacher.vo.ReviewTemplateVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.List;
 /**
  * 审核意见模板服务实现
  */
+@Slf4j
 @Service
 public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateService {
 
@@ -38,24 +40,23 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             // 获取当前用户ID
             Long userId = UserBusinessInfoUtils.getCurrentUserId();
             
-            // 查询模板列表
-            LambdaQueryWrapper<ReviewTemplate> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(ReviewTemplate::getCreateBy, userId)
-                    .or()
-                    .eq(ReviewTemplate::getIsPublic, true);
-            List<ReviewTemplate> templates = reviewTemplateMapper.selectList(queryWrapper);
+            // 查询模板列表（使用自定义方法确保正确解析JSON字段）
+            List<ReviewTemplate> templates = reviewTemplateMapper.selectTemplatesWithScenarios(userId);
             
             // 转换为VO
             List<ReviewTemplateVO> templateVOs = new ArrayList<>();
             for (ReviewTemplate template : templates) {
                 ReviewTemplateVO vo = new ReviewTemplateVO();
                 BeanUtils.copyProperties(template, vo);
+                if (vo.getScenarios() == null) {
+                    vo.setScenarios(new ArrayList<>());
+                }
                 templateVOs.add(vo);
             }
             
             return Result.success(templateVOs);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核模板操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"获取模板列表失败");
         }
     }
@@ -87,10 +88,13 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             // 转换为VO
             ReviewTemplateVO vo = new ReviewTemplateVO();
             BeanUtils.copyProperties(template, vo);
+            if (vo.getScenarios() == null) {
+                vo.setScenarios(new ArrayList<>());
+            }
             
             return Result.success(vo);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核模板操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"创建模板失败");
         }
     }
@@ -108,8 +112,8 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             // 获取当前用户ID
             Long userId = UserBusinessInfoUtils.getCurrentUserId();
             
-            // 查询模板
-            ReviewTemplate template = reviewTemplateMapper.selectById(templateId);
+            // 查询模板（使用自定义方法确保正确解析JSON字段）
+            ReviewTemplate template = reviewTemplateMapper.selectByIdWithScenarios(templateId);
             if (template == null) {
                 return Result.error(ResultCode.SYSTEM_ERROR,"模板不存在");
             }
@@ -130,10 +134,13 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             // 转换为VO
             ReviewTemplateVO vo = new ReviewTemplateVO();
             BeanUtils.copyProperties(template, vo);
+            if (vo.getScenarios() == null) {
+                vo.setScenarios(new ArrayList<>());
+            }
             
             return Result.success(vo);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核模板操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"更新模板失败");
         }
     }
@@ -150,8 +157,8 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             // 获取当前用户ID
             Long userId = UserBusinessInfoUtils.getCurrentUserId();
             
-            // 查询模板
-            ReviewTemplate template = reviewTemplateMapper.selectById(templateId);
+            // 查询模板（使用自定义方法确保正确解析JSON字段）
+            ReviewTemplate template = reviewTemplateMapper.selectByIdWithScenarios(templateId);
             if (template == null) {
                 return Result.error(ResultCode.SYSTEM_ERROR,"模板不存在");
             }
@@ -166,7 +173,7 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核模板操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"删除模板失败");
         }
     }
@@ -195,7 +202,7 @@ public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateSe
             
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核模板操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"使用模板失败");
         }
     }

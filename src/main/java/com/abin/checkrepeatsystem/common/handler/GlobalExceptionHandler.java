@@ -3,11 +3,16 @@ package com.abin.checkrepeatsystem.common.handler;
 import com.abin.checkrepeatsystem.common.Exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import java.util.stream.Collectors;
 
 /**
  * 全局异常处理器：基于ResultCode枚举统一响应格式
@@ -54,7 +59,31 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(result, resultCode.getHttpStatus());
     }
 
-    // -------------------------- 3. 系统异常（兜底处理） --------------------------
+    // -------------------------- 3. @Valid 请求体校验失败 --------------------------
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Result<String>> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
+        String errors = e.getBindingResult().getFieldErrors().stream()
+            .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+            .collect(Collectors.joining("; "));
+        log.warn("参数校验失败: {}", errors);
+        ResultCode resultCode = ResultCode.PARAM_ERROR;
+        Result<String> result = Result.error(resultCode.getCode(), errors, null);
+        return new ResponseEntity<>(result, resultCode.getHttpStatus());
+    }
+
+    // -------------------------- 4. 约束校验失败（@Validated on path/query params） --------------------------
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Result<String>> handleConstraintViolation(ConstraintViolationException e) {
+        String errors = e.getConstraintViolations().stream()
+            .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+            .collect(Collectors.joining("; "));
+        log.warn("约束校验失败: {}", errors);
+        ResultCode resultCode = ResultCode.PARAM_ERROR;
+        Result<String> result = Result.error(resultCode.getCode(), errors, null);
+        return new ResponseEntity<>(result, resultCode.getHttpStatus());
+    }
+
+    // -------------------------- 5. 系统异常（兜底处理） --------------------------
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<?>> handleSystemException(Exception e) {
         log.error("系统异常：{}", e.getMessage(), e);

@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.admin.controller;
 
+import com.abin.checkrepeatsystem.admin.dto.PerformanceConfigDTO;
 import com.abin.checkrepeatsystem.admin.vo.CheckRuleOperateReq;
 import com.abin.checkrepeatsystem.admin.vo.CompareLibOperateReq;
 import com.abin.checkrepeatsystem.admin.dto.RuleLibRelationDTO;
@@ -12,6 +13,7 @@ import com.abin.checkrepeatsystem.pojo.entity.CheckRule;
 import com.abin.checkrepeatsystem.pojo.entity.CompareLib;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.abin.checkrepeatsystem.pojo.entity.SystemParam;
+import com.abin.checkrepeatsystem.student.dto.DeadlinesDTO;
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
@@ -545,6 +547,82 @@ public class AdminRuleConfigController {
         } catch (Exception e) {
             log.error("插入默认配置失败: {}", e.getMessage(), e);
             throw new RuntimeException("插入默认配置失败: " + e.getMessage(), e);
+        }
+    }
+
+    // ========================== 性能配置（合并自 SystemConfigController） ==========================
+
+    @PutMapping("/performance")
+    public Result<Void> updatePerformanceConfig(@Valid @RequestBody PerformanceConfigDTO performanceConfig) {
+        log.info("接收更新性能配置请求: maxConcurrent={}, queueSize={}, cacheStrategy={}",
+                performanceConfig.getMaxConcurrent(),
+                performanceConfig.getQueueSize(),
+                performanceConfig.getCacheStrategy());
+        try {
+            return systemConfigService.updatePerformanceConfig(performanceConfig);
+        } catch (Exception e) {
+            log.error("更新性能配置失败: {}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "更新性能配置失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/performance")
+    public Result<PerformanceConfigDTO> getPerformanceConfig() {
+        log.info("接收获取性能配置请求");
+        try {
+            return systemConfigService.getPerformanceConfig();
+        } catch (Exception e) {
+            log.error("获取性能配置失败: {}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取性能配置失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/performance/reset")
+    public Result<Void> resetPerformanceConfig() {
+        log.info("接收重置性能配置请求");
+        try {
+            PerformanceConfigDTO defaultConfig = systemConfigService.getDefaultPerformanceConfig();
+            return systemConfigService.updatePerformanceConfig(defaultConfig);
+        } catch (Exception e) {
+            log.error("重置性能配置失败: {}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "重置性能配置失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/performance/test")
+    public Result<Void> testPerformanceConfig(@Valid @RequestBody PerformanceConfigDTO performanceConfig) {
+        log.info("接收测试性能配置请求: {}", performanceConfig);
+        try {
+            systemConfigService.applyPerformanceConfig(performanceConfig);
+            return Result.success("性能配置测试应用成功");
+        } catch (Exception e) {
+            log.error("测试性能配置失败: {}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "测试性能配置失败: " + e.getMessage());
+        }
+    }
+
+    // ========================== 时间节点配置（合并自 DeadlinesConfigController） ==========================
+
+    @GetMapping("/deadlines")
+    public Result<DeadlinesDTO> getDeadlinesConfig() {
+        try {
+            DeadlinesDTO deadlines = systemConfigService.getDeadlines();
+            return Result.success(deadlines);
+        } catch (Exception e) {
+            log.error("获取时间节点配置失败", e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取时间节点配置失败：");
+        }
+    }
+
+    @PutMapping("/deadlines")
+    public Result<Void> updateDeadlinesConfig(@RequestBody DeadlinesDTO deadlines) {
+        try {
+            log.info("更新时间节点配置：{}", deadlines);
+            systemConfigService.updateDeadlines(deadlines);
+            return Result.success("时间节点配置更新成功");
+        } catch (Exception e) {
+            log.error("更新时间节点配置失败", e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "更新时间节点配置失败：");
         }
     }
 }

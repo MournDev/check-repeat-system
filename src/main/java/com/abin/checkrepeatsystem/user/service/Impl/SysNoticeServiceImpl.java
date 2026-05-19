@@ -8,6 +8,7 @@ import com.abin.checkrepeatsystem.user.mapper.SysNoticeMapper;
 import com.abin.checkrepeatsystem.user.service.SysNoticeService;
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -126,7 +127,6 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
         // 1. 参数校验与默认值设置
         if (pageNum == null || pageNum < 1) pageNum = 1;
         if (pageSize == null || pageSize < 1 || pageSize > 50) pageSize = 10; // 限制最大每页50条，避免性能问题
-        int start = (pageNum - 1) * pageSize;
 
         // 2. 构建查询条件
         LambdaQueryWrapper<SysNotice> queryWrapper = new LambdaQueryWrapper<SysNotice>()
@@ -145,25 +145,22 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
             queryWrapper.eq(SysNotice::getNoticeType, noticeType);
         }
 
-        // 3. 查询当前页数据
-        List<SysNotice> noticeList = sysNoticeMapper.selectList(
-                queryWrapper
-                        .orderByDesc(SysNotice::getCreateTime)
-                        .last("LIMIT " + start + ", " + pageSize)
-        );
+        // 3. 使用MyBatis-Plus分页查询
+        Page<SysNotice> noticePage = new Page<>(pageNum, pageSize);
+        Page<SysNotice> resultPage = sysNoticeMapper.selectPage(noticePage,
+                queryWrapper.orderByDesc(SysNotice::getCreateTime));
+        List<SysNotice> noticeList = resultPage.getRecords();
+        long totalCount = resultPage.getTotal();
 
-        // 4. 查询总条数（用于分页计算）
-        Integer totalCount = Math.toIntExact(sysNoticeMapper.selectCount(queryWrapper));
-
-        // 5. 处理通知数据，添加冗余字段
+        // 4. 处理通知数据，添加冗余字段
         processNoticeList(noticeList);
 
-        // 6. 组装分页结果VO（前端统一接收格式）
+        // 5. 组装分页结果VO（前端统一接收格式）
         return new PageResultVO<SysNotice>(
                 pageNum,
                 pageSize,
-                totalCount,
-                (totalCount + pageSize - 1) / pageSize, // 总页数（向上取整）
+                (int) totalCount,
+                (int) ((totalCount + pageSize - 1) / pageSize), // 总页数（向上取整）
                 noticeList
         );
     }
@@ -201,13 +198,13 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
     @Override
     public List<SysNotice> getLatestNotice(Long userId, int limit) {
         try {
-            List<SysNotice> noticeList = sysNoticeMapper.selectList(
+            Page<SysNotice> latestPage = new Page<>(0, limit);
+            List<SysNotice> noticeList = sysNoticeMapper.selectPage(latestPage,
                     new LambdaQueryWrapper<SysNotice>()
                             .eq(SysNotice::getUserId, userId)
                             .eq(SysNotice::getIsDeleted, 0)
                             .orderByDesc(SysNotice::getCreateTime)
-                            .last("LIMIT " + limit)
-            );
+            ).getRecords();
             
             processNoticeList(noticeList);
             return noticeList;

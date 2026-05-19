@@ -19,7 +19,7 @@ public class PlagiarismReportVO {
      * 论文ID
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING)
-    private String paperId;
+    private Long paperId;
     
     /**
      * 相似度

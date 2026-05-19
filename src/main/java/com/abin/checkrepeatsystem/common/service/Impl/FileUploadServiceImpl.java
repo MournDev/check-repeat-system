@@ -1,5 +1,7 @@
 package com.abin.checkrepeatsystem.common.service.Impl;
 
+import com.abin.checkrepeatsystem.common.component.MinioProp;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.service.FileUploadService;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
 import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
@@ -8,7 +10,9 @@ import com.abin.checkrepeatsystem.pojo.base.FileBusinessBindParam;
 import com.abin.checkrepeatsystem.pojo.base.FileUploadResp;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import io.minio.MinioClient;
 import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -17,22 +21,29 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.WebUtils;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class FileUploadServiceImpl implements FileUploadService {
     @Value("${file.upload.base-path}")
     private String baseLocalPath; // 本地存储根路径
-    @Value("${file.upload.storage-type}") // 配置切换存储类型（LOCAL/OSS）
+    @Value("${file.upload.storage-type}") // 配置切换存储类型（LOCAL/MINIO）
     private String storageType;
 
     @Resource
     private LocalFileStorageService localFileStorageService;
     @Resource
-    private OssFileStorageService ossFileStorageService;
-    @Resource
     private PaperInfoMapper paperInfoMapper;
+    @Resource
+    private MinioClient minioClient;
+    @Resource
+    private MinioProp minioProp;
 
     @Resource
     private JwtUtils jwtUtils;
@@ -41,7 +52,7 @@ public class FileUploadServiceImpl implements FileUploadService {
     private ApplicationMonitorService monitorService;
 
     @Override
-    public FileUploadResp uploadFile(FileBaseParam baseParam, FileBusinessBindParam businessParam,Long loginUserId) throws IOException {
+    public FileUploadResp uploadFile(FileBaseParam baseParam, FileBusinessBindParam businessParam,Long loginUserId) throws Exception {
         boolean success = false;
         try {
             // 1. 基础校验（文件非空、大小、类型）
@@ -52,10 +63,10 @@ public class FileUploadServiceImpl implements FileUploadService {
                 success = true;
                 return buildExistResp(existingFileId);
             }
-            // 3. 按配置选择存储方式（本地/OSS）
+            // 3. 按配置选择存储方式（本地/MinIO）
             String storagePath = "LOCAL".equals(storageType)
                     ? localFileStorageService.storeFile(baseParam.getFile(), businessParam)
-                    : ossFileStorageService.storeFile(baseParam.getFile(), businessParam);
+                    : storeFileToMinio(baseParam.getFile(), loginUserId.toString());
             // 4. 记录文件元数据到paper_info表
             PaperInfo paperInfo = buildSysAttachment(baseParam, businessParam, storagePath, loginUserId);
             paperInfoMapper.insert(paperInfo);
@@ -134,9 +145,9 @@ public class FileUploadServiceImpl implements FileUploadService {
         }
 
         // 查询条件：MD5匹配 + 未删除（逻辑删除标记=0）
-        QueryWrapper<PaperInfo> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("file_md5", fileMd5)
-                .eq("is_deleted", 0)
+        LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperInfo::getFileMd5, fileMd5)
+                .eq(PaperInfo::getIsDeleted, 0)
                 .last("LIMIT 1"); // 仅取一条（MD5唯一索引，理论上仅一条）
 
         PaperInfo existingAttachment = paperInfoMapper.selectOne(queryWrapper);
@@ -234,6 +245,31 @@ private boolean isValidFileType(String contentType) {
         paperInfo.setIsDeleted(0); // 逻辑删除标记（0=未删除）
 
         return paperInfo;
+    }
+
+    /**
+     * 保存文件到MinIO
+     */
+    private String storeFileToMinio(MultipartFile file, String userId) throws Exception {
+        String datePath = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        
+        String safeFilename = file.getOriginalFilename()
+                .replaceAll("[<>:\"|?*]", "_")
+                .replaceAll("[/\\\\]", "_");
+        
+        String objectName = "files/" + userId + "/" + datePath + "/" + System.currentTimeMillis() + "_" + safeFilename;
+        
+        try (InputStream inputStream = file.getInputStream()) {
+            minioClient.putObject(io.minio.PutObjectArgs.builder()
+                    .bucket(minioProp.getBucket().getFile())
+                    .object(objectName)
+                    .stream(inputStream, file.getSize(), -1)
+                    .contentType(file.getContentType())
+                    .build());
+        }
+        
+        log.info("文件上传到MinIO成功：{}", objectName);
+        return objectName;
     }
 
     // 其他辅助方法：参数校验、MD5查重、响应封装...

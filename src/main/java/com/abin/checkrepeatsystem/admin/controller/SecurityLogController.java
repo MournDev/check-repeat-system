@@ -1,9 +1,9 @@
 package com.abin.checkrepeatsystem.admin.controller;
 
+import com.abin.checkrepeatsystem.admin.service.LoginLogService;
 import com.abin.checkrepeatsystem.admin.vo.LogSecurityVO;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
-import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class SecurityLogController {
 
     @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
+    private LoginLogService loginLogService;
 
     /**
      * 获取安全日志列表
@@ -63,7 +63,7 @@ public class SecurityLogController {
             // 按登录时间倒序
             wrapper.orderByDesc(SysLoginLog::getLoginTime);
             
-            Page<SysLoginLog> resultPage = sysLoginLogMapper.selectPage(logPage, wrapper);
+            Page<SysLoginLog> resultPage = loginLogService.selectPage(logPage, wrapper);
             
             // 转换为安全日志VO
             Page<LogSecurityVO> voPage = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());

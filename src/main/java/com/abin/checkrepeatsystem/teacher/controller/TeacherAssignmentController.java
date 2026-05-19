@@ -14,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("api/assignment")
+@RequestMapping("/api/assignment")
 @Api(tags = "教师论文分配操作")
 @Slf4j
 public class TeacherAssignmentController {

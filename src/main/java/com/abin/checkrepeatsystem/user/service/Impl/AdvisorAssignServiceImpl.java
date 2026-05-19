@@ -10,6 +10,7 @@ import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.user.mapper.TeacherAllocationRecordMapper;
 import com.abin.checkrepeatsystem.user.service.AdvisorAssignService;
+import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.abin.checkrepeatsystem.user.vo.PaperAdvisorTaskVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -20,8 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -48,6 +51,9 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     private TeacherInfoDataService teacherInfoService;
 
     @Resource
+    private StudentInfoService studentInfoService;
+
+    @Resource
     private  UserBusinessInfoUtils userBusinessInfoUtils;
 
     @Value("${advisor-assign.max-task-count}")
@@ -63,60 +69,80 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<Boolean> autoAssignAdvisor(Long paperId) {
-        log.info("开始自动分配指导老师 - 论文ID: {}", paperId);
+        return doAutoAssign(paperId, Collections.emptySet());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void reassignAfterRejection(Long paperId, Long excludedTeacherId) {
+        // 重置论文状态为待分配，清空之前分配的教师信息
+        PaperInfo resetPaper = new PaperInfo();
+        resetPaper.setId(paperId);
+        resetPaper.setTeacherId(null);
+        resetPaper.setTeacherName(null);
+        resetPaper.setAllocationStatus(null);
+        resetPaper.setAllocationType(null);
+        resetPaper.setPaperStatus(DictConstants.PaperStatus.PENDING);
+        resetPaper.setUpdateTime(LocalDateTime.now());
+        paperInfoMapper.updateById(resetPaper);
+
+        log.info("已重置论文状态并准备重新分配 - 论文ID: {}, 排除教师ID: {}", paperId, excludedTeacherId);
+
+        // 重新自动分配，排除已拒绝的教师
+        Set<Long> excluded = Collections.singleton(excludedTeacherId);
+        Result<Boolean> result = doAutoAssign(paperId, excluded);
+        if (!result.isSuccess()) {
+            log.error("重新分配失败 - 论文ID: {}, 原因: {}", paperId, result.getMessage());
+        }
+    }
+
+    /**
+     * 核心自动分配逻辑（支持排除特定教师）
+     */
+    private Result<Boolean> doAutoAssign(Long paperId, Set<Long> excludedTeacherIds) {
+        log.info("开始自动分配指导老师 - 论文ID: {}, 排除教师: {}", paperId, excludedTeacherIds);
 
         try {
-            // 1. 查询论文基本信息
             PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
             if (paperInfo == null) {
                 return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
             }
-            // 2. 检查是否已经分配过老师
             if (paperInfo.getTeacherId() != null) {
                 return Result.success("论文已分配老师", true);
             }
-            log.info("论文详细信息 - ID: {}, 标题: {}, 学生ID: {}, 老师ID: {}",
-                    paperInfo.getId(), paperInfo.getPaperTitle(), paperInfo.getStudentId(), paperInfo.getTeacherId());
-            // 2. 检查论文状态是否允许分配老师
-            String paperStatus = paperInfo.getPaperStatus();
             if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
-                return Result.error(ResultCode.BUSINESS_TASK_ASSIGNED,  // ✅ 改为返回 Result.error
-                        "论文状态不允许分配老师，当前状态：" + paperStatus);
+                return Result.error(ResultCode.BUSINESS_TASK_ASSIGNED,
+                        "论文状态不允许分配老师，当前状态：" + paperInfo.getPaperStatus());
             }
 
             String paperTitle = paperInfo.getPaperTitle() != null ? paperInfo.getPaperTitle() : "";
             Long studentMajorId = paperInfo.getMajorId();
             Long studentId = paperInfo.getStudentId();
 
-            // 多轮重试分配
             for (int i = 0; i < retryCount; i++) {
                 log.info("第 {} 轮尝试分配指导老师 - 论文ID: {}", i + 1, paperId);
 
-                // 查询符合条件的老师
-                List<PaperAdvisorTaskVO> eligibleAdvisors = queryEligibleAdvisors(studentMajorId);
+                List<PaperAdvisorTaskVO> eligibleAdvisors = queryEligibleAdvisors(studentMajorId, excludedTeacherIds);
                 if (eligibleAdvisors.isEmpty()) {
                     log.warn("第 {} 轮未找到符合条件的老师 - 论文ID: {}", i + 1, paperId);
                     continue;
                 }
 
-                // 按优先级排序
                 List<PaperAdvisorTaskVO> sortedAdvisors = sortAdvisorsByPriority(eligibleAdvisors, studentMajorId, paperTitle);
                 if (sortedAdvisors.isEmpty()) {
                     log.warn("第 {} 轮排序后无合适老师 - 论文ID: {}", i + 1, paperId);
                     continue;
                 }
 
-                // 选择最优老师
-                PaperAdvisorTaskVO bestAdvisor = sortedAdvisors.get(0); // 替代 getFirst()
-                // 4. 更新论文信息中的指导老师信息
+                PaperAdvisorTaskVO bestAdvisor = sortedAdvisors.get(0);
                 PaperInfo updatePaper = new PaperInfo();
                 updatePaper.setId(paperId);
                 updatePaper.setTeacherId(bestAdvisor.getAdvisorId());
                 updatePaper.setTeacherName(bestAdvisor.getAdvisorName());
                 updatePaper.setAllocationType(DictConstants.AllocationType.AUTO);
-                updatePaper.setAllocationStatus(DictConstants.AllocationStatus.PENDING);//待确认
+                updatePaper.setAllocationStatus(DictConstants.AllocationStatus.PENDING);
                 updatePaper.setAllocationTime(LocalDateTime.now());
-                updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);//已分配
+                updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
                 updatePaper.setUpdateTime(LocalDateTime.now());
 
                 int updateResult = paperInfoMapper.updateById(updatePaper);
@@ -125,24 +151,19 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
                     continue;
                 }
 
-                // 5. 更新老师任务数
                 TeacherInfo teacherInfo = teacherInfoService.getByUserId(bestAdvisor.getAdvisorId());
                 if (teacherInfo != null) {
                     teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
                     teacherInfoService.saveOrUpdate(teacherInfo);
                 }
 
-                // 6. 创建分配记录
                 createAllocationRecord(paperId, studentId, bestAdvisor.getAdvisorId());
-
-                // 7. 推送通知（使用邮件通知服务）
                 sendAssignmentNotifications(paperId, paperInfo.getPaperTitle(), studentId, bestAdvisor.getAdvisorId());
 
                 log.info("分配指导老师成功 - 论文ID: {}, 老师ID: {}, 老师姓名: {}",
                         paperId, bestAdvisor.getAdvisorId(), bestAdvisor.getAdvisorName());
                 return Result.success();
             }
-            // 所有重试都失败
             log.error("自动分配指导老师失败，经过 {} 轮重试仍未成功 - 论文ID: {}", retryCount, paperId);
             return Result.error(ResultCode.SYSTEM_ERROR, "自动分配失败，请联系管理员手动分配");
         } catch (Exception e) {
@@ -234,10 +255,10 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     /**
      * 查询符合条件的指导老师
      */
-    private List<PaperAdvisorTaskVO> queryEligibleAdvisors(Long studentMajorId) {
+    private List<PaperAdvisorTaskVO> queryEligibleAdvisors(Long studentMajorId, Set<Long> excludedTeacherIds) {
         List<SysUser> teachers = sysUserMapper.selectList(
                 new LambdaQueryWrapper<SysUser>()
-                        .eq(SysUser::getRoleId, 2001L)  // 修复：使用Long类型而不是字符串
+                        .eq(SysUser::getRoleId, 2001L)
                         .eq(SysUser::getIsDeleted, 0)
         );
 
@@ -245,18 +266,18 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
             PaperAdvisorTaskVO vo = new PaperAdvisorTaskVO();
             vo.setAdvisorId(teacher.getId());
             vo.setAdvisorName(teacher.getRealName());
-            
-            // 从TeacherInfo表获取教师详情
+
             TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
             if (teacherInfo != null) {
                 vo.setMajorId(teacherInfo.getMajorId());
                 vo.setResearchDirection(teacherInfo.getResearchDirection());
                 vo.setCurrentTaskCount(teacherInfo.getCurrentAdvisorCount());
             }
-            
+
             return vo;
-        }).filter(vo -> vo.getCurrentTaskCount() < maxTaskCount) // 过滤任务数不超过上限的老师
-        .collect(Collectors.toList());
+        }).filter(vo -> !excludedTeacherIds.contains(vo.getAdvisorId())) // 排除已拒绝的教师
+          .filter(vo -> vo.getCurrentTaskCount() < maxTaskCount) // 过滤任务数不超过上限的老师
+          .collect(Collectors.toList());
     }
 
     /**
@@ -264,15 +285,11 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
      */
     private List<PaperAdvisorTaskVO> sortAdvisorsByPriority(
             List<PaperAdvisorTaskVO> advisors, Long studentMajorId, String paperTitle) {
-        String paperKeyword = getKeyword(paperTitle);
+        List<String> paperKeywords = extractKeywords(paperTitle);
         return advisors.stream()
-                // 优先级1：专业匹配
                 .sorted(
-                        // 优先级1：专业匹配（Comparator）
                         Comparator.<PaperAdvisorTaskVO>comparingInt(vo -> isMajorMatch(vo.getMajorId(), studentMajorId) ? 0 : 1)
-                                // 优先级2：研究方向匹配（链式调用 thenComparingInt，属于 Comparator）
-                                .thenComparingInt(vo -> isDirectionMatch(vo.getResearchDirection(), paperKeyword) ? 0 : 1)
-                                // 优先级3：负载均衡（链式调用 thenComparingInt，属于 Comparator）
+                                .thenComparingInt(vo -> isDirectionMatch(vo.getResearchDirection(), paperKeywords) ? 0 : 1)
                                 .thenComparingInt(PaperAdvisorTaskVO::getCurrentTaskCount)
                 )
                 .collect(Collectors.toList());
@@ -281,21 +298,35 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
         return studentMajorId != null && teacherMajorId != null && teacherMajorId.equals(studentMajorId);
     }
 
-    private boolean isDirectionMatch(String researchDirection, String paperKeyword) {
-        return paperKeyword != null && !paperKeyword.isEmpty()
-                && researchDirection != null && !researchDirection.isEmpty()
-                && researchDirection.toLowerCase().contains(paperKeyword.toLowerCase());
+    private boolean isDirectionMatch(String researchDirection, List<String> paperKeywords) {
+        if (paperKeywords.isEmpty() || researchDirection == null || researchDirection.isEmpty()) return false;
+        for (String kw : paperKeywords) {
+            if (researchDirection.contains(kw)) return true;
+        }
+        return false;
     }
 
     /**
-     * 从论文标题提取关键词
+     * 从论文标题提取关键词用于研究方向匹配
+     * 通过去除常见停用词后取2-4字片段进行匹配
      */
-    private String getKeyword(String title) {
-        String[] keywords = {"Spring Boot", "论文查重", "管理系统", "数据分析", "机器学习"};
-        for (String keyword : keywords) {
-            if (title.contains(keyword)) return keyword;
+    private List<String> extractKeywords(String title) {
+        if (title == null || title.isEmpty()) return Collections.emptyList();
+        // 常见中文停用词/虚词
+        String[] stopWords = {"的", "基于", "关于", "研究", "分析", "设计", "实现", "系统",
+                "应用", "方法", "技术", "一种", "及其", "中的", "与", "和", "及", "之", "等"};
+        String cleaned = title;
+        for (String sw : stopWords) {
+            cleaned = cleaned.replace(sw, "");
         }
-        return "";
+        // 从清理后的文本中取2-3字连续片段作为关键词
+        List<String> keywords = new java.util.ArrayList<>();
+        for (int len = 3; len >= 2; len--) {
+            for (int i = 0; i <= cleaned.length() - len; i++) {
+                keywords.add(cleaned.substring(i, i + len));
+            }
+        }
+        return keywords;
     }
 
     /**
@@ -358,9 +389,31 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
             record.setTeacherId(teacherId);
             record.setAllocationType(allocationType);
             record.setAllocationReason(reason);
-            record.setAllocationTime(LocalDateTime.now()); // 替代 DateTime.now()
+            record.setAllocationTime(LocalDateTime.now());
             record.setOperatorId(operatorId);
-            record.setCreateTime(LocalDateTime.now()); // 替代 DateTime.now()
+            record.setCreateTime(LocalDateTime.now());
+
+            // 设置学生学院和专业信息
+            if (studentId != null) {
+                SysUser student = sysUserMapper.selectById(studentId);
+                if (student != null) {
+                    record.setCollegeId(student.getCollegeId());
+                    
+                    // 从StudentInfo表获取学院和专业信息
+                    StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                    if (studentInfo != null) {
+                        if (record.getCollegeName() == null && studentInfo.getCollegeName() != null) {
+                            record.setCollegeName(studentInfo.getCollegeName());
+                        }
+                        if (record.getMajorId() == null && studentInfo.getMajorId() != null) {
+                            record.setMajorId(studentInfo.getMajorId());
+                        }
+                        if (record.getMajorName() == null && studentInfo.getMajor() != null) {
+                            record.setMajorName(studentInfo.getMajor());
+                        }
+                    }
+                }
+            }
 
             int result = teacherAllocationRecordMapper.insert(record);
 

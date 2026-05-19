@@ -34,9 +34,21 @@ public class StudentListDTO {
     private String collegeName;
 
     /**
+     * 学生所在学院ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long collegeId;
+
+    /**
      * 学生专业
      */
     private String major;
+
+    /**
+     * 学生专业ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long majorId;
 
     /**
      * 学生年级

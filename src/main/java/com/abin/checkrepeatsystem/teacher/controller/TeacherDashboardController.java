@@ -7,7 +7,9 @@ import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.teacher.dto.BatchReviewDTO;
 import com.abin.checkrepeatsystem.teacher.dto.SendMessageDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherDashboardService;
+import com.abin.checkrepeatsystem.teacher.service.TeacherReviewWorkflowService;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentManagementService;
+import com.abin.checkrepeatsystem.teacher.vo.StudentVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,6 +37,9 @@ public class TeacherDashboardController {
     
     @Resource
     private TeacherStudentManagementService studentManagementService;
+
+    @Resource
+    private TeacherReviewWorkflowService reviewWorkflowService;
 
     /**
      * 1. 仪表盘统计数据接口（带教师ID参数）
@@ -315,5 +321,14 @@ public class TeacherDashboardController {
             log.error("刷新仪表盘数据失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR, "刷新仪表盘数据失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 获取教师列表（合并自 TeacherListController）
+     */
+    @GetMapping("/list")
+    @Operation(summary = "获取教师列表", description = "获取所有教师列表")
+    public Result<List<StudentVO>> getTeachers() {
+        return reviewWorkflowService.getTeachers();
     }
 }

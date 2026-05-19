@@ -4,6 +4,7 @@ import com.abin.checkrepeatsystem.pojo.entity.DictData;
 import com.abin.checkrepeatsystem.admin.mapper.DictDataMapper;
 import com.abin.checkrepeatsystem.admin.service.DictDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -24,21 +25,20 @@ public class DictDataServiceImpl extends ServiceImpl<DictDataMapper, DictData> i
         try {
             LambdaQueryWrapper<DictData> queryWrapper = new LambdaQueryWrapper<DictData>()
                 .eq(DictData::getIsDeleted, 0);
-            
+
             if (dictType != null && !dictType.isEmpty()) {
                 queryWrapper.eq(DictData::getDictType, dictType);
             }
-            
+
             if (status != null) {
                 queryWrapper.eq(DictData::getStatus, status);
             }
-            
+
             queryWrapper.orderByAsc(DictData::getDictType).orderByAsc(DictData::getSort);
-            
-            int offset = (page - 1) * size;
-            queryWrapper.last("LIMIT " + offset + ", " + size);
-            
-            List<DictData> dictDataList = dictDataMapper.selectList(queryWrapper);
+
+            Page<DictData> dictPage = new Page<>(page, size);
+            Page<DictData> resultPage = dictDataMapper.selectPage(dictPage, queryWrapper);
+            List<DictData> dictDataList = resultPage.getRecords();
             
             // 设置状态文本
             for (DictData dictData : dictDataList) {

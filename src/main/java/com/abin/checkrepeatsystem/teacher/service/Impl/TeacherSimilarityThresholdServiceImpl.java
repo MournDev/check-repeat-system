@@ -15,6 +15,7 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherSimilarityThresholdServ
 import com.abin.checkrepeatsystem.teacher.vo.CategorySimilarityThresholdVO;
 import com.abin.checkrepeatsystem.teacher.vo.SimilarityThresholdVO;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ import java.util.List;
 /**
  * 相似度阈值设置服务实现
  */
+@Slf4j
 @Service
 public class TeacherSimilarityThresholdServiceImpl implements TeacherSimilarityThresholdService {
 
@@ -87,7 +89,7 @@ public class TeacherSimilarityThresholdServiceImpl implements TeacherSimilarityT
 
             return Result.success(vo);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("相似度阈值操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"获取阈值设置失败");
         }
     }
@@ -142,7 +144,7 @@ public class TeacherSimilarityThresholdServiceImpl implements TeacherSimilarityT
 
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("相似度阈值操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"更新阈值设置失败");
         }
     }

@@ -18,6 +18,12 @@ public class PendingReviewVO {
     private String paperId;
     
     /**
+     * 文件ID（用于下载）
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private String fileId;
+    
+    /**
      * 论文标题
      */
     private String paperTitle;

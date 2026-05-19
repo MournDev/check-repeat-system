@@ -17,6 +17,7 @@ import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.TextSimilarityUtils;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
+import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
@@ -30,6 +31,7 @@ import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import jakarta.annotation.PostConstruct;
@@ -119,6 +121,9 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
     private BigDecimal defaultThreshold;
 
     @Resource
+    private ApplicationMonitorService monitorService;
+
+    @Resource
     private CheckTaskValidationService validationService;
 
     @Resource
@@ -200,7 +205,8 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         }
 
         // 3. 发布事件，完全解耦（异步执行查重）
-        eventPublisher.publishEvent(new CheckTaskCreatedEvent(this, checkTask.getId(), paperId));
+        Long operatorUserId = UserContextHolder.getUserId();
+        eventPublisher.publishEvent(new CheckTaskCreatedEvent(this, checkTask.getId(), paperId, operatorUserId));
 
         // 4. 立即返回，提供预估信息
         CheckResultVO checkResultVO = buildCheckResultVO(checkTask);
@@ -255,13 +261,29 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
 
         // 1. 按角色过滤数据
         if (UserBusinessInfoUtils.isStudent()) {
-            // 学生：仅查询自己论文的任务（需关联论文表的student_id）
-            queryWrapper.inSql(CheckTask::getPaperId,
-                    "SELECT id FROM paper_info WHERE student_id = " + currentUser.getId() + " AND is_deleted = 0");
+            List<Long> studentPaperIds = paperInfoMapper.selectList(
+                new LambdaQueryWrapper<PaperInfo>()
+                    .eq(PaperInfo::getStudentId, currentUser.getId())
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .select(PaperInfo::getId)
+            ).stream().map(PaperInfo::getId).collect(Collectors.toList());
+            if (!studentPaperIds.isEmpty()) {
+                queryWrapper.in(CheckTask::getPaperId, studentPaperIds);
+            } else {
+                queryWrapper.eq(CheckTask::getPaperId, -1L);
+            }
         } else if (UserBusinessInfoUtils.isTeacher()) {
-            // 教师：仅查询自己指导论文的任务（需关联论文表的teacher_id）
-            queryWrapper.inSql(CheckTask::getPaperId,
-                    "SELECT id FROM paper_info WHERE teacher_id = " + currentUser.getId() + " AND is_deleted = 0");
+            List<Long> teacherPaperIds = paperInfoMapper.selectList(
+                new LambdaQueryWrapper<PaperInfo>()
+                    .eq(PaperInfo::getTeacherId, currentUser.getId())
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .select(PaperInfo::getId)
+            ).stream().map(PaperInfo::getId).collect(Collectors.toList());
+            if (!teacherPaperIds.isEmpty()) {
+                queryWrapper.in(CheckTask::getPaperId, teacherPaperIds);
+            } else {
+                queryWrapper.eq(CheckTask::getPaperId, -1L);
+            }
         }
         // 管理员：无过滤
 
@@ -356,10 +378,11 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         queryWrapper.eq(CheckTask::getPaperId, paperId)
                 .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
                 .eq(CheckTask::getIsDeleted, 0)
-                .orderByDesc(CheckTask::getCreateTime)
-                .last("LIMIT 1");
+                .orderByDesc(CheckTask::getCreateTime);
 
-        CheckTask checkTask = getOne(queryWrapper);
+        Page<CheckTask> checkTaskPage = new Page<>(0, 1);
+        CheckTask checkTask = page(checkTaskPage, queryWrapper).getRecords()
+                .stream().findFirst().orElse(null);
 
         if (checkTask == null) {
             return null; // No completed check task found
@@ -514,7 +537,8 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         
         int retryCount = 0;
         boolean success = false;
-        
+        long startMs = System.currentTimeMillis();
+
         while (retryCount < maxRetries && !success) {
             try {
                 // 【关键改进 1】先更新任务状态为"执行中"
@@ -617,6 +641,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
             
                 log.info("查重任务执行成功 - 任务 ID: {}, 相似度：{}%", taskId, maxSimilarity);
                 success = true;
+                monitorService.recordCheckTaskTime(paperId, System.currentTimeMillis() - startMs, true);
             
             } catch (Exception e) {
                 retryCount++;
@@ -647,6 +672,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                         "查重任务执行失败，恢复至已分配状态");
                             
                     log.warn("查重任务失败，已恢复论文状态 - 任务 ID: {}, 论文 ID: {}", taskId, paperId);
+                    monitorService.recordCheckTaskTime(paperId, System.currentTimeMillis() - startMs, false);
                 } else {
                     // 等待一段时间后重试
                     try {
@@ -679,6 +705,19 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         updatePaper.setCheckEngineType("local");
         updatePaper.setCheckResult(qualified ? "合格" : "不合格");
         updatePaper.setCheckTime(LocalDateTime.now());
+        
+        // 构建查重结果JSON对象
+        Map<String, Object> checkResult = new HashMap<>();
+        checkResult.put("score", similarity);
+        checkResult.put("time", LocalDateTime.now());
+        
+        try {
+            // 存储JSON格式的查重结果
+            updatePaper.setInternalCheckResult(JSON.toJSONString(checkResult));
+        } catch (Exception e) {
+            log.warn("存储校内查重结果JSON失败: {}", e.getMessage());
+        }
+        
         paperInfoMapper.updateById(updatePaper);
             
         log.info("论文状态更新成功 - 论文 ID: {}, 相似度：{}%, 结果：{}", 
@@ -761,9 +800,10 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         wrapper.likeRight(CheckTask::getTaskNo, seqPrefix)
                 .eq(CheckTask::getIsDeleted, 0)
                 .select(CheckTask::getTaskNo)
-                .orderByDesc(CheckTask::getTaskNo)
-                .last("LIMIT 1");
-        CheckTask lastTask = getOne(wrapper);
+                .orderByDesc(CheckTask::getTaskNo);
+        Page<CheckTask> taskNoPage = new Page<>(0, 1);
+        CheckTask lastTask = page(taskNoPage, wrapper).getRecords()
+                .stream().findFirst().orElse(null);
 
         int seq = 1;
         if (lastTask != null) {
@@ -810,7 +850,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         String reportNo = "REPORT" + checkTask.getTaskNo().substring(5);
         
         // 2. 生成 PDF 报告文件路径（实际生产环境路径，由 pdfReportGenerator 生成真实 PDF 文件）
-        String reportPath = "D:/data/report" + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+        String reportPath = basePath + "/report" + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                 + "/" + reportNo + ".pdf";
 
         // 3. 构建报告实体

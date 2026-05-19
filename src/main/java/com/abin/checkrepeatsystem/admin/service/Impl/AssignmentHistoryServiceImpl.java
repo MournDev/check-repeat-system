@@ -97,52 +97,67 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
     public Result<Page<AssignmentRecordDTO>> getAssignmentRecordList(
             String startDate,
             String endDate,
+            Long collegeId,
             String assignmentType,
-            String major,
             String status,
             String keyword,
             Integer page,
             Integer size) {
-        
+
         try {
             Page<TeacherAllocationRecord> recordPage = new Page<>(page, size);
-            
+
             // 构建查询条件
             LambdaQueryWrapper<TeacherAllocationRecord> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(TeacherAllocationRecord::getIsDeleted, 0)
                    .orderByDesc(TeacherAllocationRecord::getCreateTime);
-            
+
             // 时间范围筛选
             if (startDate != null && !startDate.isEmpty()) {
                 try {
-                    LocalDateTime startDateTime = LocalDateTime.parse(startDate + " 00:00:00", 
+                    LocalDateTime startDateTime = LocalDateTime.parse(startDate + " 00:00:00",
                             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                     wrapper.ge(TeacherAllocationRecord::getCreateTime, startDateTime);
                 } catch (Exception e) {
                     log.warn("开始时间格式不正确: {}", startDate);
                 }
             }
-            
+
             if (endDate != null && !endDate.isEmpty()) {
                 try {
-                    LocalDateTime endDateTime = LocalDateTime.parse(endDate + " 23:59:59", 
+                    LocalDateTime endDateTime = LocalDateTime.parse(endDate + " 23:59:59",
                             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                     wrapper.le(TeacherAllocationRecord::getCreateTime, endDateTime);
                 } catch (Exception e) {
                     log.warn("结束时间格式不正确: {}", endDate);
                 }
             }
-            
+
+            // 学院筛选（通过paper_id关联paper_info表的college_id）
+            if (collegeId != null) {
+                List<Long> matchedPaperIds = paperInfoMapper.selectList(
+                    new LambdaQueryWrapper<PaperInfo>()
+                        .eq(PaperInfo::getCollegeId, collegeId)
+                        .eq(PaperInfo::getIsDeleted, 0)
+                        .select(PaperInfo::getId)
+                ).stream().map(PaperInfo::getId).collect(Collectors.toList());
+                if (!matchedPaperIds.isEmpty()) {
+                    wrapper.in(TeacherAllocationRecord::getPaperId, matchedPaperIds);
+                } else {
+                    wrapper.eq(TeacherAllocationRecord::getPaperId, -1L);
+                }
+            }
+
             // 分配类型筛选
             if (assignmentType != null && !assignmentType.isEmpty()) {
                 wrapper.eq(TeacherAllocationRecord::getAllocationType, assignmentType);
             }
-            
+
             // 状态筛选
             if (status != null && !status.isEmpty()) {
                 wrapper.eq(TeacherAllocationRecord::getAllocationStatus, status);
             }
-            
+
             // 关键词搜索
             if (keyword != null && !keyword.isEmpty()) {
                 // 获取匹配的学生ID和教师ID
@@ -156,18 +171,16 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
                     wrapper.eq(TeacherAllocationRecord::getId, -1L);
                 }
             }
-            
+
             // 执行分页查询
             Page<TeacherAllocationRecord> resultPage = teacherAllocationRecordMapper.selectPage(recordPage, wrapper);
-            
-            // 转换为DTO
-            List<AssignmentRecordDTO> dtoList = resultPage.getRecords().stream()
-                    .map(this::convertToAssignmentRecordDTO)
-                    .collect(Collectors.toList());
-            
+
+            // 批量转换DTO（消除N+1查询）
+            List<AssignmentRecordDTO> dtoList = batchConvertToDTOs(resultPage.getRecords());
+
             Page<AssignmentRecordDTO> dtoPage = new Page<>(page, size, resultPage.getTotal());
             dtoPage.setRecords(dtoList);
-            
+
             log.info("获取分配记录列表成功: 共{}条记录", dtoList.size());
             return Result.success(dtoPage);
         } catch (Exception e) {
@@ -455,7 +468,118 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
     }
 
     /**
-     * 转换为分配记录DTO
+     * 批量转换为分配记录DTO（消除N+1查询）
+     */
+    private List<AssignmentRecordDTO> batchConvertToDTOs(List<TeacherAllocationRecord> records) {
+        if (records.isEmpty()) return Collections.emptyList();
+
+        // 收集所有需要查询的ID
+        Set<Long> studentIds = new HashSet<>();
+        Set<Long> teacherIds = new HashSet<>();
+        Set<Long> operatorIds = new HashSet<>();
+        Set<Long> paperIds = new HashSet<>();
+
+        for (TeacherAllocationRecord r : records) {
+            if (r.getStudentId() != null) studentIds.add(r.getStudentId());
+            if (r.getTeacherId() != null) teacherIds.add(r.getTeacherId());
+            if (r.getOperatorId() != null) operatorIds.add(r.getOperatorId());
+            if (r.getPaperId() != null) paperIds.add(r.getPaperId());
+        }
+
+        // 批量查询用户（学生+教师+操作人）
+        Set<Long> allUserIds = new HashSet<>();
+        allUserIds.addAll(studentIds);
+        allUserIds.addAll(teacherIds);
+        allUserIds.addAll(operatorIds);
+        Map<Long, SysUser> userMap = allUserIds.isEmpty() ? Collections.emptyMap() :
+                sysUserMapper.selectBatchIds(allUserIds).stream()
+                        .collect(Collectors.toMap(SysUser::getId, u -> u));
+
+        // 批量查询StudentInfo
+        Map<Long, StudentInfo> studentInfoMap = studentIds.isEmpty() ? Collections.emptyMap() :
+                studentInfoService.lambdaQuery().in(StudentInfo::getUserId, studentIds)
+                        .eq(StudentInfo::getIsDeleted, 0).list().stream()
+                        .collect(Collectors.toMap(StudentInfo::getUserId, s -> s));
+
+        // 批量查询TeacherInfo
+        Map<Long, TeacherInfo> teacherInfoMap = teacherIds.isEmpty() ? Collections.emptyMap() :
+                teacherInfoService.lambdaQuery().in(TeacherInfo::getUserId, teacherIds)
+                        .eq(TeacherInfo::getIsDeleted, 0).list().stream()
+                        .collect(Collectors.toMap(TeacherInfo::getUserId, t -> t));
+
+        // 批量查询PaperInfo
+        Map<Long, PaperInfo> paperMap = paperIds.isEmpty() ? Collections.emptyMap() :
+                paperInfoMapper.selectBatchIds(paperIds).stream()
+                        .collect(Collectors.toMap(PaperInfo::getId, p -> p));
+
+        return records.stream().map(r -> convertWithPreloadedData(r, userMap, studentInfoMap, teacherInfoMap, paperMap))
+                .collect(Collectors.toList());
+    }
+
+    private AssignmentRecordDTO convertWithPreloadedData(TeacherAllocationRecord record,
+            Map<Long, SysUser> userMap, Map<Long, StudentInfo> studentInfoMap,
+            Map<Long, TeacherInfo> teacherInfoMap, Map<Long, PaperInfo> paperMap) {
+        AssignmentRecordDTO dto = new AssignmentRecordDTO();
+        dto.setId(record.getId().toString());
+
+        if (record.getStudentId() != null) {
+            SysUser student = userMap.get(record.getStudentId());
+            if (student != null) {
+                dto.setStudentName(student.getRealName());
+                dto.setStudentId(student.getUsername());
+                StudentInfo studentInfo = studentInfoMap.get(student.getId());
+                if (studentInfo != null) {
+                    dto.setGrade(studentInfo.getGrade());
+                    if (dto.getCollegeId() == null && studentInfo.getCollegeId() != null)
+                        dto.setCollegeId(studentInfo.getCollegeId());
+                    if (dto.getCollegeName() == null && studentInfo.getCollegeName() != null)
+                        dto.setCollegeName(studentInfo.getCollegeName());
+                    if (dto.getMajorId() == null && studentInfo.getMajorId() != null)
+                        dto.setMajorId(studentInfo.getMajorId());
+                    if (dto.getMajorName() == null && studentInfo.getMajor() != null)
+                        dto.setMajorName(studentInfo.getMajor());
+                }
+            }
+        }
+
+        if (record.getTeacherId() != null) {
+            SysUser teacher = userMap.get(record.getTeacherId());
+            if (teacher != null) {
+                dto.setTeacherName(teacher.getRealName());
+                TeacherInfo teacherInfo = teacherInfoMap.get(teacher.getId());
+                if (teacherInfo != null) {
+                    if (teacherInfo.getProfessionalTitle() != null)
+                        dto.setTeacherTitle(teacherInfo.getProfessionalTitle());
+                    if (teacherInfo.getCollegeName() != null)
+                        dto.setDepartment(teacherInfo.getCollegeName());
+                }
+            }
+        }
+
+        if (record.getAllocationType() != null) dto.setAssignmentType(record.getAllocationType());
+        if (record.getAllocationTime() != null) dto.setAssignTime(record.getAllocationTime());
+        dto.setStatus(record.getAllocationStatus() != null ? record.getAllocationStatus() : "active");
+
+        if (record.getOperatorId() != null) {
+            SysUser operator = userMap.get(record.getOperatorId());
+            if (operator != null && operator.getRealName() != null)
+                dto.setOperator(operator.getRealName());
+        }
+
+        if (record.getCreateTime() != null) dto.setOperateTime(record.getCreateTime());
+        if (record.getAllocationReason() != null) dto.setReason(record.getAllocationReason());
+
+        if (record.getPaperId() != null) {
+            PaperInfo paper = paperMap.get(record.getPaperId());
+            if (paper != null && paper.getPaperTitle() != null)
+                dto.setNotes(paper.getPaperTitle());
+        }
+
+        return dto;
+    }
+
+    /**
+     * 转换为分配记录DTO（单条场景）
      */
     private AssignmentRecordDTO convertToAssignmentRecordDTO(TeacherAllocationRecord record) {
         AssignmentRecordDTO dto = new AssignmentRecordDTO();
@@ -467,12 +591,37 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             if (student != null) {
                 dto.setStudentName(student.getRealName());
                 dto.setStudentId(student.getUsername());
-                dto.setMajor(student.getMajorDisplayName());
                 
-                // 从StudentInfo表获取年级
-                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
-                if (studentInfo != null) {
-                    dto.setGrade(studentInfo.getGrade());
+                // 如果分配记录中没有学院和专业信息，从StudentInfo表获取
+                if (dto.getCollegeId() == null || dto.getCollegeName() == null || 
+                    dto.getMajorId() == null || dto.getMajorName() == null) {
+                    StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                    if (studentInfo != null) {
+                        if (studentInfo.getGrade() != null) {
+                            dto.setGrade(studentInfo.getGrade());
+                        }
+                        
+                        // 设置学院信息
+                        if (dto.getCollegeId() == null && studentInfo.getCollegeId() != null) {
+                            dto.setCollegeId(studentInfo.getCollegeId());
+                        }
+                        if (dto.getCollegeName() == null && studentInfo.getCollegeName() != null) {
+                            dto.setCollegeName(studentInfo.getCollegeName());
+                        }
+                        
+                        // 设置专业信息
+                        if (dto.getMajorId() == null && studentInfo.getMajorId() != null) {
+                            dto.setMajorId(studentInfo.getMajorId());
+                        }
+                        if (dto.getMajorName() == null && studentInfo.getMajor() != null) {
+                            dto.setMajorName(studentInfo.getMajor());
+                        }
+                    } else {
+                        // 如果没有StudentInfo记录，从用户表获取学院ID
+                        if (dto.getCollegeId() == null && student.getCollegeId() != null) {
+                            dto.setCollegeId(student.getCollegeId());
+                        }
+                    }
                 }
             }
         }
@@ -486,35 +635,51 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
                 // 从TeacherInfo表获取教师详情
                 TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
                 if (teacherInfo != null) {
-                    dto.setTeacherTitle(teacherInfo.getProfessionalTitle());
-                    dto.setDepartment(teacherInfo.getCollegeName());
+                    if (teacherInfo.getProfessionalTitle() != null) {
+                        dto.setTeacherTitle(teacherInfo.getProfessionalTitle());
+                    }
+                    if (teacherInfo.getCollegeName() != null) {
+                        dto.setDepartment(teacherInfo.getCollegeName());
+                    }
                 }
             }
         }
         
-        // 获取论文信息
-        if (record.getPaperId() != null) {
-            PaperInfo paper = paperInfoMapper.selectById(record.getPaperId());
-            if (paper != null) {
-                dto.setNotes(paper.getPaperTitle());
-            }
+        if (record.getAllocationType() != null) {
+            dto.setAssignmentType(record.getAllocationType());
         }
         
-        dto.setAssignmentType(record.getAllocationType());
-        dto.setAssignTime(record.getAllocationTime());
-        dto.setReason(record.getAllocationReason());
+        if (record.getAllocationTime() != null) {
+            dto.setAssignTime(record.getAllocationTime());
+        }
+        
         // 使用数据库中的真实状态
         dto.setStatus(record.getAllocationStatus() != null ? record.getAllocationStatus() : "active");
         
         // 获取操作人信息
         if (record.getOperatorId() != null) {
             SysUser operator = sysUserMapper.selectById(record.getOperatorId());
-            if (operator != null) {
+            if (operator != null && operator.getRealName() != null) {
                 dto.setOperator(operator.getRealName());
             }
         }
         
-        dto.setOperateTime(record.getCreateTime());
+        if (record.getCreateTime() != null) {
+            dto.setOperateTime(record.getCreateTime());
+        }
+        
+        // 设置分配原因
+        if (record.getAllocationReason() != null) {
+            dto.setReason(record.getAllocationReason());
+        }
+        
+        // 设置备注（论文标题）
+        if (record.getPaperId() != null) {
+            PaperInfo paper = paperInfoMapper.selectById(record.getPaperId());
+            if (paper != null && paper.getPaperTitle() != null) {
+                dto.setNotes(paper.getPaperTitle());
+            }
+        }
         
         return dto;
     }
@@ -531,7 +696,6 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
         TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
         if (teacherInfo != null) {
             dto.setTitle(teacherInfo.getProfessionalTitle());
-            dto.setDepartment(teacherInfo.getCollegeName());
             dto.setCurrentLoad(teacherInfo.getCurrentAdvisorCount());
             dto.setMaxLoad(teacherInfo.getMaxReviewCount());
         }
@@ -552,12 +716,13 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             if (student != null) {
                 vo.setStudentName(student.getRealName());
                 vo.setStudentId(student.getUsername());
-                vo.setMajor(student.getMajorDisplayName());
                 
-                // 从StudentInfo表获取年级
+                // 从StudentInfo表获取年级、学院和专业信息
                 StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
                 if (studentInfo != null) {
                     vo.setGrade(studentInfo.getGrade());
+                    vo.setMajor(studentInfo.getMajor());
+                    vo.setDepartment(studentInfo.getCollegeName());
                 }
             }
         }
@@ -572,7 +737,6 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
                 TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
                 if (teacherInfo != null) {
                     vo.setTeacherTitle(teacherInfo.getProfessionalTitle());
-                    vo.setDepartment(teacherInfo.getCollegeName());
                 }
             }
         }
@@ -580,7 +744,6 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
         vo.setAssignmentType(record.getAllocationType());
         vo.setAssignTime(record.getAllocationTime());
         vo.setStatus(record.getAllocationStatus() != null ? record.getAllocationStatus() : "active");
-        vo.setReason(record.getAllocationReason());
         
         // 获取操作人信息
         if (record.getOperatorId() != null) {

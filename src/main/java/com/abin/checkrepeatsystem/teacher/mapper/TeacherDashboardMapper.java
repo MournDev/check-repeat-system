@@ -51,6 +51,11 @@ public interface TeacherDashboardMapper {
     Long countRejectedPapers(@Param("teacherId") Long teacherId);
 
     /**
+     * 统计已分配导师的论文数（status = 'assigned'）
+     */
+    Long countAssignedPapers(@Param("teacherId") Long teacherId);
+
+    /**
      * 获取论文状态分布统计
      */
     @MapKey("status")  // 指定使用status字段作为Map的键
@@ -72,7 +77,7 @@ public interface TeacherDashboardMapper {
      * 获取近期审核活动记录
      */
     @MapKey("activityId")  // 指定使用activityId字段作为Map的键
-    List<Map<String, Object>> getRecentReviewActivities(@Param("teacherId") Long teacherId, @Param("page") Page<?> page);
+    Page<Map<String, Object>> getRecentReviewActivities(@Param("teacherId") Long teacherId, @Param("page") Page<?> page);
 
     /**
      * 根据教师ID获取学生IDs

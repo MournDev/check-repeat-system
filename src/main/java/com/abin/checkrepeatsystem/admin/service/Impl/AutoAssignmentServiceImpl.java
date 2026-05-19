@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
+import org.springframework.core.task.TaskExecutor;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -49,6 +50,9 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
 
     @Resource
     private TeacherInfoDataService teacherInfoService;
+
+    @Resource
+    private TaskExecutor taskExecutor;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -306,13 +310,37 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public Result<Map<String, Object>> getAssignmentDetail(String id) {
         try {
-            // 这里应该从详细记录表中查询具体分配结果
+            AutoAssignmentHistory history = autoAssignmentHistoryMapper.selectById(Long.parseLong(id));
+
+            if (history == null) {
+                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "执行记录不存在");
+            }
+
             Map<String, Object> detail = new HashMap<>();
-            detail.put("id", id);
-            detail.put("results", new ArrayList<>());
-            
+            detail.put("id", String.valueOf(history.getId()));
+            detail.put("startTime", history.getStartTime());
+            detail.put("endTime", history.getEndTime());
+            detail.put("strategy", history.getStrategy());
+            detail.put("totalStudents", history.getTotalStudents());
+            detail.put("assignedCount", history.getAssignedCount());
+            detail.put("successRate", history.getSuccessRate());
+            detail.put("duration", history.getDuration());
+            detail.put("status", history.getStatus());
+
+            // 解析分配结果详情
+            List<Map<String, Object>> results = new ArrayList<>();
+            if (history.getResultDetail() != null && !history.getResultDetail().isEmpty()) {
+                try {
+                    results = objectMapper.readValue(history.getResultDetail(), List.class);
+                } catch (Exception e) {
+                    log.warn("解析分配结果详情JSON失败: {}", e.getMessage());
+                }
+            }
+            detail.put("results", results);
+
             return Result.success(detail);
         } catch (Exception e) {
             log.error("获取执行详情失败: id={}, error={}", id, e.getMessage(), e);
@@ -369,29 +397,29 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
     }
 
     /**
-     * 异步执行分配算法
+     * 异步执行分配算法（使用Spring管理的TaskExecutor，避免直接创建线程）
      */
     private void executeAssignmentAsync(String taskId, AutoAssignmentConfigDTO config) {
-        new Thread(() -> {
+        taskExecutor.execute(() -> {
             try {
                 // 从数据库获取任务记录
                 LambdaQueryWrapper<AutoAssignmentHistory> wrapper = new LambdaQueryWrapper<>();
                 wrapper.eq(AutoAssignmentHistory::getTaskId, taskId)
                        .eq(AutoAssignmentHistory::getIsDeleted, 0);
-                
+
                 AutoAssignmentHistory history = autoAssignmentHistoryMapper.selectOne(wrapper);
                 if (history == null) return;
-                
+
                 // 获取待分配学生和可用教师
                 List<PaperInfo> students = getUnassignedStudents();
                 List<SysUser> teachers = getAvailableTeachers(config);
-                
+
                 // 更新总数
                 history.setTotalStudents(students.size());
                 history.setAssignedCount(0);
                 history.setUpdateTime(LocalDateTime.now());
                 autoAssignmentHistoryMapper.updateById(history);
-                
+
                 int successCount = 0;
                 List<AutoAssignmentProgressDTO.AssignmentDetail> details = new ArrayList<>();
                 
@@ -462,7 +490,7 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
                 
                 log.error("自动分配任务执行失败: taskId={}", taskId, e);
             }
-        }).start();
+        });
     }
 
     /**

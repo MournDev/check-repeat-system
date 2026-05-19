@@ -116,7 +116,20 @@ public class TeacherDataAnalysisController {
             @RequestParam(defaultValue = "week") String timeRange) {
         try {
             Map<String, Object> stats = trendService.getReviewStats(teacherId, timeRange);
-            return Result.success(stats);
+            
+            // 构造符合前端期望的响应格式
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("totalReviews", stats.get("totalReviews"));
+            responseData.put("pendingReviews", stats.get("pendingReviews"));
+            responseData.put("approvedReviews", stats.get("approvedReviews"));
+            responseData.put("currentStudents", stats.get("currentStudents"));
+            
+            // 添加趋势数据
+            responseData.put("totalReviewsTrend", stats.get("totalReviewsTrend"));
+            responseData.put("approvedReviewsTrend", stats.get("approvedReviewsTrend"));
+            responseData.put("currentStudentsTrend", stats.get("currentStudentsTrend"));
+            
+            return Result.success(responseData);
         } catch (Exception e) {
             log.error("获取统计数据失败: {}", e.getMessage());
             return Result.error(ResultCode.SYSTEM_ERROR,"获取统计数据失败");

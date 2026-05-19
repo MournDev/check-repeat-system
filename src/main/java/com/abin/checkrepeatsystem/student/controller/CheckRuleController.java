@@ -39,6 +39,7 @@ public class CheckRuleController {
      * 获取默认规则
      */
     @GetMapping("/default")
+    @PreAuthorize("hasAnyAuthority('STUDENT','TEACHER','ADMIN')")
     public Result<CheckRule> getDefaultRule() {
         try {
             CheckRule rule = checkRuleService.getDefaultRule();

@@ -36,6 +36,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -106,25 +108,37 @@ public class CheckTaskEventListener {
     @EventListener
     @Transactional
     public void handleCheckTaskCreatedEvent(CheckTaskCreatedEvent event) {
+        Long taskId = event.getTaskId();
         try {
-            Long taskId = event.getTaskId();
+            // 从事件中恢复用户上下文（异步线程中SecurityContext丢失，通过事件传递）
+            if (event.getOperatorUserId() != null) {
+                SysUser operatorUser = SpringContextUtil.getBean(
+                    com.abin.checkrepeatsystem.mapper.SysUserMapper.class)
+                    .selectById(event.getOperatorUserId());
+                if (operatorUser != null) {
+                    UserContextHolder.setUser(operatorUser);
+                }
+            }
+
             CheckTask checkTask = checkTaskMapper.selectById(taskId);
             if (checkTask == null) {
                 log.error("查重任务不存在：{}", taskId);
-                return;
+                return; // 任务已不存在，无需标记失败
             }
-            
+
             // 1. 更新任务状态为进行中
             stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.CHECKING, "开始查重");
-            
+
             // 2. 发送开始查重通知
             sendProgressMessage(taskId, 0, "开始查重，请稍候...");
-            
+
             // 3. 执行查重
             long startTime = System.currentTimeMillis();
             CheckTask checkTaskInDB = checkTaskMapper.selectById(taskId);
             if (checkTaskInDB == null) {
                 log.error("查重任务不存在：{}", taskId);
+                stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE, "任务数据异常");
+                sendProgressMessage(taskId, 100, "任务数据异常，查重失败", "error");
                 return;
             }
             
@@ -133,7 +147,7 @@ public class CheckTaskEventListener {
             if (paperInfo == null) {
                 log.error("论文信息不存在：{}", checkTaskInDB.getPaperId());
                 stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE, "论文信息不存在");
-                sendProgressMessage(taskId, 100, "论文信息不存在，查重失败");
+                sendProgressMessage(taskId, 100, "论文信息不存在，查重失败", "error");
                 return;
             }
             
@@ -143,7 +157,7 @@ public class CheckTaskEventListener {
             if (paperContent == null || paperContent.trim().isEmpty()) {
                 log.error("论文内容为空：{}", paperInfo.getId());
                 stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE, "论文内容为空");
-                sendProgressMessage(taskId, 100, "论文内容为空，查重失败");
+                sendProgressMessage(taskId, 100, "论文内容为空，查重失败", "error");
                 return;
             }
             
@@ -155,7 +169,7 @@ public class CheckTaskEventListener {
             } catch (Exception e) {
                 log.error("执行查重失败：{}", e.getMessage(), e);
                 stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE, "执行查重失败：" + e.getMessage());
-                sendProgressMessage(taskId, 100, "执行查重失败：" + e.getMessage());
+                sendProgressMessage(taskId, 100, "执行查重失败：" + e.getMessage(), "error");
                 return;
             }
             
@@ -164,7 +178,7 @@ public class CheckTaskEventListener {
             if (!checkResult.isSuccess()) {
                 log.error("查重失败：{}", checkResult.getFailReason());
                 stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE, "查重失败：" + checkResult.getFailReason());
-                sendProgressMessage(taskId, 100, "查重失败：" + checkResult.getFailReason());
+                sendProgressMessage(taskId, 100, "查重失败：" + checkResult.getFailReason(), "error");
                 return;
             }
             
@@ -175,6 +189,9 @@ public class CheckTaskEventListener {
             
             // 5. 更新任务状态为完成
             stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.COMPLETED, "查重完成");
+            // 同步内存对象状态，避免后续 updateById 用 stale 状态覆盖状态机结果
+            checkTaskInDB.setCheckStatus(CheckTaskStatusEnum.COMPLETED.getCode());
+            checkTaskInDB.setEndTime(LocalDateTime.now());
             checkTaskInDB.setCheckRate(checkRate);
             checkTaskMapper.updateById(checkTaskInDB);
             
@@ -190,6 +207,15 @@ public class CheckTaskEventListener {
             
         } catch (Exception e) {
             log.error("处理查重任务失败", e);
+            try {
+                stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE,
+                    "系统异常：" + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                sendProgressMessage(taskId, 100, "查重失败，请稍后重试", "error");
+            } catch (Exception ex) {
+                log.error("更新任务失败状态时发生异常", ex);
+            }
+        } finally {
+            UserContextHolder.removeUser();
         }
     }
 
@@ -197,15 +223,23 @@ public class CheckTaskEventListener {
      * 发送进度消息
      */
     private void sendProgressMessage(Long taskId, int progress, String message) {
+        sendProgressMessage(taskId, progress, message, progress >= 100 ? "complete" : "progress");
+    }
+
+    /**
+     * 发送进度消息（指定消息类型）
+     */
+    private void sendProgressMessage(Long taskId, int progress, String message, String type) {
         try {
             Map<String, Object> progressMessage = new HashMap<>();
             progressMessage.put("taskId", taskId);
+            progressMessage.put("type", type);
             progressMessage.put("progress", progress);
             progressMessage.put("message", message);
             progressMessage.put("timestamp", System.currentTimeMillis());
-            
+
             String messageJson = com.alibaba.fastjson.JSON.toJSONString(progressMessage);
-            
+
             // 发送消息
             CheckProgressWebSocketHandler.sendProgressMessage(taskId.toString(), messageJson);
         } catch (Exception e) {
@@ -217,11 +251,10 @@ public class CheckTaskEventListener {
      * 从文件中提取文本内容
      */
     private String extractTextFromFile(String filePath) throws Exception {
-        // 确保basePath以斜杠结尾
-        String normalizedBasePath = basePath.endsWith("/") ? basePath : basePath + "/";
-        // 处理文件路径中的反斜杠，统一转换为斜杠
-        String normalizedFilePath = filePath.replace("\\", "/");
-        String fullPath = normalizedBasePath + normalizedFilePath;
+        // 规范化文件路径：统一分隔符并去除开头的路径分隔符，确保跨平台兼容
+        String normalizedFilePath = filePath.replace('\\', '/').replaceAll("^/+", "");
+        Path fullPathObj = Paths.get(basePath, normalizedFilePath);
+        String fullPath = fullPathObj.toString();
         
         // 打印完整文件路径，方便调试
         log.info("尝试读取论文文件：{}", fullPath);

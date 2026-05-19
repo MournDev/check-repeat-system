@@ -46,6 +46,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 @RestController
 @RequestMapping("/api/papers")
+@PreAuthorize("hasAnyAuthority('STUDENT', 'TEACHER', 'ADMIN')")
 public class StudentPaperController {
 
     @Resource
@@ -441,6 +442,21 @@ public class StudentPaperController {
         }
     }
     
+    /**
+     * 7.1 获取论文所有提交版本列表
+     */
+    @GetMapping("/{paperId}/versions")
+    public Result<List<PaperSubmitDTO>> getPaperVersions(@PathVariable Long paperId) {
+        try {
+            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+            List<PaperSubmitDTO> versions = paperInfoService.getPaperVersions(paperId, studentId);
+            return Result.success(versions);
+        } catch (Exception e) {
+            log.error("获取论文版本列表失败 - 论文ID: {}", paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取版本列表失败: " + e.getMessage());
+        }
+    }
+
     /**
      * 8. 获取论文版本详情接口
      * 获取指定版本的详细信息

@@ -24,7 +24,7 @@ public class TeacherReviewTemplateController {
      *
      * @return 模板列表
      */
-    @GetMapping
+    @GetMapping("/getTemplatesList")
     public Result<List<ReviewTemplateVO>> getTemplates() {
         return reviewTemplateService.getTemplates();
     }
@@ -35,7 +35,7 @@ public class TeacherReviewTemplateController {
      * @param templateDTO 模板DTO
      * @return 创建的模板
      */
-    @PostMapping
+    @PostMapping("/createTemplate")
     public Result<ReviewTemplateVO> createTemplate(@RequestBody ReviewTemplateDTO templateDTO) {
         return reviewTemplateService.createTemplate(templateDTO);
     }

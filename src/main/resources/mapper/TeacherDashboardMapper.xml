@@ -73,6 +73,18 @@
           AND pi.paper_status = 'auditing'
     </select>
 
+    <!-- 统计已分配导师的学生数（status = 'assigned'，按学生去重） -->
+    <select id="countAssignedPapers" resultType="java.lang.Long">
+        SELECT
+            COUNT(DISTINCT pi.student_id) AS assigned_papers
+        FROM
+            paper_info pi
+        WHERE
+            pi.teacher_id = #{teacherId}
+          AND pi.is_deleted = 0
+          AND pi.paper_status = 'assigned'
+    </select>
+
     <!-- 统计被驳回的论文数 -->
     <select id="countRejectedPapers" resultType="java.lang.Long">
         SELECT
@@ -139,7 +151,8 @@
 
     <!-- 获取近期审核活动记录 -->
     <select id="getRecentReviewActivities" resultType="map">
-        SELECT 
+        SELECT
+            pi.id as activityId,
             pi.id as paperId,
             pi.paper_title as paperTitle,
             su.real_name as studentName,
@@ -158,7 +171,6 @@
           AND pi.is_deleted = 0
           AND su.is_deleted = 0
         ORDER BY pi.check_time DESC
-        LIMIT #{page.offset}, #{page.size}
     </select>
 
     <!-- 根据教师ID获取学生IDs -->

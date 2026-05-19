@@ -44,14 +44,16 @@ public class AdminPaperController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) Long collegeId,
+            @RequestParam(required = false) Long majorId,
             @RequestParam(required = false) String majorName,
             @RequestParam(required = false) String grade,
             @RequestParam(required = false) String checkStatus,
             @RequestParam(required = false) Double minSimilarity,
             @RequestParam(required = false) Double maxSimilarity) {
         
-        log.info("接收获取论文列表请求: page={}, size={}, paperStatus={}, paperType={}, keyword={}, majorName={}, grade={}, minSimilarity={}, maxSimilarity={}, checkStatus={}",
-                page, size, paperStatus, paperType, keyword, majorName, grade, minSimilarity, maxSimilarity, checkStatus);
+        log.info("接收获取论文列表请求: page={}, size={}, paperStatus={}, paperType={}, keyword={}, collegeId={}, majorId={}, majorName={}, grade={}, minSimilarity={}, maxSimilarity={}, checkStatus={}",
+                page, size, paperStatus, paperType, keyword, collegeId, majorId, majorName, grade, minSimilarity, maxSimilarity, checkStatus);
         try {
             // 验证查重状态参数
             if (checkStatus != null && !CheckStatusFilterEnum.isValidCode(checkStatus)) {
@@ -59,7 +61,7 @@ public class AdminPaperController {
                 checkStatus = null;
             }
                     
-            return adminPaperService.getPaperList(page, size, paperStatus, paperType, keyword, startDate, endDate, majorName, grade, checkStatus, minSimilarity, maxSimilarity);
+            return adminPaperService.getPaperList(page, size, paperStatus, paperType, keyword, startDate, endDate, collegeId, majorId, majorName, grade, checkStatus, minSimilarity, maxSimilarity);
         } catch (Exception e) {
             log.error("获取论文列表失败: {}", e.getMessage(), e);
             return Result.error(ResultCode.SYSTEM_ERROR, "获取论文列表失败: " + e.getMessage());
@@ -183,10 +185,10 @@ public class AdminPaperController {
      * 导出论文列表
      */
     @GetMapping("/export")
-    public void exportPaperList(@RequestParam Map<String, Object> params) {
+    public void exportPaperList(@RequestParam Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response) {
         log.info("接收导出论文列表请求: params={}", params);
         try {
-            adminPaperService.exportPaperList(params);
+            adminPaperService.exportPaperList(params, response);
         } catch (Exception e) {
             log.error("导出论文列表失败: {}", e.getMessage(), e);
         }

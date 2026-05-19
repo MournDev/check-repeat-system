@@ -17,6 +17,7 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ import java.util.List;
  * 学生分组管理服务实现
  */
 @Service
+@Slf4j
 public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupService {
 
     @Autowired
@@ -75,7 +77,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success(groupVOs);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"获取分组列表失败");
         }
     }
@@ -111,7 +113,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success(vo);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"创建分组失败");
         }
     }
@@ -159,7 +161,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success(vo);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"更新分组失败");
         }
     }
@@ -197,7 +199,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"删除分组失败");
         }
     }
@@ -249,7 +251,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success(studentVOs);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"获取学生列表失败");
         }
     }
@@ -296,7 +298,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"添加学生失败");
         }
     }
@@ -333,7 +335,7 @@ public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupServic
             
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("学生分组操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"移除学生失败");
         }
     }

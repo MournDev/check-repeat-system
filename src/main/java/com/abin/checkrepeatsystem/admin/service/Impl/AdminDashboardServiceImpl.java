@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.admin.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.mapper.CheckResultMapper;
+import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
 import com.abin.checkrepeatsystem.admin.service.AdminDashboardService;
 import com.abin.checkrepeatsystem.admin.vo.CollegePaperStatsVO;
 import com.abin.checkrepeatsystem.admin.vo.MajorPaperStatsVO;
@@ -12,12 +13,18 @@ import com.abin.checkrepeatsystem.monitor.service.SystemMonitorService;
 import com.abin.checkrepeatsystem.pojo.entity.CheckResult;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
+import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.distribution.HistogramSnapshot;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
@@ -25,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -45,12 +53,21 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     
     @Resource
     private SysLoginLogMapper sysLoginLogMapper;
-    
+
+    @Resource
+    private SysOperationLogMapper sysOperationLogMapper;
+
     @Resource
     private SystemMonitorService systemMonitorService;
-    
+
     @Resource
     private DatabaseMonitorService databaseMonitorService;
+
+    @Resource
+    private MeterRegistry meterRegistry;
+
+    @Resource
+    private RedisTemplate<String, String> redisTemplate;
 
     @Override
     public Result<Map<String, Object>> getSystemStats() {
@@ -149,9 +166,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             stats.put("weekReviews", weekReviews);
             
             // 平均相似度
-            List<CheckResult> recentResults = checkResultMapper.selectList(new LambdaQueryWrapper<CheckResult>()
-                    .orderByDesc(CheckResult::getCreateTime)
-                    .last("LIMIT 100"));
+            Page<CheckResult> resultPage = new Page<>(0, 100);
+            List<CheckResult> recentResults = checkResultMapper.selectPage(resultPage,
+                    new LambdaQueryWrapper<CheckResult>()
+                    .orderByDesc(CheckResult::getCreateTime)).getRecords();
             if (!recentResults.isEmpty()) {
                 BigDecimal avgSimilarity = recentResults.stream()
                         .map(CheckResult::getRepeatRate)
@@ -345,17 +363,25 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
     
     /**
-     * 从数据库获取系统负载信息
+     * 从系统监控服务获取真实系统负载
      */
     private Integer getSystemLoadFromDatabase() {
         try {
-            // 这里可以根据实际情况查询系统参数表或其他监控表
-            // 暂时返回随机值作为示例
-            return new Random().nextInt(30) + 30; // 30-60之间的随机值
+            var systemStatus = systemMonitorService.getSystemStatus();
+            if (systemStatus.isSuccess()) {
+                Map<String, Object> statusData = (Map<String, Object>) systemStatus.getData();
+                Map<String, Object> cpuInfo = (Map<String, Object>) statusData.get("cpu");
+                if (cpuInfo != null) {
+                    Double cpuUsage = (Double) cpuInfo.get("processCpuUsage");
+                    if (cpuUsage != null && cpuUsage >= 0) {
+                        return (int) Math.round(cpuUsage);
+                    }
+                }
+            }
         } catch (Exception e) {
-            log.warn("获取系统负载信息失败，使用默认值: {}", e.getMessage());
-            return 45; // 默认值
+            log.warn("获取系统负载信息失败: {}", e.getMessage());
         }
+        return 0;
     }
     
     /**
@@ -590,9 +616,15 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
     
     private double getDiskUsage() {
-        // 获取真实的磁盘使用率（如果可能的话）
-        // 目前返回估算值，后续可以集成文件系统监控
-        return 65.0 + new Random().nextDouble() * 20; // 65-85%
+        try {
+            Map<String, Object> diskInfo = systemMonitorService.getDiskInfo();
+            if (diskInfo != null && diskInfo.get("usagePercent") != null) {
+                return ((Number) diskInfo.get("usagePercent")).doubleValue();
+            }
+        } catch (Exception e) {
+            log.warn("获取磁盘使用率失败: {}", e.getMessage());
+        }
+        return 0.0;
     }
     
     private Integer getActiveConnections() {
@@ -721,68 +753,73 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     /**
      * 获取API响应时间指标
      */
+    /**
+     * 获取API响应时间指标 — 从 Micrometer http.response.time 聚合真实数据
+     * 该指标由 ApplicationMonitorService.recordHttpRequest() 在每个请求完成时写入
+     */
     private Map<String, Object> getApiResponseTimeMetrics() {
         Map<String, Object> apiMetrics = new HashMap<>();
-        
+
         try {
-            // 优先尝试从操作日志获取真实的响应时间数据
-            LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
-            
-            // 查询最近的操作日志
-            List<SysLoginLog> recentLogs = sysLoginLogMapper.selectList(
-                new LambdaQueryWrapper<SysLoginLog>()
-                    .ge(SysLoginLog::getLoginTime, oneHourAgo)
-                    .orderByDesc(SysLoginLog::getLoginTime)
-                    .last("LIMIT 100")
-            );
-            
-            if (!recentLogs.isEmpty()) {
-                // 从真实日志中提取响应时间信息（如果有记录的话）
-                List<Long> responseTimes = new ArrayList<>();
-                for (SysLoginLog log : recentLogs) {
-                    // 这里可以根据日志内容提取实际的响应时间
-                    // 目前使用估算值，但基于真实的日志数量
-                    responseTimes.add(50L + (long)new Random().nextInt(200)); // 50-250ms
-                }
-                
-                // 计算统计指标
-                long avgTime = Math.round(responseTimes.stream().mapToLong(Long::longValue).average().orElse(100.0));
-                long minTime = responseTimes.stream().mapToLong(Long::longValue).min().orElse(20L);
-                long maxTime = responseTimes.stream().mapToLong(Long::longValue).max().orElse(500L);
-                
-                // 计算95百分位
-                Collections.sort(responseTimes);
-                int index95 = (int) (responseTimes.size() * 0.95);
-                long p95Time = index95 < responseTimes.size() ? responseTimes.get(index95) : maxTime;
-                
-                apiMetrics.put("avgResponseTime", avgTime);
-                apiMetrics.put("minResponseTime", minTime);
-                apiMetrics.put("maxResponseTime", maxTime);
-                apiMetrics.put("p95ResponseTime", p95Time);
-            } else {
-                // 如果没有日志数据，使用基于系统负载的估算
-                double cpuUsage = getCpuUsage();
-                double memoryUsage = getMemoryUsage();
-                
-                // 基于系统资源使用率估算响应时间
-                long baseTime = 100L; // 基准响应时间
-                long loadFactor = (long) ((cpuUsage + memoryUsage) / 2 / 10); // 负载因子
-                
-                apiMetrics.put("avgResponseTime", baseTime + loadFactor * 5);
-                apiMetrics.put("minResponseTime", Math.max(20, baseTime - loadFactor * 2));
-                apiMetrics.put("maxResponseTime", baseTime + loadFactor * 15);
-                apiMetrics.put("p95ResponseTime", baseTime + loadFactor * 8);
+            // 查询实际记录中的 http.response.time Timer（由 MonitoringInterceptor → ApplicationMonitorService 写入）
+            Collection<Timer> timers = meterRegistry.get("http.response.time").timers();
+            if (timers.isEmpty()) {
+                apiMetrics.put("avgResponseTime", -1L);
+                apiMetrics.put("minResponseTime", -1L);
+                apiMetrics.put("maxResponseTime", -1L);
+                apiMetrics.put("p95ResponseTime", -1L);
+                return apiMetrics;
             }
-            
+
+            // 聚合所有 URI 的响应时间数据
+            long totalCount = 0;
+            double totalTimeMs = 0;
+            double maxMs = 0;
+            double p95Sum = 0;
+            int timerCount = 0;
+
+            for (Timer timer : timers) {
+                if (timer.count() == 0) continue;
+                HistogramSnapshot snapshot = timer.takeSnapshot();
+                totalCount += snapshot.count();
+                totalTimeMs += snapshot.total(TimeUnit.MILLISECONDS);
+                double tMax = snapshot.max(TimeUnit.MILLISECONDS);
+                if (tMax > maxMs) maxMs = tMax;
+                
+                // 获取P95响应时间
+                double p95 = 0;
+                if (snapshot.percentileValues() != null && snapshot.percentileValues().length > 0) {
+                    for (var percentileValue : snapshot.percentileValues()) {
+                        if (Math.abs(percentileValue.percentile() - 0.95) < 0.001) {
+                            p95 = percentileValue.value();
+                            break;
+                        }
+                    }
+                }
+                p95Sum += p95;
+                timerCount++;
+            }
+
+            if (totalCount > 0 && timerCount > 0) {
+                apiMetrics.put("avgResponseTime", Math.round(totalTimeMs / totalCount));
+                apiMetrics.put("maxResponseTime", Math.round(maxMs));
+                apiMetrics.put("p95ResponseTime", Math.round(p95Sum / timerCount));
+            } else {
+                apiMetrics.put("avgResponseTime", -1L);
+                apiMetrics.put("maxResponseTime", -1L);
+                apiMetrics.put("p95ResponseTime", -1L);
+            }
+            // Micrometer 直方图不直接暴露 min，需额外配置 DistributionSummary
+            apiMetrics.put("minResponseTime", -1L);
+
         } catch (Exception e) {
             log.warn("获取API响应时间指标失败: {}", e.getMessage());
-            // 默认值
-            apiMetrics.put("avgResponseTime", 100);
-            apiMetrics.put("minResponseTime", 20);
-            apiMetrics.put("maxResponseTime", 500);
-            apiMetrics.put("p95ResponseTime", 200);
+            apiMetrics.put("avgResponseTime", -1L);
+            apiMetrics.put("minResponseTime", -1L);
+            apiMetrics.put("maxResponseTime", -1L);
+            apiMetrics.put("p95ResponseTime", -1L);
         }
-        
+
         return apiMetrics;
     }
     
@@ -791,13 +828,23 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
      */
     private Double getCacheHitRate() {
         try {
-            // 这里应该连接Redis获取真实的缓存命中率
-            // 目前返回估算值
-            return 85.0 + new Random().nextDouble() * 10; // 85-95%
+            // 通过Redis INFO stats获取真实的缓存命中率
+            Properties info = redisTemplate.getRequiredConnectionFactory().getConnection()
+                    .serverCommands().info("stats");
+            String hitsStr = info.getProperty("keyspace_hits");
+            String missesStr = info.getProperty("keyspace_misses");
+            if (hitsStr != null && missesStr != null) {
+                long hits = Long.parseLong(hitsStr);
+                long misses = Long.parseLong(missesStr);
+                long total = hits + misses;
+                if (total > 0) {
+                    return Math.round(hits * 10000.0 / total) / 100.0;
+                }
+            }
         } catch (Exception e) {
-            log.warn("获取缓存命中率失败: {}", e.getMessage());
-            return 0.0;
+            log.warn("获取Redis缓存命中率失败: {}", e.getMessage());
         }
+        return -1.0; // -1 表示不可用
     }
     
     /**
@@ -840,11 +887,19 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     private Double getErrorRate() {
         try {
             LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
-            // 这里应该查询错误日志表，目前返回估算值
-            return new Random().nextDouble() * 2; // 0-2%
+            Long totalOps = sysOperationLogMapper.selectCount(
+                new LambdaQueryWrapper<SysOperationLog>()
+                    .ge(SysOperationLog::getOperationTime, oneHourAgo));
+            Long failedOps = sysOperationLogMapper.selectCount(
+                new LambdaQueryWrapper<SysOperationLog>()
+                    .ge(SysOperationLog::getOperationTime, oneHourAgo)
+                    .eq(SysOperationLog::getStatus, 0));
+            if (totalOps != null && totalOps > 0 && failedOps != null) {
+                return Math.round(failedOps * 10000.0 / totalOps) / 100.0;
+            }
         } catch (Exception e) {
             log.warn("获取错误率失败: {}", e.getMessage());
-            return 0.0;
         }
+        return 0.0;
     }
 }

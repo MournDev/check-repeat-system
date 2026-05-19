@@ -25,16 +25,17 @@ public class StudentInfo extends BaseEntity {
     private String grade;
 
     /**
-     * 专业
-     */
-    @TableField("major")
-    private String major;
-
-    /**
      * 班级
      */
     @TableField("class_name")
     private String className;
+
+    /**
+     * 学院ID（关联college.id）
+     */
+    @TableField("college_id")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long collegeId;
 
     /**
      * 学院名称
@@ -48,5 +49,11 @@ public class StudentInfo extends BaseEntity {
     @TableField("major_id")
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long majorId;
+
+    /**
+     * 专业
+     */
+    @TableField("major")
+    private String major;
 
 }

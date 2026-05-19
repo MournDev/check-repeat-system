@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.abin.checkrepeatsystem.mapper.KnowledgeArticleMapper">
+
+    <resultMap id="ArticleWithCategory" type="com.abin.checkrepeatsystem.pojo.entity.KnowledgeArticle">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="summary" column="summary"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="tags" column="tags"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="status" column="status"/>
+        <result property="sort" column="sort"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorName" column="author_name"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="isDeleted" column="is_deleted"/>
+        <result property="categoryName" column="category_name"/>
+    </resultMap>
+
+    <select id="listArticles" resultMap="ArticleWithCategory">
+        SELECT a.*, c.name AS category_name
+        FROM knowledge_article a
+        LEFT JOIN knowledge_category c ON a.category_id = c.id AND c.is_deleted = 0
+        WHERE a.is_deleted = 0
+            AND a.status = 'PUBLISHED'
+            <if test="keyword != null and keyword != ''">
+                AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.content LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="category != null and category != ''">
+                AND c.code = #{category}
+            </if>
+        ORDER BY a.sort ASC, a.create_time DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countArticles" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM knowledge_article a
+        LEFT JOIN knowledge_category c ON a.category_id = c.id AND c.is_deleted = 0
+        WHERE a.is_deleted = 0
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+            <if test="status == null or status == ''">
+                AND a.status = 'PUBLISHED'
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.content LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="category != null and category != ''">
+                AND c.code = #{category}
+            </if>
+    </select>
+
+    <select id="listPopular" resultMap="ArticleWithCategory">
+        SELECT a.*, c.name AS category_name
+        FROM knowledge_article a
+        LEFT JOIN knowledge_category c ON a.category_id = c.id AND c.is_deleted = 0
+        WHERE a.is_deleted = 0
+            AND a.status = 'PUBLISHED'
+        ORDER BY a.view_count DESC, a.create_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="adminListArticles" resultMap="ArticleWithCategory">
+        SELECT a.*, c.name AS category_name
+        FROM knowledge_article a
+        LEFT JOIN knowledge_category c ON a.category_id = c.id AND c.is_deleted = 0
+        WHERE a.is_deleted = 0
+            <if test="keyword != null and keyword != ''">
+                AND a.title LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+        ORDER BY a.sort ASC, a.create_time DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="adminCountArticles" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM knowledge_article a
+        WHERE a.is_deleted = 0
+            <if test="keyword != null and keyword != ''">
+                AND a.title LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+    </select>
+
+</mapper>

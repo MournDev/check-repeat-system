@@ -33,7 +33,17 @@ public class StudentListRequestDTO {
     private String status;
     
     /**
-     * 学院筛选
+     * 学院筛选（名称，保留用于显示）
      */
     private String college;
+
+    /**
+     * 学院ID筛选（用于精确匹配）
+     */
+    private Long collegeId;
+
+    /**
+     * 专业ID筛选（用于精确匹配）
+     */
+    private Long majorId;
 }

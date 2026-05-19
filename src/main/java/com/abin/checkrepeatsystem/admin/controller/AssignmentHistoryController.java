@@ -51,19 +51,19 @@ public class AssignmentHistoryController {
     public Result<Page<AssignmentRecordDTO>> getAssignmentRecordList(
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) Long collegeId,
             @RequestParam(required = false) String assignmentType,
-            @RequestParam(required = false) String major,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
-        
-        log.info("接收获取分配记录列表请求: startDate={}, endDate={}, assignmentType={}, major={}, status={}, keyword={}, page={}, size={}",
-                startDate, endDate, assignmentType, major, status, keyword, page, size);
-        
+
+        log.info("接收获取分配记录列表请求: startDate={}, endDate={}, collegeId={}, assignmentType={}, status={}, keyword={}, page={}, size={}",
+                startDate, endDate, collegeId, assignmentType, status, keyword, page, size);
+
         try {
             return assignmentHistoryService.getAssignmentRecordList(
-                    startDate, endDate, assignmentType, major, status, keyword, page, size);
+                    startDate, endDate, collegeId, assignmentType, status, keyword, page, size);
         } catch (Exception e) {
             log.error("获取分配记录列表失败: {}", e.getMessage(), e);
             return Result.error(ResultCode.SYSTEM_ERROR, "获取分配记录列表失败: " + e.getMessage());

@@ -291,15 +291,22 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
         try {
             // 使用当前登录用户 ID
             Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+            
+            // 如果会话ID为空，自动创建或查找教师与学生的会话
+            Long sessionId = sendDTO.getSessionId();
+            if (sessionId == null) {
+                sessionId = getOrCreateConversation(currentUserId, sendDTO.getReceiverId());
+                log.info("自动创建会话 - 会话ID: {}", sessionId);
+            }
 
             log.info("发送消息 - 当前用户 ID: {}, 会话 ID: {}, 接收者 ID: {}",
-                    currentUserId, sendDTO.getSessionId(), sendDTO.getReceiverId());
+                    currentUserId, sessionId, sendDTO.getReceiverId());
 
             // 确保 conversation_id 正确设置
             InstantMessage message = new InstantMessage();
             message.setSenderId(currentUserId);
             message.setReceiverId(sendDTO.getReceiverId());
-            message.setConversationId(sendDTO.getSessionId());
+            message.setConversationId(sessionId);
             message.setContent(sendDTO.getContent());
             message.setMessageType(sendDTO.getMessageType());
             message.setContentType("TEXT");
@@ -315,7 +322,7 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
             if (result > 0) {
                 // 更新会话的最后消息信息
-                updateConversationLastMessage(sendDTO.getSessionId());
+                updateConversationLastMessage(sessionId);
 
                 // 转换为 VO
                 MessageVO messageVO = new MessageVO();
@@ -338,8 +345,8 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
                 // 设置 sender 字段，兼容前端判断
                 messageVO.setSender("advisor");
-                messageVO.setSessionId(sendDTO.getSessionId());
-                messageVO.setConversationId(sendDTO.getSessionId());
+                messageVO.setSessionId(sessionId);
+                messageVO.setConversationId(sessionId);
 
                 // 【WebSocket推送】发送消息后，通过WebSocket推送新消息给接收者
                 try {
@@ -931,6 +938,90 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
             return "image/png";
         } else {
             return "application/octet-stream";
+        }
+    }
+
+    /**
+     * 获取或创建教师与学生之间的会话
+     *
+     * @param teacherId 教师ID
+     * @param studentId 学生ID
+     * @return 会话ID
+     */
+    private Long getOrCreateConversation(Long teacherId, Long studentId) {
+        // 检查会话是否已经存在于数据库中
+        com.abin.checkrepeatsystem.pojo.entity.Conversation existingConversation = null;
+        
+        try {
+            // 查询 conversation_members 表，看看是否已经存在一个会话，其中包含了指定的教师和学生
+            LambdaQueryWrapper<ConversationMember> memberWrapper1 = new LambdaQueryWrapper<>();
+            memberWrapper1.eq(ConversationMember::getUserId, teacherId);
+            List<ConversationMember> teacherMembers = conversationMemberMapper.selectList(memberWrapper1);
+
+            for (ConversationMember teacherMember : teacherMembers) {
+                Long convId = teacherMember.getConversationId();
+                LambdaQueryWrapper<ConversationMember> memberWrapper2 = new LambdaQueryWrapper<>();
+                memberWrapper2.eq(ConversationMember::getConversationId, convId)
+                             .eq(ConversationMember::getUserId, studentId);
+                Long count = conversationMemberMapper.selectCount(memberWrapper2);
+                if (count > 0) {
+                    // 找到一个包含教师和学生的会话
+                    existingConversation = conversationMapper.selectById(convId);
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查询会话失败，可能会话不存在: {}", e.getMessage());
+        }
+
+        // 如果会话不存在，创建会话
+        if (existingConversation == null) {
+            log.info("会话不存在，创建新会话 - 教师ID: {}, 学生ID: {}", teacherId, studentId);
+            
+            // 获取学生姓名
+            SysUser student = sysUserMapper.selectById(studentId);
+            String studentName = student != null ? student.getRealName() : "未知学生";
+            
+            // 创建会话
+            Conversation conversation = new Conversation();
+            conversation.setName("与" + studentName + "的会话");
+            conversation.setType("PRIVATE");
+            conversation.setCreatorId(teacherId);
+            conversation.setLastActiveTime(LocalDateTime.now());
+            conversation.setLastMessageTime(LocalDateTime.now());
+
+            // 保存会话
+            conversationMapper.insert(conversation);
+            Long newConversationId = conversation.getId();
+            log.info("会话创建成功: {}", newConversationId);
+
+            // 关联历史消息到新创建的会话
+            associateHistoricalMessages(newConversationId, teacherId, studentId);
+
+            // 添加会话成员
+            ConversationMember teacherMember = new ConversationMember();
+            teacherMember.setConversationId(newConversationId);
+            teacherMember.setUserId(teacherId);
+            teacherMember.setRole("MEMBER");
+            teacherMember.setJoinedAt(LocalDateTime.now());
+            teacherMember.setIsLeft(0);
+            teacherMember.setUnreadCount(0);
+            conversationMemberMapper.insert(teacherMember);
+
+            ConversationMember studentMember = new ConversationMember();
+            studentMember.setConversationId(newConversationId);
+            studentMember.setUserId(studentId);
+            studentMember.setRole("MEMBER");
+            studentMember.setJoinedAt(LocalDateTime.now());
+            studentMember.setIsLeft(0);
+            studentMember.setUnreadCount(0);
+            conversationMemberMapper.insert(studentMember);
+
+            log.info("会话成员添加成功: 教师 {}，学生 {}", teacherId, studentId);
+            return newConversationId;
+        } else {
+            log.info("会话已存在: {}", existingConversation.getId());
+            return existingConversation.getId();
         }
     }
 }

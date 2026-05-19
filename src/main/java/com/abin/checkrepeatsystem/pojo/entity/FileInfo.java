@@ -41,6 +41,9 @@ public class FileInfo implements Serializable {
     @TableField("word_count")
     private Integer wordCount;
 
+    @TableField("page_count")
+    private Integer pageCount;
+
     @TableField("upload_time")
     private LocalDateTime uploadTime;
 

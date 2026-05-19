@@ -1,7 +1,9 @@
 package com.abin.checkrepeatsystem.admin.service;
 
 import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -10,7 +12,29 @@ import java.util.Map;
 /**
  * 操作日志服务接口
  */
-public interface SysOperationLogService {
+public interface SysOperationLogService extends IService<SysOperationLog> {
+
+    /**
+     * 分页查询操作日志（带条件）
+     * @param page 分页对象
+     * @param wrapper 查询条件
+     * @return 分页结果
+     */
+    Page<SysOperationLog> selectPage(Page<SysOperationLog> page, LambdaQueryWrapper<SysOperationLog> wrapper);
+
+    /**
+     * 查询操作日志列表（带条件）
+     * @param wrapper 查询条件
+     * @return 日志列表
+     */
+    List<SysOperationLog> selectList(LambdaQueryWrapper<SysOperationLog> wrapper);
+
+    /**
+     * 统计符合条件的操作日志数量
+     * @param wrapper 查询条件
+     * @return 数量
+     */
+    Long selectCount(LambdaQueryWrapper<SysOperationLog> wrapper);
 
     /**
      * 保存操作日志

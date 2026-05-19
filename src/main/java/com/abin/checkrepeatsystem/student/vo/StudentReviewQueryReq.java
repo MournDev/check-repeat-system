@@ -10,9 +10,9 @@ import lombok.Data;
 @Data
 public class StudentReviewQueryReq {
     /**
-     * 论文状态（可选：2-待审核，3-审核通过，4-审核不通过）
+     * 论文状态（可选：auditing-待审核，completed-审核通过，rejected-审核不通过）
      */
-    private Integer paperStatus; // 前端传参：paperStatus=3
+    private String paperStatus;
 
     /**
      * 当前页码（默认1）

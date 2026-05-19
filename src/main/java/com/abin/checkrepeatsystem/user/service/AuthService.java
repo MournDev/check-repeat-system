@@ -46,5 +46,9 @@ public interface AuthService {
      */
     Result<String> forgotPassword(ForgotPasswordReq forgotPasswordReq);
 
+    /**
+     * 发送密码重置验证码到用户注册邮箱
+     */
+    Result<String> sendPasswordResetCode(String username);
 
 }

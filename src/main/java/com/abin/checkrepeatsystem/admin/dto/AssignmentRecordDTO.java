@@ -86,4 +86,24 @@ public class AssignmentRecordDTO implements Serializable {
      * 备注说明
      */
     private String notes;
+    
+    /**
+     * 学生学院ID
+     */
+    private Long collegeId;
+    
+    /**
+     * 学生学院名称
+     */
+    private String collegeName;
+    
+    /**
+     * 学生专业ID
+     */
+    private Long majorId;
+    
+    /**
+     * 学生专业名称
+     */
+    private String majorName;
 }

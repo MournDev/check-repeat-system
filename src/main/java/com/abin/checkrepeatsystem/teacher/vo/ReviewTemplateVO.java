@@ -3,6 +3,7 @@ package com.abin.checkrepeatsystem.teacher.vo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Date;
 
@@ -48,17 +49,21 @@ public class ReviewTemplateVO {
     private Integer usageCount;
 
     /**
-     * 创建时间
+     * 创建人ID
      */
-    private Date createTime;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long createBy;
 
     /**
-     * 更新时间
+     * 创建时间
      */
-    private Date updateTime;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
+    private LocalDateTime createTime;
+
 
     /**
      * 最后使用时间
      */
-    private Date lastUsed;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
+    private LocalDateTime lastUsed;
 }

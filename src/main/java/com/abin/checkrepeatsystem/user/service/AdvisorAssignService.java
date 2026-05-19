@@ -31,6 +31,13 @@ public interface AdvisorAssignService {
      */
     Result<?> manualAssignAdvisor(Long paperId, Long teacherId, String reason);
 
+    /**
+     * 教师拒绝后重新分配指导老师（排除已拒绝的教师）
+     * @param paperId 论文ID
+     * @param excludedTeacherId 需要排除的教师ID
+     */
+    void reassignAfterRejection(Long paperId, Long excludedTeacherId);
+
 //    /**
 //     * 3. 同步指导任务数（状态变更触发）
 //     * 逻辑：当论文状态变更为“指导完成”“审核驳回”时，减少对应教师的当前指导任务数

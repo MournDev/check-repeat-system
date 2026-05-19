@@ -43,6 +43,9 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
     @Resource
     private TeacherInfoDataService teacherInfoService;
 
+    @Resource
+    private com.abin.checkrepeatsystem.user.service.AdvisorAssignService advisorAssignService;
+
     @Override
     public Result<Boolean> confirmAssignment(Long paperId, Long teacherId) {
         try {
@@ -119,8 +122,15 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
             // 5. 记录拒绝操作
             //createConfirmationRecord(paperId, teacherId, DictConstants.AllocationStatus.REJECTED);
 
+            // 6. 自动重新分配给其他教师（排除当前拒绝的教师）
+            try {
+                advisorAssignService.reassignAfterRejection(paperId, teacherId);
+            } catch (Exception e) {
+                log.error("拒绝后重新分配失败 - 论文ID: {}, 教师ID: {}", paperId, teacherId, e);
+            }
+
             log.info("教师拒绝接收论文 - 论文ID: {}, 老师ID: {}", paperId, teacherId);
-            return Result.success( "拒绝接收成功", true);
+            return Result.success( "拒绝接收成功，已触发重新分配", true);
 
         } catch (BusinessException e) {
             throw e;

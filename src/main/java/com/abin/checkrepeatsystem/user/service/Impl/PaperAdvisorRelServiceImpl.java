@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.pojo.entity.PaperAdvisorRel;
 import com.abin.checkrepeatsystem.user.mapper.PaperAdvisorRelMapper;
 import com.abin.checkrepeatsystem.user.service.PaperAdvisorRelService;
 import com.abin.checkrepeatsystem.user.vo.PaperAdvisorRoundVO;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -94,11 +95,11 @@ public class PaperAdvisorRelServiceImpl extends ServiceImpl<PaperAdvisorRelMappe
         }
 
         // 步骤2：构建查询条件（论文ID+轮次+有效状态+未删除）
-        QueryWrapper<PaperAdvisorRel> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("paper_id", paperId)
-                .eq("advisor_round", advisorRound)
-                .eq("rel_status", REL_STATUS_VALID)
-                .eq("is_deleted", 0); // 过滤已删除的关联记录
+        LambdaQueryWrapper<PaperAdvisorRel> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperAdvisorRel::getPaperId, paperId)
+                .eq(PaperAdvisorRel::getAdvisorRound, advisorRound)
+                .eq(PaperAdvisorRel::getRelStatus, REL_STATUS_VALID)
+                .eq(PaperAdvisorRel::getIsDeleted, 0); // 过滤已删除的关联记录
 
         // 步骤3：查询唯一有效记录（同一论文同一轮次仅一条有效记录）
         return this.getOne(queryWrapper);
@@ -114,14 +115,14 @@ public class PaperAdvisorRelServiceImpl extends ServiceImpl<PaperAdvisorRelMappe
         }
 
         // 步骤2：构建查询条件（指导老师ID+有效状态+未删除）
-        QueryWrapper<PaperAdvisorRel> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("advisor_id", advisorId)
-                .eq("rel_status", REL_STATUS_VALID)
-                .eq("is_deleted", 0);
+        LambdaQueryWrapper<PaperAdvisorRel> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperAdvisorRel::getAdvisorId, advisorId)
+                .eq(PaperAdvisorRel::getRelStatus, REL_STATUS_VALID)
+                .eq(PaperAdvisorRel::getIsDeleted, 0);
 
         // 步骤3：可选筛选（按学生专业，支持跨专业指导时的精准统计）
         if (studentMajorId != null) {
-            queryWrapper.eq("student_major_id", studentMajorId);
+            queryWrapper.eq(PaperAdvisorRel::getStudentMajorId, studentMajorId);
         }
 
         // 步骤4：统计记录数
@@ -138,14 +139,14 @@ public class PaperAdvisorRelServiceImpl extends ServiceImpl<PaperAdvisorRelMappe
         }
 
         // 步骤2：构建查询条件（指导老师ID+未删除）
-        QueryWrapper<PaperAdvisorRel> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("advisor_id", advisorId)
-                .eq("is_deleted", 0)
-                .orderByDesc("create_time"); // 按分配时间倒序（最新任务在前）
+        LambdaQueryWrapper<PaperAdvisorRel> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperAdvisorRel::getAdvisorId, advisorId)
+                .eq(PaperAdvisorRel::getIsDeleted, 0)
+                .orderByDesc(PaperAdvisorRel::getCreateTime); // 按分配时间倒序（最新任务在前）
 
         // 步骤3：可选筛选（按关联状态：有效/无效/所有）
         if (relStatus != null) {
-            queryWrapper.eq("rel_status", relStatus);
+            queryWrapper.eq(PaperAdvisorRel::getRelStatus, relStatus);
         }
 
         // 步骤4：查询列表（若需关联论文信息，需在 Mapper 中自定义关联查询）
@@ -174,9 +175,9 @@ public class PaperAdvisorRelServiceImpl extends ServiceImpl<PaperAdvisorRelMappe
         if (paperId == null) {
             throw new ParamInvalidException(ResultCode.PARAM_EMPTY,null ,"论文ID不能为空");
         }
-        return this.list(new QueryWrapper<PaperAdvisorRel>()
-                .eq("paper_id", paperId)
-                .eq("is_deleted", 0)
-                .orderByAsc("advisor_round"));
+        return this.list(new LambdaQueryWrapper<PaperAdvisorRel>()
+                .eq(PaperAdvisorRel::getPaperId, paperId)
+                .eq(PaperAdvisorRel::getIsDeleted, 0)
+                .orderByAsc(PaperAdvisorRel::getAdvisorRound));
     }
 }

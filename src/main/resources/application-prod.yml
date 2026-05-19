@@ -124,6 +124,17 @@ check:
     model-path: /models/bert-similarity
     gpu-enabled: false
 
+# AI 配置（DeepSeek）
+ai:
+  deepseek:
+    enabled: false
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: https://api.deepseek.com
+    model: deepseek-chat
+    timeout: 30s
+    max-tokens: 2048
+    temperature: 0.3
+
 # MyBatis-Plus配置
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -143,7 +154,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: never

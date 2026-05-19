@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -74,6 +75,7 @@ public class SysOperationLog extends BaseEntity {
     /**
      * 操作时间
      */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @TableField("operation_time")
     private LocalDateTime operationTime;
 }

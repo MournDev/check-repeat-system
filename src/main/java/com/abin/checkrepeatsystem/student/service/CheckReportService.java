@@ -105,4 +105,12 @@ public interface CheckReportService extends IService<CheckReport> {
      * @return 历史报告列表
      */
     Result<List<CheckReport>> getHistoryReportList(Long paperId);
+
+    /**
+     * 13. 根据论文ID获取查重报告（支持学生、教师、管理员三种角色访问）
+     * 学生只能查看自己论文的报告，教师可以查看自己指导学生的报告，管理员可以查看全部
+     * @param paperId 论文ID
+     * @return 查重报告信息
+     */
+    Result<CheckReport> getReportByPaperId(Long paperId);
 }

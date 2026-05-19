@@ -2,11 +2,12 @@ package com.abin.checkrepeatsystem.common.service.Impl;
 
 import com.abin.checkrepeatsystem.common.service.FilePreviewService;
 import com.abin.checkrepeatsystem.common.service.FileService;
+import com.abin.checkrepeatsystem.common.service.PreviewTokenService;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
-import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
-import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
+import com.abin.checkrepeatsystem.student.service.CheckReportService;
+import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,10 +38,13 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     private FileService fileService;
 
     @Autowired
-    private CheckTaskMapper checkTaskMapper;
+    private CheckTaskService checkTaskService;
 
     @Autowired
-    private CheckReportMapper checkReportMapper;
+    private CheckReportService checkReportService;
+
+    @Autowired
+    private PreviewTokenService previewTokenService;
 
     @Value("${app.host:192.168.30.1}")
     private String serverHost;
@@ -75,15 +79,12 @@ public class FilePreviewServiceImpl implements FilePreviewService {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
             }
 
-            String fileStoragePath = fileInfo.getStoragePath();
-            File file = new File(uploadBasePath + fileStoragePath);
-
-            if (!file.exists()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-            }
-
-            Resource resource = new FileSystemResource(file);
-            String contentType = getContentType(file, fileInfo.getOriginalFilename());
+            // 从FileService获取文件内容（支持本地和MinIO）
+            byte[] fileContent = fileService.getFileContent(fileId);
+            
+            // 创建字节数组资源
+            Resource resource = new org.springframework.core.io.ByteArrayResource(fileContent);
+            String contentType = getContentType(fileInfo);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
@@ -98,6 +99,101 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     }
 
     /**
+     * 获取文件内容类型
+     */
+    private String getContentType(FileInfo fileInfo) {
+        try {
+            String fileName = fileInfo.getOriginalFilename();
+            String extension = getFileExtension(fileName).toLowerCase();
+            
+            // 根据文件扩展名返回内容类型
+            switch (extension) {
+                case "jpg":
+                case "jpeg":
+                    return "image/jpeg";
+                case "png":
+                    return "image/png";
+                case "gif":
+                    return "image/gif";
+                case "pdf":
+                    return "application/pdf";
+                case "txt":
+                    return "text/plain";
+                case "html":
+                case "htm":
+                    return "text/html";
+                case "xml":
+                    return "application/xml";
+                case "json":
+                    return "application/json";
+                case "doc":
+                    return "application/msword";
+                case "docx":
+                    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                case "xls":
+                    return "application/vnd.ms-excel";
+                case "xlsx":
+                    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                case "ppt":
+                    return "application/vnd.ms-powerpoint";
+                case "pptx":
+                    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+                default:
+                    return "application/octet-stream";
+            }
+        } catch (Exception e) {
+            return "application/octet-stream";
+        }
+    }
+
+    /**
+     * 获取文件内容类型（基于File对象和文件名）
+     */
+    private String getContentType(File file, String fileName) {
+        try {
+            String extension = getFileExtension(fileName).toLowerCase();
+            
+            // 根据文件扩展名返回内容类型
+            switch (extension) {
+                case "jpg":
+                case "jpeg":
+                    return "image/jpeg";
+                case "png":
+                    return "image/png";
+                case "gif":
+                    return "image/gif";
+                case "pdf":
+                    return "application/pdf";
+                case "txt":
+                    return "text/plain";
+                case "html":
+                case "htm":
+                    return "text/html";
+                case "xml":
+                    return "application/xml";
+                case "json":
+                    return "application/json";
+                case "doc":
+                    return "application/msword";
+                case "docx":
+                    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                case "xls":
+                    return "application/vnd.ms-excel";
+                case "xlsx":
+                    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                case "ppt":
+                    return "application/vnd.ms-powerpoint";
+                case "pptx":
+                    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+                default:
+                    return "application/octet-stream";
+            }
+        } catch (Exception e) {
+            return "application/octet-stream";
+        }
+    }
+
+    /**
      * 验证文件访问权限
      */
     private boolean hasFileAccessPermission(FileInfo fileInfo) {
@@ -107,13 +203,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
         return true;
     }
 
-    private String getContentType(File file, String originalFilename) {
-        try {
-            return Files.probeContentType(file.toPath());
-        } catch (IOException e) {
-            return "application/octet-stream";
-        }
-    }
+
 
     @Override
     public ResponseEntity<byte[]> onlinePreviewByUrl(String url) {
@@ -217,7 +307,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
                     .orderByDesc(CheckTask::getCreateTime)
                     .last("LIMIT 1");
 
-            CheckTask checkTask = checkTaskMapper.selectOne(taskQueryWrapper);
+            CheckTask checkTask = checkTaskService.getOne(taskQueryWrapper);
             if (checkTask == null) {
                 log.error("未找到已完成的查重任务 - paperId: {}", paperId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -225,7 +315,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             }
 
             // 2. 获取查重报告
-            CheckReport checkReport = checkReportMapper.selectById(checkTask.getReportId());
+            CheckReport checkReport = checkReportService.getById(checkTask.getReportId());
             if (checkReport == null) {
                 log.error("查重报告不存在 - reportId: {}", checkTask.getReportId());
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -260,10 +350,10 @@ public class FilePreviewServiceImpl implements FilePreviewService {
                 return directPreviewReport(reportPath, fileName);
             }
 
-            // PDF文件：使用KKFileView预览
+            // PDF文件：直接预览（浏览器原生支持）
             if ("pdf".equals(fileExtension)) {
-                log.info("PDF报告使用KKFileView预览 - paperId: {}", paperId);
-                return proxyReportToKKFileView(checkReport.getId(), fileName);
+                log.info("PDF报告直接预览 - paperId: {}", paperId);
+                return directPreviewReport(reportPath, fileName);
             }
 
             // 文本类型：直接返回文件流
@@ -352,7 +442,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             } catch (Exception e) {
                 log.warn("KKFileView服务连接失败: {}", e.getMessage());
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body("预览服务暂时不可用");
+                            .body("预览服务暂时不可用");
             }
 
             HttpHeaders headers = new HttpHeaders();
@@ -370,35 +460,26 @@ public class FilePreviewServiceImpl implements FilePreviewService {
      */
     private ResponseEntity<?> proxyToKKFileView(Long fileId, FileInfo fileInfo) {
         try {
-            // 验证文件访问权限
             if (!hasFileAccessPermission(fileInfo)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无权限访问该文件");
             }
 
-            // 1. 构建文件访问URL（包含文件名）
-            String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
-                    serverHost,
-                    serverPort,
-                    appContext,
-                    fileId,
-                    URLEncoder.encode(fileInfo.getOriginalFilename(), StandardCharsets.UTF_8));
+            // 生成预览令牌，使用免认证的预览接口
+            String previewToken = previewTokenService.generatePreviewToken(fileId);
+            String encodedFileName = URLEncoder.encode(fileInfo.getOriginalFilename(), StandardCharsets.UTF_8);
+            String fileUrl = String.format("http://%s:%s%s/api/file/preview/%s/%s",
+                    serverHost, serverPort, appContext, previewToken, encodedFileName);
 
-            log.info("构建KKFileView文件URL: {}", fileUrl);
+            log.info("构建KKFileView文件URL（使用预览令牌）: {}", fileUrl);
 
-            // 2. Base64编码（URL安全）
             String encodedUrl = Base64.getUrlEncoder().encodeToString(fileUrl.getBytes(StandardCharsets.UTF_8));
-
-            // 3. 构建KKFileView预览URL
-            String kkFileViewPreviewUrl = String.format("%s/onlinePreview?url=%s",
-                    kkfileviewUrl, encodedUrl);
+            String kkFileViewPreviewUrl = String.format("%s/onlinePreview?url=%s", kkfileviewUrl, encodedUrl);
 
             log.info("KKFileView预览URL: {}", kkFileViewPreviewUrl);
 
-            // 4. 测试KKFileView服务是否可用
             try {
                 ResponseEntity<String> testResponse = restTemplate.getForEntity(
                         kkfileviewUrl + "/index", String.class);
-
                 if (!testResponse.getStatusCode().is2xxSuccessful()) {
                     log.warn("KKFileView服务不可用，状态码: {}", testResponse.getStatusCode());
                     return fallbackToDownload(fileInfo);
@@ -407,35 +488,13 @@ public class FilePreviewServiceImpl implements FilePreviewService {
                 log.warn("KKFileView服务连接失败: {}", e.getMessage());
                 return fallbackToDownload(fileInfo);
             }
+
             HttpHeaders headers = new HttpHeaders();
             headers.setLocation(URI.create(kkFileViewPreviewUrl));
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
         } catch (Exception e) {
             log.error("代理到KKFileView失败 - fileId: {}", fileId, e);
             return fallbackToDownload(fileInfo);
-        }
-    }
-
-    /**
-     * 构建文件下载 URL
-     */
-    private String buildFileDownloadUrl(Long fileId) {
-        try {
-            FileInfo fileInfo = fileService.getById(fileId);
-            // 使用宿主机的IP地址，而不是localhost，包含完整的上下文路径和API路径
-            String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
-                    serverHost,
-                    serverPort,
-                    appContext,
-                    fileId,
-                    URLEncoder.encode(fileInfo.getOriginalFilename(), StandardCharsets.UTF_8));
-
-            log.info("构建文件下载URL（宿主机地址）: {}", fileUrl);
-            return fileUrl;
-
-        } catch (Exception e) {
-            log.error("构建下载URL失败", e);
-            throw new RuntimeException("构建下载URL失败", e);
         }
     }
 

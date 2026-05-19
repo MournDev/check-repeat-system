@@ -11,9 +11,7 @@ import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
-import com.abin.checkrepeatsystem.teacher.dto.ReviewOperateReq;
-import com.abin.checkrepeatsystem.teacher.dto.ReviewQueryReq;
-import com.abin.checkrepeatsystem.teacher.dto.ReviewResultDTO;
+import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.mapper.ReviewRecordMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
 import com.abin.checkrepeatsystem.common.utils.ReviewAttachUtils;
@@ -26,12 +24,15 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -63,6 +64,9 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
     private CheckReportMapper checkReportMapper;
 
     @Resource
+    private ReviewRecordMapper reviewRecordMapper;
+
+    @Resource
     private SysUserMapper sysUserMapper;
 
     @Resource
@@ -73,6 +77,24 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
     @Resource
     private StudentInfoService studentInfoService;
+
+    @Resource
+    private com.abin.checkrepeatsystem.common.service.FileService fileService;
+
+    @Resource
+    private com.abin.checkrepeatsystem.common.component.MinioProp minioProp;
+
+    @Value("${app.host:192.168.30.1}")
+    private String serverHost;
+
+    @Value("${server.port:8080}")
+    private String serverPort;
+
+    @Value("${kkfileview.base-url:}")
+    private String kkfileviewUrl;
+
+    @Value("${server.servlet.context-path:}")
+    private String appContext;
 
     // 批量审核最大数量（从配置文件获取）
     @Value("${review.batch.max-count}")
@@ -94,9 +116,17 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
         // 2. 模糊查询条件（学生姓名、论文标题）
         if (org.springframework.util.StringUtils.hasText(queryReq.getStudentName())) {
-            // 关联学生表查询姓名（通过inSql实现）
-            paperWrapper.inSql(PaperInfo::getStudentId,
-                    "SELECT id FROM sys_user WHERE real_name LIKE '%" + queryReq.getStudentName() + "%' AND is_deleted = 0");
+            List<Long> matchedStudentIds = sysUserMapper.selectList(
+                new LambdaQueryWrapper<SysUser>()
+                    .like(SysUser::getRealName, queryReq.getStudentName())
+                    .eq(SysUser::getIsDeleted, 0)
+                    .select(SysUser::getId)
+            ).stream().map(SysUser::getId).collect(Collectors.toList());
+            if (!matchedStudentIds.isEmpty()) {
+                paperWrapper.in(PaperInfo::getStudentId, matchedStudentIds);
+            } else {
+                paperWrapper.eq(PaperInfo::getStudentId, -1L);
+            }
         }
         if (org.springframework.util.StringUtils.hasText(queryReq.getPaperTitle())) {
             paperWrapper.like(PaperInfo::getPaperTitle, queryReq.getPaperTitle());
@@ -175,14 +205,14 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 }
 
                 // 3.2 查询关联的查重任务（取最新的成功任务）
-                CheckTask checkTask = checkTaskMapper.selectOne(
+                Page<CheckTask> checkTaskPage = new Page<>(0, 1);
+                CheckTask checkTask = checkTaskMapper.selectPage(checkTaskPage,
                         new LambdaQueryWrapper<CheckTask>()
                                 .eq(CheckTask::getPaperId, paperId)
-                                .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED) // 2-执行成功
+                                .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
                                 .eq(CheckTask::getIsDeleted, 0)
                                 .orderByDesc(CheckTask::getCreateTime)
-                                .last("LIMIT 1")
-                );
+                ).getRecords().stream().findFirst().orElse(null);
                 if (checkTask == null) {
                     failReasons.add(String.format("论文ID：%s，原因：未找到有效的查重任务结果", paperId));
                     continue;
@@ -247,21 +277,55 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         Integer currentPage = queryReq.getCurrentPage();
         Integer pageSize = queryReq.getPageSize();
 
-        // 1. 构建分页查询条件（已审核状态：paper_status=completed或rejected）
+        // 1. 先查询有审核记录的论文ID
+        List<Long> reviewedPaperIds = reviewRecordMapper.selectList(
+                new LambdaQueryWrapper<ReviewRecord>()
+                        .eq(ReviewRecord::getTeacherId, currentTeacherId)
+                        .eq(ReviewRecord::getIsDeleted, 0)
+                        .select(ReviewRecord::getPaperId)
+        ).stream()
+                .map(ReviewRecord::getPaperId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        // 如果没有审核记录，直接返回空列表
+        if (CollectionUtils.isEmpty(reviewedPaperIds)) {
+            Page<ReviewResultDTO> emptyPage = new Page<>();
+            emptyPage.setRecords(new ArrayList<>());
+            emptyPage.setCurrent(currentPage);
+            emptyPage.setSize(pageSize);
+            emptyPage.setTotal(0);
+            return Result.success("已审核论文列表查询成功", emptyPage);
+        }
+
+        // 2. 构建分页查询条件（已审核状态且存在审核记录）
         Page<PaperInfo> paperPage = new Page<>(currentPage, pageSize);
         LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
-        paperWrapper.eq(PaperInfo::getTeacherId, currentTeacherId)
+        paperWrapper.in(PaperInfo::getId, reviewedPaperIds)
+                .eq(PaperInfo::getTeacherId, currentTeacherId)
                 .in(PaperInfo::getPaperStatus,
                         PaperStatusEnum.COMPLETED.getValue(), // 审核通过
                         PaperStatusEnum.REJECTED.getValue()) // 审核不通过
                 .eq(PaperInfo::getIsDeleted, 0);
 
         // 2. 模糊查询条件（与待审核列表一致）
-        if (org.springframework.util.StringUtils.hasText(queryReq.getStudentName())) {
-            paperWrapper.inSql(PaperInfo::getStudentId,
-                    "SELECT id FROM sys_user WHERE real_name LIKE '%" + queryReq.getStudentName() + "%' AND is_deleted = 0");
+        if (StringUtils.hasText(queryReq.getStudentName())) {
+            List<SysUser> matchedUsers = sysUserMapper.selectList(
+                    new LambdaQueryWrapper<SysUser>()
+                            .like(SysUser::getRealName, queryReq.getStudentName())
+                            .eq(SysUser::getIsDeleted, 0)
+                            .select(SysUser::getId)
+            );
+            if (!matchedUsers.isEmpty()) {
+                List<Long> studentIds = matchedUsers.stream()
+                        .map(SysUser::getId)
+                        .collect(Collectors.toList());
+                paperWrapper.in(PaperInfo::getStudentId, studentIds);
+            } else {
+                paperWrapper.eq(PaperInfo::getStudentId, -1);
+            }
         }
-        if (org.springframework.util.StringUtils.hasText(queryReq.getPaperTitle())) {
+        if (StringUtils.hasText(queryReq.getPaperTitle())) {
             paperWrapper.like(PaperInfo::getPaperTitle, queryReq.getPaperTitle());
         }
 
@@ -384,6 +448,115 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         return Result.success("重新发起审核成功，论文已进入待审核队列");
     }
 
+    @Override
+    public Result<PaperContentDTO> getPaperContent(Long teacherId, Long paperId) {
+        try {
+            log.info("教师{}获取论文内容: paperId={}", teacherId, paperId);
+
+            // 1. 验证论文权限
+            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+            if (paperInfo == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
+            }
+
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
+                return Result.error(ResultCode.PARAM_ERROR, "无权限访问此论文");
+            }
+
+            // 2. 构建返回数据
+            PaperContentDTO dto = new PaperContentDTO();
+            dto.setPaperId(paperId);
+            dto.setPaperTitle(paperInfo.getPaperTitle());
+            dto.setStudentId(paperInfo.getStudentId());
+
+            // 获取学生信息
+            SysUser student = sysUserMapper.selectById(paperInfo.getStudentId());
+            if (student != null) {
+                dto.setStudentName(student.getRealName());
+            }
+
+            // 获取文件信息
+            if (paperInfo.getFileId() != null) {
+                FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
+                if (fileInfo != null) {
+                    dto.setFileName(fileInfo.getOriginalFilename());
+                    dto.setFileSizeDesc(fileInfo.getFileSizeDesc());
+                    dto.setWordCount(fileInfo.getWordCount());
+                    dto.setPageCount(fileInfo.getPageCount());
+                }
+            }
+
+            return Result.success("获取论文内容成功", dto);
+
+        } catch (Exception e) {
+            log.error("获取论文内容失败: teacherId={}, paperId={}", teacherId, paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文内容失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Result<PaperPreviewUrlDTO> getPaperPreviewUrl(Long teacherId, Long paperId) {
+        try {
+            log.info("教师{}获取论文预览URL: paperId={}", teacherId, paperId);
+
+            // 1. 验证论文权限
+            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+            if (paperInfo == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
+            }
+
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
+                return Result.error(ResultCode.PARAM_ERROR, "无权限访问此论文");
+            }
+
+            // 2. 检查文件是否存在
+            if (paperInfo.getFileId() == null) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文文件不存在");
+            }
+
+            // 3. 构建预览URL
+            PaperPreviewUrlDTO dto = new PaperPreviewUrlDTO();
+            dto.setPaperId(paperId);
+
+            FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
+            if (fileInfo != null) {
+                dto.setFileName(fileInfo.getOriginalFilename());
+                dto.setFileType(getFileExtension(fileInfo.getOriginalFilename()));
+
+                // 构建文件访问URL
+                String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
+                        serverHost,
+                        serverPort,
+                        appContext,
+                        paperInfo.getFileId(),
+                        URLEncoder.encode(fileInfo.getOriginalFilename(), StandardCharsets.UTF_8));
+
+                // Base64编码URL
+                String encodedUrl = Base64.getUrlEncoder().encodeToString(fileUrl.getBytes(StandardCharsets.UTF_8));
+
+                // 构建KKFileView预览URL
+                String previewUrl = String.format("%s/onlinePreview?url=%s", kkfileviewUrl, encodedUrl);
+
+                dto.setPreviewUrl(previewUrl);
+                dto.setKkFileViewServer(kkfileviewUrl);
+            }
+
+            log.info("成功生成论文预览URL: paperId={}, previewUrl={}", paperId, dto.getPreviewUrl());
+            return Result.success("获取预览URL成功", dto);
+
+        } catch (Exception e) {
+            log.error("获取论文预览URL失败: teacherId={}, paperId={}", teacherId, paperId, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文预览URL失败: " + e.getMessage());
+        }
+    }
+
+    private String getFileExtension(String fileName) {
+        if (fileName == null || fileName.lastIndexOf('.') == -1) {
+            return "unknown";
+        }
+        return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+    }
+
     // ------------------------------ 私有辅助方法 ------------------------------
 
     /**
@@ -463,6 +636,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
             // 2.1 填充论文基础信息
             ReviewResultDTO.PaperBaseInfoDTO paperBaseInfo = new ReviewResultDTO.PaperBaseInfoDTO();
             paperBaseInfo.setPaperId(paper.getId());
+            paperBaseInfo.setFileId(paper.getFileId());
             paperBaseInfo.setPaperTitle(paper.getPaperTitle());
             SysUser student = studentMap.get(paper.getStudentId());
             if (student != null) {
@@ -474,11 +648,19 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
                 if (studentInfo != null) {
                     paperBaseInfo.setCollege(studentInfo.getCollegeName());
+                    paperBaseInfo.setMajor(studentInfo.getMajor());
                 }
             }
+
             paperBaseInfo.setSubmitTime(paper.getSubmitTime());
             paperBaseInfo.setPaperStatus(paper.getPaperStatus());
             dto.setPaperBaseInfo(paperBaseInfo);
+
+            // 2.1.1 填充字数和页数信息
+            dto.setWordCount(paper.getWordCount());
+            Integer pageCount = paper.getPageCount();
+            dto.setPageCount(pageCount != null && pageCount > 0 ? pageCount :
+                (paper.getWordCount() != null ? paper.getWordCount() / 500 : 0));
 
             // 2.2 填充查重任务信息
             CheckTask task = taskMap.get(paper.getId());
@@ -549,6 +731,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
                 if (studentInfo != null) {
                     dto.setCollege(studentInfo.getCollegeName());
+                    dto.setMajor(studentInfo.getMajor());
                 }
             }
             
@@ -593,5 +776,240 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
             return dto;
         }).collect(Collectors.toList());
+    }
+
+    @Override
+    public String exportReviewedList(ReviewQueryReq queryReq) {
+        try {
+            Long currentTeacherId = UserBusinessInfoUtils.getCurrentUserId();
+
+            // 1. 构建查询条件（已审核状态）
+            LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
+            paperWrapper.eq(PaperInfo::getTeacherId, currentTeacherId)
+                    .in(PaperInfo::getPaperStatus,
+                            PaperStatusEnum.COMPLETED.getValue(),
+                            PaperStatusEnum.REJECTED.getValue())
+                    .eq(PaperInfo::getIsDeleted, 0);
+
+            // 2. 模糊查询条件
+            if (org.springframework.util.StringUtils.hasText(queryReq.getStudentName())) {
+                List<SysUser> matchedUsers = sysUserMapper.selectList(
+                        new LambdaQueryWrapper<SysUser>()
+                                .like(SysUser::getRealName, queryReq.getStudentName())
+                                .eq(SysUser::getIsDeleted, 0)
+                                .select(SysUser::getId)
+                );
+                if (!matchedUsers.isEmpty()) {
+                    List<Long> studentIds = matchedUsers.stream()
+                            .map(SysUser::getId)
+                            .collect(Collectors.toList());
+                    paperWrapper.in(PaperInfo::getStudentId, studentIds);
+                } else {
+                    paperWrapper.eq(PaperInfo::getStudentId, -1);
+                }
+            }
+            if (org.springframework.util.StringUtils.hasText(queryReq.getPaperTitle())) {
+                paperWrapper.like(PaperInfo::getPaperTitle, queryReq.getPaperTitle());
+            }
+
+            // 3. 查询所有匹配的记录（不分页，最大10000条）
+            paperWrapper.orderByDesc(PaperInfo::getUpdateTime);
+            List<PaperInfo> paperList = paperInfoMapper.selectList(paperWrapper);
+
+            // 4. 转换为DTO列表
+            List<ReviewResultDTO> resultDTOList = CollectionUtils.isEmpty(paperList)
+                    ? new ArrayList<>()
+                    : convertToReviewResultDTOList(paperList);
+
+            // 5. 准备导出数据
+            List<Map<String, Object>> exportData = resultDTOList.stream().map(dto -> {
+                Map<String, Object> row = new HashMap<>();
+                row.put("学号", dto.getStudentNo());
+                row.put("学生姓名", dto.getStudentName());
+                row.put("学院", dto.getCollege());
+                row.put("论文标题", dto.getPaperTitle());
+                row.put("提交时间", dto.getSubmitTime() != null ? dto.getSubmitTime().toString() : "");
+                row.put("相似度", dto.getSimilarity() != null ? dto.getSimilarity() + "%" : "");
+                row.put("审核状态", dto.getPaperStatus());
+                row.put("审核意见", dto.getReviewOperateInfo() != null ? dto.getReviewOperateInfo().getReviewOpinion() : "");
+                row.put("审核时间", dto.getReviewOperateInfo() != null && dto.getReviewOperateInfo().getReviewTime() != null
+                        ? dto.getReviewOperateInfo().getReviewTime().toString() : "");
+                return row;
+            }).collect(Collectors.toList());
+
+            // 6. 生成Excel文件
+            String fileName = "审核记录_" + System.currentTimeMillis() + ".xlsx";
+            String filePath = exportToExcel(exportData, fileName);
+
+            log.info("导出审核记录成功: teacherId={}, count={}", currentTeacherId, resultDTOList.size());
+            return filePath;
+        } catch (Exception e) {
+            log.error("导出审核记录失败: teacherId={}", UserBusinessInfoUtils.getCurrentUserId(), e);
+            throw new RuntimeException("导出失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void exportReviewedList(ReviewQueryReq queryReq, HttpServletResponse response) {
+        try {
+            Long currentTeacherId = UserBusinessInfoUtils.getCurrentUserId();
+
+            // 1. 构建查询条件（已审核状态）
+            LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
+            paperWrapper.eq(PaperInfo::getTeacherId, currentTeacherId)
+                    .in(PaperInfo::getPaperStatus,
+                            PaperStatusEnum.COMPLETED.getValue(),
+                            PaperStatusEnum.REJECTED.getValue())
+                    .eq(PaperInfo::getIsDeleted, 0);
+
+            // 2. 模糊查询条件
+            if (org.springframework.util.StringUtils.hasText(queryReq.getStudentName())) {
+                List<SysUser> matchedUsers = sysUserMapper.selectList(
+                        new LambdaQueryWrapper<SysUser>()
+                                .like(SysUser::getRealName, queryReq.getStudentName())
+                                .eq(SysUser::getIsDeleted, 0)
+                                .select(SysUser::getId)
+                );
+                if (!matchedUsers.isEmpty()) {
+                    List<Long> studentIds = matchedUsers.stream()
+                            .map(SysUser::getId)
+                            .collect(Collectors.toList());
+                    paperWrapper.in(PaperInfo::getStudentId, studentIds);
+                } else {
+                    paperWrapper.eq(PaperInfo::getStudentId, -1);
+                }
+            }
+            if (org.springframework.util.StringUtils.hasText(queryReq.getPaperTitle())) {
+                paperWrapper.like(PaperInfo::getPaperTitle, queryReq.getPaperTitle());
+            }
+
+            // 3. 查询所有匹配的记录（不分页，最大10000条）
+            paperWrapper.orderByDesc(PaperInfo::getUpdateTime);
+            List<PaperInfo> paperList = paperInfoMapper.selectList(paperWrapper);
+
+            // 4. 转换为DTO列表
+            List<ReviewResultDTO> resultDTOList = CollectionUtils.isEmpty(paperList)
+                    ? new ArrayList<>()
+                    : convertToReviewResultDTOList(paperList);
+
+            // 5. 准备导出数据
+            List<Map<String, Object>> exportData = resultDTOList.stream().map(dto -> {
+                Map<String, Object> row = new HashMap<>();
+                row.put("学号", dto.getStudentNo());
+                row.put("学生姓名", dto.getStudentName());
+                row.put("学院", dto.getCollege());
+                row.put("论文标题", dto.getPaperTitle());
+                row.put("提交时间", dto.getSubmitTime() != null ? dto.getSubmitTime().toString() : "");
+                row.put("相似度", dto.getSimilarity() != null ? dto.getSimilarity() + "%" : "");
+                row.put("审核状态", dto.getPaperStatus());
+                row.put("审核意见", dto.getReviewOperateInfo() != null ? dto.getReviewOperateInfo().getReviewOpinion() : "");
+                row.put("审核时间", dto.getReviewOperateInfo() != null && dto.getReviewOperateInfo().getReviewTime() != null
+                        ? dto.getReviewOperateInfo().getReviewTime().toString() : "");
+                return row;
+            }).collect(Collectors.toList());
+
+            // 6. 直接写入响应流
+            String fileName = "审核记录_" + System.currentTimeMillis() + ".xlsx";
+            exportToExcel(exportData, fileName, response);
+
+            log.info("导出审核记录成功: teacherId={}, count={}", currentTeacherId, resultDTOList.size());
+        } catch (Exception e) {
+            log.error("导出审核记录失败: teacherId={}", UserBusinessInfoUtils.getCurrentUserId(), e);
+            throw new RuntimeException("导出失败: " + e.getMessage());
+        }
+    }
+
+    private String exportToExcel(List<Map<String, Object>> data, String fileName) {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("审核记录");
+
+            // 创建标题行
+            Row headerRow = sheet.createRow(0);
+            String[] headers = {"学号", "学生姓名", "学院", "论文标题", "提交时间", "相似度", "审核状态", "审核意见", "审核时间"};
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+            }
+
+            // 填充数据
+            int rowNum = 1;
+            for (Map<String, Object> rowData : data) {
+                Row row = sheet.createRow(rowNum++);
+                row.createCell(0).setCellValue((String) rowData.get("学号"));
+                row.createCell(1).setCellValue((String) rowData.get("学生姓名"));
+                row.createCell(2).setCellValue((String) rowData.get("学院"));
+                row.createCell(3).setCellValue((String) rowData.get("论文标题"));
+                row.createCell(4).setCellValue((String) rowData.get("提交时间"));
+                row.createCell(5).setCellValue((String) rowData.get("相似度"));
+                row.createCell(6).setCellValue((String) rowData.get("审核状态"));
+                row.createCell(7).setCellValue((String) rowData.get("审核意见"));
+                row.createCell(8).setCellValue((String) rowData.get("审核时间"));
+            }
+
+            // 自动调整列宽
+            for (int i = 0; i < headers.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            // 保存文件
+            String filePath = System.getProperty("java.io.tmpdir") + "/" + fileName;
+            try (java.io.FileOutputStream fileOut = new java.io.FileOutputStream(filePath)) {
+                workbook.write(fileOut);
+            }
+
+            return filePath;
+        } catch (Exception e) {
+            log.error("生成Excel文件失败", e);
+            throw new RuntimeException("生成Excel文件失败: " + e.getMessage());
+        }
+    }
+
+    private void exportToExcel(List<Map<String, Object>> data, String fileName, HttpServletResponse response) {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("审核记录");
+
+            // 创建标题行
+            Row headerRow = sheet.createRow(0);
+            String[] headers = {"学号", "学生姓名", "学院", "论文标题", "提交时间", "相似度", "审核状态", "审核意见", "审核时间"};
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+            }
+
+            // 填充数据
+            int rowNum = 1;
+            for (Map<String, Object> rowData : data) {
+                Row row = sheet.createRow(rowNum++);
+                row.createCell(0).setCellValue((String) rowData.get("学号"));
+                row.createCell(1).setCellValue((String) rowData.get("学生姓名"));
+                row.createCell(2).setCellValue((String) rowData.get("学院"));
+                row.createCell(3).setCellValue((String) rowData.get("论文标题"));
+                row.createCell(4).setCellValue((String) rowData.get("提交时间"));
+                row.createCell(5).setCellValue((String) rowData.get("相似度"));
+                row.createCell(6).setCellValue((String) rowData.get("审核状态"));
+                row.createCell(7).setCellValue((String) rowData.get("审核意见"));
+                row.createCell(8).setCellValue((String) rowData.get("审核时间"));
+            }
+
+            // 自动调整列宽
+            for (int i = 0; i < headers.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            // 设置响应头
+            String encodedFilename = java.net.URLEncoder.encode(fileName, java.nio.charset.StandardCharsets.UTF_8.toString())
+                    .replaceAll("\\+", "%20");
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + encodedFilename + "\"");
+
+            // 写入响应流
+            try (OutputStream outputStream = response.getOutputStream()) {
+                workbook.write(outputStream);
+                outputStream.flush();
+            }
+        } catch (Exception e) {
+            log.error("生成Excel文件失败", e);
+            throw new RuntimeException("生成Excel文件失败: " + e.getMessage());
+        }
     }
 }

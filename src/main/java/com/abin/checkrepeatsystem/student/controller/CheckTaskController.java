@@ -6,10 +6,12 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
 import jakarta.annotation.Resource;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/check")
+@PreAuthorize("hasAuthority('STUDENT')")
 public class CheckTaskController {
     @Resource
     private CheckTaskService checkTaskService;

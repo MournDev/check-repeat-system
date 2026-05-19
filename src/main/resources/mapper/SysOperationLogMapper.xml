@@ -124,11 +124,19 @@
         </foreach>
     </update>
 
-    <!-- 清理过期操作日志 -->
+    <!-- 软删除过期操作日志（保留审计） -->
+    <update id="softDeleteExpiredLogs" parameterType="map">
+        UPDATE sys_operation_log
+        SET is_deleted = 1
+        WHERE is_deleted = 0
+        AND operation_time &lt; DATE_SUB(NOW(), INTERVAL #{days} DAY)
+    </update>
+
+    <!-- 物理清理已软删除的日志 -->
     <delete id="cleanExpiredLogs" parameterType="map">
         DELETE FROM sys_operation_log
         WHERE is_deleted = 1
-        OR operation_time &lt; DATE_SUB(NOW(), INTERVAL #{days} DAY)
+        AND operation_time &lt; DATE_SUB(NOW(), INTERVAL #{days} DAY)
     </delete>
 
 </mapper>

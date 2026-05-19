@@ -73,4 +73,9 @@ public interface AdminUserService {
      * 获取用户统计信息
      */
     Map<String, Object> getUserStatistics();
+    
+    /**
+     * 导出用户列表
+     */
+    void exportUserList(Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response);
 }

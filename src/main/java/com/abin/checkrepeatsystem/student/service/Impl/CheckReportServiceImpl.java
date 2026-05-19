@@ -1069,4 +1069,45 @@ public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, Check
             return Result.error(ResultCode.SYSTEM_ERROR, "获取历史报告列表失败");
         }
     }
+
+    @Override
+    public Result<CheckReport> getReportByPaperId(Long paperId) {
+        if (paperId == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "论文ID不能为空");
+        }
+
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或已删除");
+        }
+
+        SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
+        if (currentUser == null) {
+            return Result.error(ResultCode.NOT_LOGIN, "用户未登录");
+        }
+
+        boolean isStudent = UserBusinessInfoUtils.isStudent();
+        boolean isTeacher = UserBusinessInfoUtils.isTeacher();
+        boolean isAdmin = UserBusinessInfoUtils.isAdmin();
+
+        boolean isStudentOwner = paperInfo.getStudentId().equals(currentUser.getId());
+        boolean isTeacherOwner = paperInfo.getTeacherId() != null && paperInfo.getTeacherId().equals(currentUser.getId());
+
+        if (!isAdmin && !((isStudent && isStudentOwner) || (isTeacher && isTeacherOwner))) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文的查重报告");
+        }
+
+        LambdaQueryWrapper<CheckReport> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(CheckReport::getPaperId, paperId)
+                .eq(CheckReport::getIsDeleted, 0)
+                .orderByDesc(CheckReport::getCreateTime)
+                .last("LIMIT 1");
+
+        CheckReport checkReport = getOne(queryWrapper);
+        if (checkReport == null) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "该论文暂无查重报告");
+        }
+
+        return Result.success(checkReport);
+    }
 }

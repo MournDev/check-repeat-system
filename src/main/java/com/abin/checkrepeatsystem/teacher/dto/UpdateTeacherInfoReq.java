@@ -49,4 +49,14 @@ public class UpdateTeacherInfoReq {
 
     /** 审核期限 */
     private Integer reviewDeadline;
+    
+    /** 学院名称 */
+    private String collegeName;
+    
+    /** 专业名称 */
+    private String major;
+
+    /** 专业ID */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long majorId;
 }

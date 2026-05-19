@@ -4,10 +4,11 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
+import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.List;
 
-public interface CheckTaskService {
+public interface CheckTaskService extends IService<CheckTask> {
     /**
      * 创建查重任务
      * @param paperId 论文ID

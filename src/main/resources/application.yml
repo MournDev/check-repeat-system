@@ -8,14 +8,15 @@ server:
     threads:
       max: 200
       min-spare: 20
+  external-address: ${SERVER_EXTERNAL_ADDRESS:192.168.30.1}
 
 # 预览服务
 kkfileview:
-  base-url: ${KKFILEVIEW_BASE_URL:http://192.168.30.140:8080}
+  base-url: ${KKFILEVIEW_BASE_URL:http://192.168.30.128:8012}
 
 # 对象存储
 minio:
-  endpoint: ${MINIO_ENDPOINT:http://192.168.30.140:9000}
+  endpoint: ${MINIO_ENDPOINT:http://192.168.30.128:9000}
   accesskey: ${MINIO_ACCESSKEY:admin}
   secretkey: ${MINIO_SECRETKEY:12345678}
   bucket:
@@ -23,6 +24,7 @@ minio:
     avatar: avatar
     report: report-bucket
     paper_content: paper-content
+    file: file
 
 # # Jasypt 配置
 # jasypt:
@@ -130,6 +132,17 @@ check:
     model-path: /models/bert-similarity
     gpu-enabled: false
 
+# AI 配置（DeepSeek）
+ai:
+  deepseek:
+    enabled: true
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: https://api.deepseek.com
+    model: deepseek-chat
+    timeout: 30s
+    max-tokens: 2048
+    temperature: 0.3
+
 # 管理端查重规则配置
 admin:
   check-rule:
@@ -147,6 +160,7 @@ admin:
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
   type-aliases-package: com.abin.checkrepeatsystem.pojo.entity
+  type-handlers-package: com.abin.checkrepeatsystem.common.handler
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
@@ -215,18 +229,9 @@ review:
 # 文件上传配置
 file:
   upload:
-    storage-type: ${STORAGE_TYPE:LOCAL}
+    storage-type: ${STORAGE_TYPE:MINIO}
     base-path: ${UPLOAD_BASE_PATH:/data/upload/}
     max-size-mb: 50
-
-# 阿里云OSS配置（可选）
-aliyun:
-  oss:
-    endpoint: ${ALIYUN_OSS_ENDPOINT:}
-    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID:}
-    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}
-    bucket-name: ${ALIYUN_OSS_BUCKET_NAME:}
-    access-prefix: ${ALIYUN_OSS_ACCESS_PREFIX:}
 
 # 论文查重服务配置
 paper-check:
@@ -246,3 +251,33 @@ advisor-assign:
 # 兼容性配置
 upload:
   base-path: ${UPLOAD_BASE_PATH:/data/upload/}
+
+# ============================================ #
+# 数据库字段变更说明（2026-04-26） #
+# ============================================ #
+#
+# 学院和专业模块改造 - 需要执行的数据库变更：
+#
+# -- 1. 在 student_info 表添加 college_id 字段（关联 college.id）
+# ALTER TABLE student_info ADD COLUMN college_id BIGINT(20) DEFAULT NULL COMMENT '学院ID（关联college.id）' AFTER user_id;
+#
+# -- 2. 可选：为 college_id 添加外键约束（确保数据完整性）
+# ALTER TABLE student_info ADD CONSTRAINT fk_student_info_college FOREIGN KEY (college_id) REFERENCES college(id);
+#
+# -- 3. 为 college_id 和 major_id 添加索引（提高查询效率）
+# ALTER TABLE student_info ADD INDEX idx_college_id (college_id);
+# ALTER TABLE student_info ADD INDEX idx_major_id (major_id);
+#
+# -- 4. 如果需要保留历史数据一致性，可以执行数据同步：
+# UPDATE student_info si
+# INNER JOIN college c ON si.college_name = c.college_name
+# SET si.college_id = c.id
+# WHERE si.college_name IS NOT NULL AND si.college_name != '';
+#
+# -- 5. 验证数据同步结果
+# SELECT college_name, college_id, COUNT(*) as cnt
+# FROM student_info
+# WHERE college_id IS NULL AND college_name IS NOT NULL AND college_name != ''
+# GROUP BY college_name, college_id;
+#
+# ============================================ #

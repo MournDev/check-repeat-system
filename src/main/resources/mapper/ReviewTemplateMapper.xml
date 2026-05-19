@@ -8,7 +8,7 @@
         <result column="title" property="title"/>
         <result column="category" property="category"/>
         <result column="content" property="content"/>
-        <result column="scenarios" property="scenarios" typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result column="scenarios" property="scenarios" typeHandler="com.abin.checkrepeatsystem.common.handler.ListStringTypeHandler"/>
         <result column="is_public" property="isPublic"/>
         <result column="usage_count" property="usageCount"/>
         <result column="create_time" property="createTime"/>
@@ -33,5 +33,24 @@
         last_used = now()
         where id = #{id}
     </update>
+
+    <!-- 查询模板列表（包含场景字段） -->
+    <select id="selectTemplatesWithScenarios" resultMap="BaseResultMap">
+        SELECT
+            <include refid="Base_Column_List"/>
+        FROM review_template
+        WHERE (create_by = #{userId} OR is_public = true)
+          AND is_deleted = 0
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 根据ID查询模板（包含场景字段） -->
+    <select id="selectByIdWithScenarios" resultMap="BaseResultMap">
+        SELECT
+            <include refid="Base_Column_List"/>
+        FROM review_template
+        WHERE id = #{id}
+          AND is_deleted = 0
+    </select>
 
 </mapper>

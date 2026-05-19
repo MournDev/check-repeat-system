@@ -1,9 +1,14 @@
+
 package com.abin.checkrepeatsystem.common.enums;
 
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
 /**
+ *
+ *
+ *
+ *
  * 统一错误码枚举（覆盖所有业务异常场景）
  * 规则：错误码=HTTP状态码*100 + 业务序号（如 40001=HTTP400+参数格式错）
  */
@@ -22,6 +27,9 @@ public enum ResultCode {
     RESOURCE_NOT_FOUND(40401, HttpStatus.NOT_FOUND, "资源不存在"),
     RESOURCE_DELETED(40402, HttpStatus.NOT_FOUND, "资源已删除"),
     RESOURCE_NO_PERMISSION(40403, HttpStatus.NOT_FOUND, "无权限访问该资源"),
+
+    // 限流相关
+    TOO_MANY_REQUESTS(429, HttpStatus.TOO_MANY_REQUESTS, "请求过于频繁，请稍后重试"),
 
     // ====================== 3. 权限相关错误（HTTP 403） ======================
     PERMISSION_ADMIN_ONLY(40301, HttpStatus.FORBIDDEN, "仅管理员可执行此操作"),

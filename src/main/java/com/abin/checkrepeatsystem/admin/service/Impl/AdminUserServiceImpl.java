@@ -18,14 +18,24 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.abin.checkrepeatsystem.user.service.AdminInfoService;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
+import com.alibaba.excel.annotation.ExcelProperty;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.alibaba.excel.EasyExcel;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.URLEncoder;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -173,6 +183,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setRealName(updateReq.getRealName());
         user.setEmail(updateReq.getEmail());
         user.setPhone(updateReq.getPhone());
+        user.setIntroduce(updateReq.getIntroduce());
         // 只有当status不为null时才更新状态
         if (updateReq.getStatus() != null) {
             user.setStatus(updateReq.getStatus());
@@ -207,6 +218,10 @@ public class AdminUserServiceImpl implements AdminUserService {
                 adminInfo = new AdminInfo();
                 adminInfo.setUserId(userId);
             }
+            // 设置管理员专用字段
+            adminInfo.setPosition(updateReq.getPosition());
+            adminInfo.setDepartment(updateReq.getDepartment());
+            adminInfo.setOfficeAddress(updateReq.getOfficeAddress());
             adminInfoService.saveOrUpdateByUserId(adminInfo);
         }
         
@@ -355,6 +370,117 @@ public class AdminUserServiceImpl implements AdminUserService {
         
         return stats;
     }
+    
+    @Override
+    public void exportUserList(Map<String, Object> params, HttpServletResponse response) {
+        log.info("开始导出用户列表: params={}", params);
+        try {
+            // 从参数中提取筛选条件
+            String userType = params.get("userType") != null ? params.get("userType").toString() : null;
+            Integer status = null;
+            if (params.get("status") != null && !"" .equals(params.get("status").toString().trim())) {
+                status = Integer.parseInt(params.get("status").toString());
+            }
+            String keyword = params.get("keyword") != null ? params.get("keyword").toString() : null;
+            
+            // 构建查询条件
+            LambdaQueryWrapper<SysUser> wrapper = buildUserQueryWrapper(userType, status, keyword);
+            
+            // 查询用户数据
+            List<SysUser> users = sysUserService.list(wrapper);
+            
+            // 转换为DTO
+            List<UserInfoDTO> userDTOs = users.stream()
+                    .map(this::convertToDTO)
+                    .collect(Collectors.toList());
+            
+            // 准备Excel导出数据
+            List<UserExportVo> exportData = new ArrayList<>();
+            for (UserInfoDTO user : userDTOs) {
+                UserExportVo vo = new UserExportVo();
+                vo.setUsername(user.getUsername());
+                vo.setRealName(user.getRealName());
+                vo.setEmail(user.getEmail());
+                vo.setPhone(user.getPhone());
+                vo.setUserType(user.getUserType());
+                vo.setRoleName(user.getRoleName());
+                vo.setStatus(user.getStatus() == 1 ? "启用" : "禁用");
+                vo.setCollegeName(user.getCollegeName());
+                vo.setMajor(user.getMajor());
+                vo.setGrade(user.getGrade());
+                vo.setClassName(user.getClassName());
+                vo.setCreateTime(user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "");
+                vo.setLastLoginTime(user.getLastLoginTime() != null ? user.getLastLoginTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "");
+                exportData.add(vo);
+            }
+            
+            // 设置响应头
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            response.setCharacterEncoding("UTF-8");
+            String fileName = URLEncoder.encode("用户列表导出_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + ".xlsx", "UTF-8");
+            response.setHeader("Content-disposition", "attachment;filename=" + fileName);
+            
+            // 生成Excel并输出
+            EasyExcel.write(response.getOutputStream(), UserExportVo.class)
+                    .sheet("用户列表")
+                    .doWrite(exportData);
+            
+            log.info("用户列表导出成功: 导出数量={}", exportData.size());
+        } catch (Exception e) {
+            log.error("导出用户列表失败: {}", e.getMessage(), e);
+            try {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.getWriter().write("导出失败: " + e.getMessage());
+            } catch (IOException ioException) {
+                log.error("发送错误响应失败", ioException);
+            }
+        }
+    }
+    
+    /**
+     * 用户导出VO类
+     */
+    @Data
+    private static class UserExportVo {
+        @ExcelProperty("用户名")
+        private String username;
+        
+        @ExcelProperty("姓名")
+        private String realName;
+        
+        @ExcelProperty("邮箱")
+        private String email;
+        
+        @ExcelProperty("电话")
+        private String phone;
+        
+        @ExcelProperty("用户类型")
+        private String userType;
+        
+        @ExcelProperty("角色")
+        private String roleName;
+        
+        @ExcelProperty("状态")
+        private String status;
+        
+        @ExcelProperty("学院")
+        private String collegeName;
+        
+        @ExcelProperty("专业")
+        private String major;
+        
+        @ExcelProperty("年级")
+        private String grade;
+        
+        @ExcelProperty("班级")
+        private String className;
+        
+        @ExcelProperty("创建时间")
+        private String createTime;
+        
+        @ExcelProperty("最后登录时间")
+        private String lastLoginTime;
+    }
 
     /**
      * 构建用户查询条件
@@ -417,6 +543,13 @@ public class AdminUserServiceImpl implements AdminUserService {
                 dto.setMajor(studentInfo.getMajor());
                 dto.setGrade(studentInfo.getGrade());
                 dto.setClassName(studentInfo.getClassName());
+            }
+        } else if ("ADMIN".equals(user.getUserType())) {
+            AdminInfo adminInfo = adminInfoService.getByUserId(user.getId());
+            if (adminInfo != null) {
+                dto.setPosition(adminInfo.getPosition());
+                dto.setDepartment(adminInfo.getDepartment());
+                dto.setOfficeAddress(adminInfo.getOfficeAddress());
             }
         }
         

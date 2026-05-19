@@ -3,6 +3,7 @@ package com.abin.checkrepeatsystem.admin.service.Impl;
 import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
 import com.abin.checkrepeatsystem.admin.service.SysOperationLogService;
 import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,21 @@ public class SysOperationLogServiceImpl extends ServiceImpl<SysOperationLogMappe
 
     @Resource
     private SysOperationLogMapper sysOperationLogMapper;
+
+    @Override
+    public Page<SysOperationLog> selectPage(Page<SysOperationLog> page, LambdaQueryWrapper<SysOperationLog> wrapper) {
+        return super.page(page, wrapper);
+    }
+
+    @Override
+    public List<SysOperationLog> selectList(LambdaQueryWrapper<SysOperationLog> wrapper) {
+        return super.list(wrapper);
+    }
+
+    @Override
+    public Long selectCount(LambdaQueryWrapper<SysOperationLog> wrapper) {
+        return super.count(wrapper);
+    }
 
     @Override
     public void saveOperationLog(SysOperationLog operationLog) {
@@ -160,9 +176,10 @@ public class SysOperationLogServiceImpl extends ServiceImpl<SysOperationLogMappe
             if (days == null || days <= 0) {
                 days = 30; // 默认保留30天
             }
-            
-            int cleaned = sysOperationLogMapper.cleanExpiredLogs(days);
-            log.info("清理过期操作日志完成: days={}, cleaned={}", days, cleaned);
+
+            int softDeleted = sysOperationLogMapper.softDeleteExpiredLogs(days);
+            int hardDeleted = sysOperationLogMapper.cleanExpiredLogs(days);
+            log.info("清理过期操作日志完成: days={}, softDeleted={}, hardDeleted={}", days, softDeleted, hardDeleted);
             return true;
         } catch (Exception e) {
             log.error("清理过期操作日志失败: days={}, error={}", days, e.getMessage(), e);

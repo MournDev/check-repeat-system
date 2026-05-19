@@ -5,6 +5,7 @@ import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.service.EnhancedCheckTaskService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
 import jakarta.annotation.Resource;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/enhanced/check-tasks")
+@PreAuthorize("hasAuthority('STUDENT')")
 public class EnhancedCheckTaskController {
     
     @Resource

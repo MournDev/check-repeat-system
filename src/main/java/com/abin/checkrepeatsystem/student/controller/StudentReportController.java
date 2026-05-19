@@ -70,4 +70,14 @@ public class StudentReportController {
     public Result<com.abin.checkrepeatsystem.student.dto.ReportDataDTO> getReportData(@RequestParam Long reportId) {
         return checkReportService.getReportData(reportId);
     }
+
+    /**
+     * 6. 根据论文ID获取查重报告（支持学生、教师、管理员三种角色访问）
+     * 学生只能查看自己论文的报告，教师可以查看自己指导学生的报告，管理员可以查看全部
+     * @param paperId 论文ID
+     */
+    @GetMapping("/check-report/{paperId}")
+    public Result<CheckReport> getReportByPaperId(@PathVariable Long paperId) {
+        return checkReportService.getReportByPaperId(paperId);
+    }
 }

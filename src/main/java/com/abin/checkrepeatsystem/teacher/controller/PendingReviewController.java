@@ -81,12 +81,12 @@ public class PendingReviewController {
     @GetMapping("/stats")
     @Operation(summary = "获取待审核统计信息", description = "获取待审核论文的统计信息")
     public Result<PendingStatsVO> getPendingStats(
-            @Parameter(description = "教师ID") @RequestParam(required = false) String teacherId) {
+            @Parameter(description = "教师ID") @RequestParam(required = false) Long teacherId) {
         
         try {
             // 如果没有传入teacherId，则从当前用户获取
-            if (teacherId == null || teacherId.isEmpty()) {
-                teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            if (teacherId == null) {
+                teacherId = UserBusinessInfoUtils.getCurrentUserId();
             }
             
             log.info("获取待审核统计信息: teacherId={}", teacherId);
@@ -106,7 +106,7 @@ public class PendingReviewController {
     @OperationLog(type = "paper_review", description = "论文审核操作", recordResult = true)
     public Result<ReviewResultDetailVO> reviewPaper(@RequestBody PaperReviewDTO reviewDTO) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}审核论文: paperIds={}, reviewStatus={}", teacherId, reviewDTO.getPaperIds(), reviewDTO.getReviewStatus());
             return pendingReviewService.reviewPaper(teacherId, reviewDTO);
         } catch (Exception e) {
@@ -124,12 +124,8 @@ public class PendingReviewController {
     @OperationLog(type = "recheck_plagiarism", description = "重新查重检测", recordResult = true)
     public Result<Map<String, Object>> recheckPlagiarism(@RequestBody Map<String, String> request) {
         try {
-            String paperId = request.get("paperId");
-            if (paperId == null || paperId.isEmpty()) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文ID不能为空");
-            }
-            
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long paperId = Long.valueOf(request.get("paperId"));
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}重新查重检测论文: paperId={}", teacherId, paperId);
             return pendingReviewService.recheckPlagiarism(teacherId, paperId);
         } catch (Exception e) {
@@ -147,7 +143,7 @@ public class PendingReviewController {
     @OperationLog(type = "send_reminder", description = "发送提醒消息", recordResult = true)
     public Result<Map<String, Object>> sendReminder(@RequestBody SendReminderDTO reminderDTO) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}发送提醒消息: studentIds={}, message={}", teacherId, reminderDTO.getStudentIds(), reminderDTO.getMessage());
             return pendingReviewService.sendReminder(teacherId, reminderDTO);
         } catch (Exception e) {
@@ -165,7 +161,7 @@ public class PendingReviewController {
     @OperationLog(type = "contact_student", description = "联系学生", recordResult = true)
     public Result<Map<String, Object>> contactStudent(@RequestBody ContactStudentDTO contactDTO) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}联系学生: studentId={}, paperId={}, messageType={}", 
                     teacherId, contactDTO.getStudentId(), contactDTO.getPaperId(), contactDTO.getMessageType());
             return pendingReviewService.contactStudent(teacherId, contactDTO);
@@ -182,10 +178,10 @@ public class PendingReviewController {
     @GetMapping("/download/{paperId}")
     @Operation(summary = "下载论文文件", description = "下载指定论文的文件")
     public void downloadPaper(
-            @Parameter(description = "论文ID") @PathVariable String paperId,
+            @Parameter(description = "论文ID") @PathVariable Long paperId,
             HttpServletResponse response) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}下载论文文件: paperId={}", teacherId, paperId);
             pendingReviewService.downloadPaper(teacherId, paperId, response);
         } catch (Exception e) {
@@ -201,9 +197,9 @@ public class PendingReviewController {
     @GetMapping("/report/{paperId}")
     @Operation(summary = "获取查重报告", description = "获取论文的查重报告")
     public Result<PlagiarismReportVO> getPlagiarismReport(
-            @Parameter(description = "论文ID") @PathVariable String paperId) {
+            @Parameter(description = "论文ID") @PathVariable Long paperId) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}获取查重报告: paperId={}", teacherId, paperId);
             return pendingReviewService.getPlagiarismReport(teacherId, paperId);
         } catch (Exception e) {
@@ -219,11 +215,11 @@ public class PendingReviewController {
     @GetMapping("/today")
     @Operation(summary = "获取今日审核统计", description = "获取教师今日的审核统计信息")
     public Result<TodayReviewedVO> getTodayReviewedCount(
-            @Parameter(description = "教师ID") @RequestParam(required = false) String teacherId) {
+            @Parameter(description = "教师ID") @RequestParam(required = false) Long teacherId) {
         try {
             // 如果没有传入teacherId，则从当前用户获取
-            if (teacherId == null || teacherId.isEmpty()) {
-                teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            if (teacherId == null) {
+                teacherId = UserBusinessInfoUtils.getCurrentUserId();
             }
             
             log.info("获取今日审核统计: teacherId={}", teacherId);
@@ -243,7 +239,7 @@ public class PendingReviewController {
     @OperationLog(type = "delegate_review", description = "委托审核", recordResult = true)
     public Result<Map<String, Object>> delegateReview(@RequestBody DelegateReviewDTO delegateDTO) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}委托审核: paperId={}, delegateTeacherId={}", 
                     teacherId, delegateDTO.getPaperId(), delegateDTO.getDelegateTeacherId());
             return pendingReviewService.delegateReview(teacherId, delegateDTO);
@@ -265,7 +261,7 @@ public class PendingReviewController {
             @Parameter(description = "页码") @RequestParam(defaultValue = "1") Integer page,
             @Parameter(description = "每页大小") @RequestParam(defaultValue = "20") Integer pageSize) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}获取审核历史统计: startDate={}, endDate={}, page={}, pageSize={}", 
                     teacherId, startDate, endDate, page, pageSize);
             
@@ -283,9 +279,9 @@ public class PendingReviewController {
     @GetMapping("/history/{paperId}")
     @Operation(summary = "获取论文审核历史", description = "获取指定论文的审核历史记录")
     public Result<PaperReviewHistoryDTO> getPaperReviewHistory(
-            @Parameter(description = "论文ID") @PathVariable String paperId) {
+            @Parameter(description = "论文ID") @PathVariable Long paperId) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}获取论文审核历史: paperId={}", teacherId, paperId);
             return pendingReviewService.getPaperReviewHistory(teacherId, paperId);
         } catch (Exception e) {
@@ -302,9 +298,9 @@ public class PendingReviewController {
     @GetMapping({"/preview-url/{paperId}", "/preview/{paperId}"})
     @Operation(summary = "获取论文预览URL", description = "获取论文的在线预览URL地址")
     public Result<PaperPreviewUrlDTO> getPaperPreviewUrl(
-            @Parameter(description = "论文ID") @PathVariable String paperId) {
+            @Parameter(description = "论文ID") @PathVariable Long paperId) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}获取论文预览URL: paperId={}", teacherId, paperId);
             return pendingReviewService.getPaperPreviewUrl(teacherId, paperId);
         } catch (Exception e) {
@@ -320,9 +316,9 @@ public class PendingReviewController {
     @GetMapping("/content/{paperId}")
     @Operation(summary = "获取论文原文内容", description = "获取论文的完整内容信息")
     public Result<PaperContentDTO> getPaperContent(
-            @Parameter(description = "论文ID") @PathVariable String paperId) {
+            @Parameter(description = "论文ID") @PathVariable Long paperId) {
         try {
-            String teacherId = UserBusinessInfoUtils.getCurrentUserId().toString();
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
             log.info("教师{}获取论文内容: paperId={}", teacherId, paperId);
             return pendingReviewService.getPaperContent(teacherId, paperId);
         } catch (Exception e) {

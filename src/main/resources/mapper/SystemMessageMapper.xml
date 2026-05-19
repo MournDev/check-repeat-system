@@ -39,12 +39,14 @@
           AND is_read = 0
     </select>
 
-    <!-- 删除过期消息 -->
-    <delete id="deleteExpiredMessages">
-        DELETE FROM system_message
+    <!-- 软删除过期消息 -->
+    <update id="deleteExpiredMessages">
+        UPDATE system_message
+        SET is_deleted = 1
         WHERE expire_time IS NOT NULL
           AND expire_time &lt; NOW()
           AND is_read = 0
-    </delete>
+          AND is_deleted = 0
+    </update>
 
 </mapper>

@@ -6,7 +6,9 @@ import com.abin.checkrepeatsystem.admin.service.SystemConfigService;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
+import com.abin.checkrepeatsystem.student.service.Impl.StudentDashboardService;
 import com.alibaba.fastjson.JSON;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,9 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     
     @Autowired
     private SystemConfigMapper systemConfigMapper;
+
+    @Resource
+    private StudentDashboardService studentDashboardService;
     
     // 配置键常量
     private static final String PERFORMANCE_CONFIG_KEY = "performance";
@@ -295,8 +300,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     public com.abin.checkrepeatsystem.student.dto.DeadlinesDTO getDeadlines() {
         // 直接调用 StudentDashboardService 的方法（已实现从数据库读取）
         // 这里为了简化，直接复用逻辑
-        return new com.abin.checkrepeatsystem.student.service.Impl.StudentDashboardService()
-            .getDeadlines();
+        return studentDashboardService.getDeadlines();
     }
         
     @Override

@@ -14,7 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 文本相似度计算工具类：SimHash+余弦相似度组合算法
@@ -145,6 +147,79 @@ public class TextSimilarityUtils {
         // 步骤3：余弦相似度精细计算（返回百分比）
         double cosineSimilarity = calculateCosineSimilarity(segmentedText1, segmentedText2);
         return Math.round(cosineSimilarity * 10000) / 100.0; // 转换为百分比（如15.32%）
+    }
+
+    /**
+     * 5. N-gram字符级连续重复检测（模拟知网13字符规则）
+     * @param text1 原始文本（论文内容，未分词）
+     * @param text2 比对文本（库中文本，未分词）
+     * @param n N-gram窗口大小（知网使用13）
+     * @return 字符级重复率（百分比，保留2位小数）
+     */
+    public double detectConsecutiveDuplicate(String text1, String text2, int n) {
+        if ((text1 == null || text1.trim().isEmpty()) || (text2 == null || text2.trim().isEmpty())) {
+            return 0.0;
+        }
+        
+        // 预处理：去除标点符号和空格，统一为纯文本
+        String cleanText1 = cleanText(text1);
+        String cleanText2 = cleanText(text2);
+        
+        if (cleanText1.length() < n || cleanText2.length() < n) {
+            return 0.0; // 文本过短，无法检测
+        }
+        
+        // 构建文本1的N-gram集合
+        Set<String> ngrams1 = new HashSet<>();
+        for (int i = 0; i <= cleanText1.length() - n; i++) {
+            ngrams1.add(cleanText1.substring(i, i + n));
+        }
+        
+        // 在文本2中查找匹配的N-gram
+        int matchCount = 0;
+        int totalNgrams = cleanText2.length() - n + 1;
+        for (int i = 0; i <= cleanText2.length() - n; i++) {
+            if (ngrams1.contains(cleanText2.substring(i, i + n))) {
+                matchCount++;
+            }
+        }
+        
+        // 计算重复率（匹配的N-gram数 / 总N-gram数）
+        if (totalNgrams == 0) {
+            return 0.0;
+        }
+        return Math.round(matchCount * 10000.0 / totalNgrams) / 100.0;
+    }
+
+    /**
+     * 6. 综合查重检测（词级+字符级组合）
+     * @param text1 原始文本（论文内容）
+     * @param text2 比对文本（库中文本）
+     * @return 综合相似度（百分比，保留2位小数）
+     */
+    public double calculateFinalSimilarity(String text1, String text2) {
+        // 步骤1：词级相似度（SimHash+余弦）
+        double wordLevelSimilarity = calculateComprehensiveSimilarity(text1, text2);
+        
+        // 步骤2：字符级相似度（N-gram，模拟知网13字符规则）
+        double charLevelSimilarity = detectConsecutiveDuplicate(text1, text2, 13);
+        
+        // 步骤3：综合计算（词级70% + 字符级30%权重）
+        double finalSimilarity = wordLevelSimilarity * 0.7 + charLevelSimilarity * 0.3;
+        
+        // 确保不超过100%
+        return Math.min(Math.round(finalSimilarity * 100) / 100.0, 100.0);
+    }
+
+    /**
+     * 清理文本：去除标点符号、空格、换行符等
+     */
+    private String cleanText(String text) {
+        if (text == null) {
+            return "";
+        }
+        // 去除标点符号、空格、制表符、换行符
+        return text.replaceAll("[\\p{Punct}\\s]+", "");
     }
 
     // ------------------------------ 私有辅助方法 ------------------------------

@@ -16,6 +16,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.List;
 /**
  * 审核工作流配置服务实现
  */
+@Slf4j
 @Service
 public class TeacherReviewWorkflowServiceImpl implements TeacherReviewWorkflowService {
 
@@ -69,7 +71,7 @@ public class TeacherReviewWorkflowServiceImpl implements TeacherReviewWorkflowSe
                         }
                         vo.setSteps(steps);
                     } catch (JsonProcessingException e) {
-                        e.printStackTrace();
+                        log.error("审核流程操作失败", e);
                         vo.setSteps(new ArrayList<>());
                     }
                 } else {
@@ -86,7 +88,7 @@ public class TeacherReviewWorkflowServiceImpl implements TeacherReviewWorkflowSe
 
             return Result.success(vo);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核流程操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"获取工作流配置失败");
         }
     }
@@ -133,7 +135,7 @@ public class TeacherReviewWorkflowServiceImpl implements TeacherReviewWorkflowSe
 
             return Result.success();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核流程操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"更新工作流配置失败");
         }
     }
@@ -162,7 +164,7 @@ public class TeacherReviewWorkflowServiceImpl implements TeacherReviewWorkflowSe
 
             return Result.success(teacherVOs);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("审核流程操作失败", e);
             return Result.error(ResultCode.SYSTEM_ERROR,"获取教师列表失败");
         }
     }

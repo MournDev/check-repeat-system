@@ -1,6 +1,9 @@
 package com.abin.checkrepeatsystem.common.service;
 
+import io.minio.BucketExistsArgs;
+import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +30,24 @@ public class PaperContentMinioService {
 
     @Value("${minio.endpoint}")
     private String minioEndpoint;
+
+    /**
+     * 初始化：确保paper-content bucket存在
+     */
+    @PostConstruct
+    private void init() {
+        try {
+            boolean bucketExists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+            if (!bucketExists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+                log.info("创建MinIO bucket成功：{}", bucketName);
+            } else {
+                log.info("MinIO bucket已存在：{}", bucketName);
+            }
+        } catch (Exception e) {
+            log.error("初始化MinIO bucket失败：{}", bucketName, e);
+        }
+    }
 
     /**
      * 存储论文正文内容到MinIO

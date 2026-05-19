@@ -44,6 +44,12 @@ public class ReviewResultDTO {
     private Long paperId;
 
     /**
+     * 文件ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long fileId;
+
+    /**
      * 论文标题
      */
     private String paperTitle;
@@ -73,6 +79,11 @@ public class ReviewResultDTO {
      * 学院
      */
     private String college;
+
+    /**
+     * 专业
+     */
+    private String major;
 
     /**
      * 提交时间
@@ -111,6 +122,16 @@ public class ReviewResultDTO {
      */
     private Integer reviewDuration;
 
+    /**
+     * 字数统计
+     */
+    private Integer wordCount;
+
+    /**
+     * 页数统计
+     */
+    private Integer pageCount;
+
     // ------------------------------ 内部DTO ------------------------------
     /**
      * 论文基础信息
@@ -119,9 +140,12 @@ public class ReviewResultDTO {
     public static class PaperBaseInfoDTO {
         @JsonFormat(shape = JsonFormat.Shape.STRING)
         private Long paperId;
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
+        private Long fileId;
         private String paperTitle;
         private String studentName;
         private String college;
+        private String major;
         private String email;
         private String studentNo; // 学生学号
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

@@ -108,7 +108,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             // 构建查询条件
             LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(PaperInfo::getTeacherId, Long.parseLong(queryDTO.getTeacherId()))
-                   .eq(PaperInfo::getPaperStatus, "auditing") // 待审核状态
+                   .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode()) // 待审核状态
                    .eq(PaperInfo::getIsDeleted, 0);
 
             // 学院筛选
@@ -184,7 +184,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<PendingStatsVO> getPendingStats(String teacherId) {
+    public Result<PendingStatsVO> getPendingStats(Long teacherId) {
         try {
             log.info("获取待审核统计信息: teacherId={}", teacherId);
 
@@ -192,8 +192,8 @@ public class PendingReviewServiceImpl implements PendingReviewService {
 
             // 获取待审核总数
             LambdaQueryWrapper<PaperInfo> pendingWrapper = new LambdaQueryWrapper<>();
-            pendingWrapper.eq(PaperInfo::getTeacherId, Long.parseLong(teacherId))
-                         .eq(PaperInfo::getPaperStatus, "auditing")
+            pendingWrapper.eq(PaperInfo::getTeacherId, teacherId)
+                         .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode())
                          .eq(PaperInfo::getIsDeleted, 0);
             Long totalPending = pendingReviewMapper.selectCount(pendingWrapper);
             stats.setTotalPending(totalPending.intValue());
@@ -221,8 +221,8 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             LocalDateTime todayEnd = LocalDateTime.now().withHour(23).withMinute(59).withSecond(59);
             
             LambdaQueryWrapper<PaperInfo> todayReviewedWrapper = new LambdaQueryWrapper<>();
-            todayReviewedWrapper.eq(PaperInfo::getTeacherId, Long.parseLong(teacherId))
-                               .ne(PaperInfo::getPaperStatus, "auditing")
+            todayReviewedWrapper.eq(PaperInfo::getTeacherId, teacherId)
+                               .ne(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode())
                                .between(PaperInfo::getUpdateTime, todayStart, todayEnd)
                                .eq(PaperInfo::getIsDeleted, 0);
             Long todayReviewed = pendingReviewMapper.selectCount(todayReviewedWrapper);
@@ -243,7 +243,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<ReviewResultDetailVO> reviewPaper(String teacherId, PaperReviewDTO reviewDTO) {
+    public Result<ReviewResultDetailVO> reviewPaper(Long teacherId, PaperReviewDTO reviewDTO) {
         try {
             log.info("开始论文审核: teacherId={}, paperIds={}, reviewStatus={}", 
                     teacherId, reviewDTO.getPaperIds(), reviewDTO.getReviewStatus());
@@ -312,19 +312,19 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<Map<String, Object>> recheckPlagiarism(String teacherId, String paperId) {
+    public Result<Map<String, Object>> recheckPlagiarism(Long teacherId, Long paperId) {
         Map<String, Object> result = new HashMap<>();
         try {
             log.info("重新查重检测: teacherId={}, paperId={}", teacherId, paperId);
 
             // 获取论文信息
-            PaperInfo paperInfo = pendingReviewMapper.selectById(Long.parseLong(paperId));
+            PaperInfo paperInfo = pendingReviewMapper.selectById(paperId);
             if (paperInfo == null) {
                 return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
             }
 
             // 验证权限
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限操作该论文");
             }
 
@@ -352,7 +352,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<Map<String, Object>> sendReminder(String teacherId, SendReminderDTO reminderDTO) {
+    public Result<Map<String, Object>> sendReminder(Long teacherId, SendReminderDTO reminderDTO) {
         Map<String, Object> result = new HashMap<>();
         try {
             log.info("发送提醒消息：teacherId={}, studentIds={}, message={}", 
@@ -409,7 +409,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<Map<String, Object>> contactStudent(String teacherId, ContactStudentDTO contactDTO) {
+    public Result<Map<String, Object>> contactStudent(Long teacherId, ContactStudentDTO contactDTO) {
         Map<String, Object> result = new HashMap<>();
         try {
             log.info("联系学生: teacherId={}, studentId={}, messageType={}", 
@@ -436,7 +436,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     /**
      * 发送即时消息
      */
-    private Result<Map<String, Object>> sendInstantMessage(String teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
+    private Result<Map<String, Object>> sendInstantMessage(Long teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
         try {
             // 使用当前登录用户ID，而不是参数中的 teacherId
             Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
@@ -470,7 +470,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     /**
      * 发送系统消息
      */
-    private Result<Map<String, Object>> sendSystemMessage(String teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
+    private Result<Map<String, Object>> sendSystemMessage(Long teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
         try {
             // 使用当前登录用户ID
             Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
@@ -507,7 +507,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     /**
      * 发送邮件消息（简化实现）
      */
-    private Result<Map<String, Object>> sendEmailMessage(String teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
+    private Result<Map<String, Object>> sendEmailMessage(Long teacherId, ContactStudentDTO contactDTO, Map<String, Object> result) {
         try {
             // 这里应该调用邮件服务
             // 暂时记录日志并返回成功
@@ -527,12 +527,12 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public void downloadPaper(String teacherId, String paperId, HttpServletResponse response) {
+    public void downloadPaper(Long teacherId, Long paperId, HttpServletResponse response) {
         try {
             log.info("下载论文文件: teacherId={}, paperId={}", teacherId, paperId);
 
             // 获取论文信息
-            PaperInfo paperInfo = pendingReviewMapper.selectById(Long.parseLong(paperId));
+            PaperInfo paperInfo = pendingReviewMapper.selectById(paperId);
             if (paperInfo == null) {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
                 response.getWriter().write("论文不存在");
@@ -540,7 +540,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             }
 
             // 验证权限
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.getWriter().write("无权限访问该论文");
                 return;
@@ -619,18 +619,18 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<PlagiarismReportVO> getPlagiarismReport(String teacherId, String paperId) {
+    public Result<PlagiarismReportVO> getPlagiarismReport(Long teacherId, Long paperId) {
         try {
             log.info("获取查重报告: teacherId={}, paperId={}", teacherId, paperId);
 
             // 获取论文信息
-            PaperInfo paperInfo = pendingReviewMapper.selectById(Long.parseLong(paperId));
+            PaperInfo paperInfo = pendingReviewMapper.selectById(paperId);
             if (paperInfo == null) {
                 return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
             }
 
             // 验证权限
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
             }
 
@@ -653,7 +653,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<TodayReviewedVO> getTodayReviewedCount(String teacherId) {
+    public Result<TodayReviewedVO> getTodayReviewedCount(Long teacherId) {
         try {
             log.info("获取今日审核统计: teacherId={}", teacherId);
 
@@ -664,8 +664,8 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             LocalDateTime todayEnd = LocalDateTime.now().withHour(23).withMinute(59).withSecond(59);
             
             LambdaQueryWrapper<PaperInfo> todayWrapper = new LambdaQueryWrapper<>();
-            todayWrapper.eq(PaperInfo::getTeacherId, Long.parseLong(teacherId))
-                       .ne(PaperInfo::getPaperStatus, "auditing")
+            todayWrapper.eq(PaperInfo::getTeacherId, teacherId)
+                       .ne(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode())
                        .between(PaperInfo::getUpdateTime, todayStart, todayEnd)
                        .eq(PaperInfo::getIsDeleted, 0);
             
@@ -682,8 +682,8 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                 
                 // 查询该小时段的审核数量
                 LambdaQueryWrapper<PaperInfo> hourWrapper = new LambdaQueryWrapper<>();
-                hourWrapper.eq(PaperInfo::getTeacherId, Long.parseLong(teacherId))
-                          .ne(PaperInfo::getPaperStatus, "auditing")
+                hourWrapper.eq(PaperInfo::getTeacherId, teacherId)
+                          .ne(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode())
                           .between(PaperInfo::getUpdateTime, hourStart, hourEnd)
                           .eq(PaperInfo::getIsDeleted, 0);
                 
@@ -706,24 +706,24 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
 
     @Override
-    public Result<PaperContentDTO> getPaperContent(String teacherId, String paperId) {
+    public Result<PaperContentDTO> getPaperContent(Long teacherId, Long paperId) {
         try {
             log.info("教师{}获取论文内容: paperId={}", teacherId, paperId);
 
             // 1. 验证论文权限
-            PaperInfo paperInfo = pendingReviewMapper.selectById(Long.parseLong(paperId));
+            PaperInfo paperInfo = pendingReviewMapper.selectById(paperId);
             if (paperInfo == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
             }
 
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 return Result.error(ResultCode.PARAM_ERROR, "无权限访问此论文");
             }
 
             // 2. 构建返回数据
             PaperContentDTO contentDTO = new PaperContentDTO();
             contentDTO.setPaperId(paperId);
-            contentDTO.setTitle(paperInfo.getPaperTitle());
+            contentDTO.setPaperTitle(paperInfo.getPaperTitle());
 
             // 3. 从文件系统获取论文内容（使用标准 FileService 方式）
             if (paperInfo.getFileId() != null) {
@@ -731,7 +731,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                     // 使用FileService获取文件信息
                     FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
                     if (fileInfo != null) {
-                        contentDTO.setFileSize(fileInfo.getFileSizeDesc());
+                        contentDTO.setFileSizeDesc(fileInfo.getFileSizeDesc());
                         contentDTO.setFileType(getFileExtension(fileInfo.getOriginalFilename()));
 
                         // 获取文件内容（如果是文本文件）
@@ -806,6 +806,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
         PendingReviewVO vo = new PendingReviewVO();
         
         vo.setPaperId(paperInfo.getId().toString());
+        vo.setFileId( paperInfo.getFileId().toString());
         vo.setPaperTitle(paperInfo.getPaperTitle());
         vo.setStudentName(paperInfo.getStudentName());
         vo.setStudentId(paperInfo.getStudentId().toString());
@@ -821,7 +822,10 @@ public class PendingReviewServiceImpl implements PendingReviewService {
         vo.setPriority("normal"); // 需要根据业务规则确定
         vo.setVersion("V1.0"); // 需要根据实际情况确定
         vo.setWordCount(paperInfo.getWordCount());
-        vo.setPageCount(paperInfo.getWordCount() != null ? paperInfo.getWordCount() / 500 : 0); // 估算页数
+        // 如果论文表中有真实的页数则使用，否则用字数估算
+        Integer pageCount = paperInfo.getPageCount();
+        vo.setPageCount(pageCount != null && pageCount > 0 ? pageCount : 
+            (paperInfo.getWordCount() != null ? paperInfo.getWordCount() / 500 : 0));
 
         // 设置论文基础信息
         PendingReviewVO.PaperBaseInfoVO paperBaseInfo = new PendingReviewVO.PaperBaseInfoVO();
@@ -843,7 +847,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
     
     @Override
-    public Result<Map<String, Object>> delegateReview(String teacherId, DelegateReviewDTO delegateDTO) {
+    public Result<Map<String, Object>> delegateReview(Long teacherId, DelegateReviewDTO delegateDTO) {
         Map<String, Object> result = new HashMap<>();
         try {
             log.info("委托审核: teacherId={}, paperId={}, delegateTeacherId={}", 
@@ -855,7 +859,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                 return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
             }
             
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 return Result.error(ResultCode.PARAM_ERROR, "无权限委托此论文");
             }
             
@@ -873,6 +877,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             // 4. 记录委托日志
             TeacherAllocationRecord allocationRecord = new TeacherAllocationRecord();
             allocationRecord.setPaperId(Long.parseLong(delegateDTO.getPaperId()));
+            allocationRecord.setStudentId(paperInfo.getStudentId());
             allocationRecord.setTeacherId(Long.parseLong(delegateDTO.getDelegateTeacherId()));
             allocationRecord.setAllocationReason(delegateDTO.getReason());
             allocationRecord.setAllocationTime(LocalDateTime.now());
@@ -888,7 +893,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             SystemMessage message = new SystemMessage();
             message.setTitle("论文审核委托通知");
             message.setContent(String.format("教师%s将论文《%s》的审核工作委托给您，请及时处理。委托原因：%s", 
-                    sysUserMapper.selectById(Long.parseLong(teacherId)).getRealName(),
+                    sysUserMapper.selectById(teacherId).getRealName(),
                     paperInfo.getPaperTitle(), 
                     delegateDTO.getReason()));
             message.setMessageType("BUSINESS");
@@ -924,19 +929,19 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             return Result.error(ResultCode.SYSTEM_ERROR, "委托审核失败: " + e.getMessage());
         }
     }
-    
+
     @Override
-    public Result<PaperPreviewUrlDTO> getPaperPreviewUrl(String teacherId, String paperId) {
+    public Result<PaperPreviewUrlDTO> getPaperPreviewUrl(Long teacherId, Long paperId) {
         try {
             log.info("教师{}获取论文预览URL: paperId={}", teacherId, paperId);
             
             // 1. 验证论文权限
-            PaperInfo paperInfo = pendingReviewMapper.selectById(Long.parseLong(paperId));
+            PaperInfo paperInfo = pendingReviewMapper.selectById(paperId);
             if (paperInfo == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
             }
             
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 return Result.error(ResultCode.PARAM_ERROR, "无权限访问此论文");
             }
             
@@ -1014,23 +1019,23 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
     
     @Override
-    public Result<PaperReviewHistoryDTO> getPaperReviewHistory(String teacherId, String paperId) {
+    public Result<PaperReviewHistoryDTO> getPaperReviewHistory(Long teacherId, Long paperId) {
         try {
             log.info("教师{}获取论文审核历史: paperId={}", teacherId, paperId);
             
             // 1. 验证论文权限
-            PaperInfo paperInfo = pendingReviewMapper.selectById(Long.parseLong(paperId));
+            PaperInfo paperInfo = pendingReviewMapper.selectById(paperId);
             if (paperInfo == null) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
             }
             
-            if (!paperInfo.getTeacherId().equals(Long.parseLong(teacherId))) {
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
                 return Result.error(ResultCode.PARAM_ERROR, "无权限访问此论文");
             }
             
             // 2. 查询审核历史记录
             LambdaQueryWrapper<ReviewRecord> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(ReviewRecord::getPaperId, Long.parseLong(paperId))
+            queryWrapper.eq(ReviewRecord::getPaperId, paperId)
                        .eq(ReviewRecord::getIsDeleted, 0)
                        .orderByDesc(ReviewRecord::getReviewTime);
             
@@ -1045,7 +1050,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             List<PaperReviewHistoryDTO.ReviewHistoryRecord> historyRecords = reviewRecords.stream()
                     .map(record -> {
                         PaperReviewHistoryDTO.ReviewHistoryRecord historyRecord = new PaperReviewHistoryDTO.ReviewHistoryRecord();
-                        historyRecord.setReviewId(record.getId().toString());
+                        historyRecord.setReviewId(record.getId());
                         
                         // 获取审核教师姓名
                         SysUser reviewer = sysUserMapper.selectById(record.getTeacherId());
@@ -1074,7 +1079,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
     }
     
     @Override
-    public Result<TeacherReviewStatisticsDTO> getTeacherReviewStatistics(String teacherId, String startDate, 
+    public Result<TeacherReviewStatisticsDTO> getTeacherReviewStatistics(Long teacherId, String startDate,
                                                                          String endDate, Integer page, Integer pageSize) {
         try {
             log.info("教师{}获取审核历史统计: startDate={}, endDate={}, page={}, pageSize={}", 
@@ -1082,7 +1087,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             
             // 1. 构建查询条件
             LambdaQueryWrapper<ReviewRecord> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(ReviewRecord::getTeacherId, Long.parseLong(teacherId))
+            queryWrapper.eq(ReviewRecord::getTeacherId, teacherId)
                        .eq(ReviewRecord::getIsDeleted, 0);
             
             // 添加日期筛选
