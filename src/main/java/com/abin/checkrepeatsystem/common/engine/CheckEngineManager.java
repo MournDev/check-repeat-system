@@ -5,8 +5,8 @@ import com.abin.checkrepeatsystem.pojo.vo.CheckResult;
 import com.abin.checkrepeatsystem.user.service.CheckEngine;
 
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -18,12 +18,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * 查重引擎管理器
  * 负责统一管理和调度多种查重引擎
  */
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class CheckEngineManager {
     
-    @Autowired
-    private List<CheckEngine> checkEngines;
+    private final List<CheckEngine> checkEngines;
     
     private final Map<CheckEngineTypeEnum, CheckEngine> engineMap = new ConcurrentHashMap<>();
     

@@ -2,7 +2,6 @@ package com.abin.checkrepeatsystem.user.service.Impl;
 
 import com.abin.checkrepeatsystem.common.enums.NoticeType;
 import com.abin.checkrepeatsystem.common.service.Impl.NoticeLogService;
-import jakarta.annotation.Resource;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -41,11 +40,9 @@ public class OptimizedEmailService {
     @Value("${spring.notice.email.content-footer}")
     private String emailContentFooter;
 
-    @Resource
-    private JavaMailSender javaMailSender;
+    private final JavaMailSender javaMailSender;
 
-    @Resource
-    private NoticeLogService noticeLogService;
+    private final NoticeLogService noticeLogService;
 
     // 邮件发送线程池
     private final ExecutorService emailExecutor;
@@ -56,7 +53,9 @@ public class OptimizedEmailService {
     // 初始化锁
     private final Object initLock = new Object();
 
-    public OptimizedEmailService() {
+    public OptimizedEmailService(JavaMailSender javaMailSender, NoticeLogService noticeLogService) {
+        this.javaMailSender = javaMailSender;
+        this.noticeLogService = noticeLogService;
         // 创建邮件发送线程池
         int corePoolSize = 2;
         int maxPoolSize = 5;

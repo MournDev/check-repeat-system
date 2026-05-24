@@ -5,7 +5,7 @@ import com.abin.checkrepeatsystem.admin.mapper.CheckResultMapper;
 import com.abin.checkrepeatsystem.admin.mapper.CompareLibMapper;
 import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
 import cn.hutool.core.date.DateTime;
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.engine.CheckEngineManager;
@@ -28,14 +28,14 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.student.service.CheckTaskValidationService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.TypeReference;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
@@ -61,36 +61,28 @@ import java.util.stream.Collectors;
 /**
  * 查重任务服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask> implements CheckTaskService {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private PdfReportGenerator pdfReportGenerator;
+    private final PdfReportGenerator pdfReportGenerator;
 
-    @Resource
-    private CheckResultMapper checkResultMapper;
+    private final CheckResultMapper checkResultMapper;
 
-    @Resource
-    private CompareLibMapper compareLibMapper;
+    private final CompareLibMapper compareLibMapper;
 
-    @Resource
-    private PaperStatusLogMapper paperStatusLogMapper;
+    private final PaperStatusLogMapper paperStatusLogMapper;
 
-    @Resource
-    private TextSimilarityUtils textSimilarityUtils;
+    private final TextSimilarityUtils textSimilarityUtils;
 
-    @Resource
-    private CheckTaskStateMachine stateMachine;
+    private final CheckTaskStateMachine stateMachine;
 
-    @Resource
-    private CheckEngineManager checkEngineManager;
+    private final CheckEngineManager checkEngineManager;
 
     @Value("${file.upload.base-path}")
     private String basePath;
@@ -120,17 +112,13 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
     @Value("${admin.check-rule.default-threshold}")
     private BigDecimal defaultThreshold;
 
-    @Resource
-    private ApplicationMonitorService monitorService;
+    private final ApplicationMonitorService monitorService;
 
-    @Resource
-    private CheckTaskValidationService validationService;
+    private final CheckTaskValidationService validationService;
 
-    @Resource
-    private ApplicationEventPublisher eventPublisher;
+    private final ApplicationEventPublisher eventPublisher;
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
     @Autowired
     @Lazy
@@ -429,6 +417,15 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         // 3. 转换为DTO（含完整报告信息）
         CheckTaskResultDTO resultDTO = convertToTaskResultDTO(checkTask, true);
         return Result.success("查重任务详情查询成功", resultDTO);
+    }
+
+    @Override
+    public CheckTask getLatestCheckTaskByPaperId(Long paperId) {
+        return getOne(new LambdaQueryWrapper<CheckTask>()
+                .eq(CheckTask::getPaperId, paperId)
+                .eq(CheckTask::getIsDeleted, 0)
+                .orderByDesc(CheckTask::getCreateTime)
+                .last("LIMIT 1"));
     }
 
     @Override
@@ -945,6 +942,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
      * 转换CheckTask为CheckTaskResultDTO（支持是否返回完整报告）
      * @param withFullReport 是否返回完整报告信息
      */
+    @Override
     public CheckTaskResultDTO convertToTaskResultDTO(CheckTask checkTask, boolean withFullReport) {
         CheckTaskResultDTO dto = new CheckTaskResultDTO();
         dto.setTaskId(checkTask.getId());
@@ -973,7 +971,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                 List<Map<String, Object>> repeatDetails = JSON.parseObject(checkReport.getRepeatDetails(), new TypeReference<List<Map<String, Object>>>(){});
                 reportSummary.setRepeatParagraphCount(repeatDetails.size());
                 // 构建报告下载URL（前端拼接域名，如：/api/v1/student/reports/download?reportId=xxx）
-                reportSummary.setReportDownloadUrl("/api/student/reports/download?reportId=" + checkReport.getId());
+                reportSummary.setReportDownloadUrl("/api/v1/student/reports/download?reportId=" + checkReport.getId());
                 dto.setReportSummary(reportSummary);
             }
         }

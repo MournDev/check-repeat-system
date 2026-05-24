@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.mapper.SysRoleMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.dto.UpdatePasswordReq;
@@ -24,7 +25,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,17 +45,15 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class InfoServiceImpl implements InfoService {
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private SysRoleMapper sysRoleMapper;
+    private final SysRoleMapper sysRoleMapper;
 
-    @Resource
-    private MinioClient minioClient;
+    private final MinioClient minioClient;
 
     @Value("${minio.bucket.avatar:avatar}")
     private String avatarBucket;
@@ -65,24 +64,21 @@ public class InfoServiceImpl implements InfoService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
+    @Value("${app.frontend-url:}")
+    private String frontendBaseUrl;
 
-    @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
 
-    @Resource
-    private PasswordEncoder passwordEncoder;
+    private final SysLoginLogMapper sysLoginLogMapper;
 
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    private final PasswordEncoder passwordEncoder;
 
-    @Resource
-    private JavaMailSender mailSender;
+    private final RedisTemplate<String, String> redisTemplate;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final JavaMailSender mailSender;
+
+    private final StudentInfoService studentInfoService;
     
-    @Resource
-    private ConversationMemberMapper conversationMemberMapper;
+    private final ConversationMemberMapper conversationMemberMapper;
 
     @Override
     public Result<LoginVO> updateUserInfo(UpdateUserInfoReq updateReq) {
@@ -192,6 +188,17 @@ public class InfoServiceImpl implements InfoService {
                 return Result.error(ResultCode.PARAM_ERROR, "只支持 JPG 和 PNG 格式的图片");
             }
 
+            // 使用Tika检测实际MIME类型，防止扩展名/Content-Type伪造
+            try {
+                org.apache.tika.Tika tika = new org.apache.tika.Tika();
+                String detectedType = tika.detect(file.getInputStream(), file.getOriginalFilename());
+                if (!"image/jpeg".equals(detectedType) && !"image/png".equals(detectedType)) {
+                    return Result.error(ResultCode.PARAM_ERROR, "文件内容与声称的图片格式不匹配");
+                }
+            } catch (Exception e) {
+                return Result.error(ResultCode.PARAM_ERROR, "文件校验失败，请重试");
+            }
+
             // 限制文件大小（例如5MB）
             if (file.getSize() > 5 * 1024 * 1024) {
                 return Result.error(ResultCode.PARAM_ERROR, "头像文件大小不能超过5MB");
@@ -268,7 +275,7 @@ public class InfoServiceImpl implements InfoService {
             LambdaQueryWrapper<SysLoginLog> queryWrapper = Wrappers.<SysLoginLog>lambdaQuery();
 
             // 管理员可以看到全部，学生和教师只能看到自己的
-            if (!"ADMIN".equals(roleCode)) {
+            if (!UserTypeEnum.ROLE_ADMIN.equals(roleCode)) {
                 queryWrapper.eq(SysLoginLog::getUsername, currentUsername);
             } else if (StringUtils.hasText(queryReq.getUsername())) {
                 // 管理员可以按用户名筛选
@@ -400,8 +407,11 @@ public class InfoServiceImpl implements InfoService {
         // 将token和邮箱存储到Redis中，设置24小时过期时间
         redisTemplate.opsForValue().set("email_verify_token:" + token, email, 24, TimeUnit.HOURS);
 
-        // 构建验证链接
-        String verifyUrl = "http://localhost:3000/verify-email?token=" + token;
+        // 构建验证链接（使用配置的前端地址）
+        String baseUrl = java.util.Optional.ofNullable(frontendBaseUrl)
+                .filter(s -> !s.isEmpty())
+                .orElseGet(() -> System.getenv().getOrDefault("FRONTEND_BASE_URL", ""));
+        String verifyUrl = baseUrl + "/verify-email?token=" + token;
         // 发送验证邮件
         try {
             SimpleMailMessage message = new SimpleMailMessage();

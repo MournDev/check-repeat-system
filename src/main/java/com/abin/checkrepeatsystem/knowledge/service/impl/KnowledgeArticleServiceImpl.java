@@ -6,17 +6,18 @@ import com.abin.checkrepeatsystem.mapper.KnowledgeArticleMapper;
 import com.abin.checkrepeatsystem.pojo.entity.KnowledgeArticle;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @Service
 public class KnowledgeArticleServiceImpl extends ServiceImpl<KnowledgeArticleMapper, KnowledgeArticle>
         implements KnowledgeArticleService {
 
-    @Resource
-    private KnowledgeArticleMapper knowledgeArticleMapper;
+    private final KnowledgeArticleMapper knowledgeArticleMapper;
 
     @Override
     public PageDTO<KnowledgeArticle> listArticles(int page, int size, String category, String keyword) {

@@ -5,16 +5,17 @@ import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @Service
 public class LoginLogServiceImpl implements LoginLogService {
 
-    @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
+    private final SysLoginLogMapper sysLoginLogMapper;
 
     @Override
     public Page<SysLoginLog> selectPage(Page<SysLoginLog> page, LambdaQueryWrapper<SysLoginLog> wrapper) {

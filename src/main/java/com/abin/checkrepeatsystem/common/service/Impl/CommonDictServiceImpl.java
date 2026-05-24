@@ -10,8 +10,8 @@ import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.student.mapper.MajorMapper;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 /**
  * 公共字典服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class CommonDictServiceImpl implements CommonDictService {
@@ -31,17 +32,10 @@ public class CommonDictServiceImpl implements CommonDictService {
     private static final String CACHE_KEY_MAJOR_MAP = "common:dict:major:map";
     private static final long CACHE_EXPIRE_HOURS = 24;
 
-    @Autowired
-    private CollegeMapper collegeMapper;
-
-    @Autowired
-    private MajorMapper majorMapper;
-
-    @Autowired
-    private SysUserService sysUserService;
-
-    @Autowired(required = false)
-    private RedisTemplate<String, Object> redisTemplate;
+    private final CollegeMapper collegeMapper;
+    private final MajorMapper majorMapper;
+    private final SysUserService sysUserService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @Override
     public Result<List<Map<String, Object>>> getColleges() {

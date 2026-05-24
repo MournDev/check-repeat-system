@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.admin.service.Impl;
 
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.admin.mapper.CheckResultMapper;
 import com.abin.checkrepeatsystem.admin.service.AdminSchoolService;
 import com.abin.checkrepeatsystem.admin.vo.CollegePaperStatsVO;
@@ -12,32 +13,32 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.lang.management.ManagementFactory;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @Service
 public class AdminSchoolServiceImpl implements AdminSchoolService {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSchoolServiceImpl.class);
 
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckResultMapper checkResultMapper;
+    private final CheckResultMapper checkResultMapper;
 
-    @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
+    private final SysLoginLogMapper sysLoginLogMapper;
 
     @Override
     public Map<String, Object> getSchoolOverview() {
@@ -46,13 +47,13 @@ public class AdminSchoolServiceImpl implements AdminSchoolService {
         Long totalUsers = sysUserService.count(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getIsDeleted, 0));
         Long students = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getUserType, "STUDENT")
+                .eq(SysUser::getUserType, UserTypeEnum.ROLE_STUDENT)
                 .eq(SysUser::getIsDeleted, 0));
         Long teachers = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getUserType, "TEACHER")
+                .eq(SysUser::getUserType, UserTypeEnum.ROLE_TEACHER)
                 .eq(SysUser::getIsDeleted, 0));
         Long admins = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getUserType, "ADMIN")
+                .eq(SysUser::getUserType, UserTypeEnum.ROLE_ADMIN)
                 .eq(SysUser::getIsDeleted, 0));
 
         overview.put("totalUsers", totalUsers);
@@ -72,7 +73,7 @@ public class AdminSchoolServiceImpl implements AdminSchoolService {
 
         Long highSimilarity = checkResultMapper.selectCount(
                 new LambdaQueryWrapper<CheckResult>()
-                        .apply("repeat_rate >= {0}", 80));
+                        .ge(CheckResult::getRepeatRate, BigDecimal.valueOf(80)));
 
         overview.put("highSimilarityPapers", highSimilarity);
 
@@ -130,7 +131,7 @@ public class AdminSchoolServiceImpl implements AdminSchoolService {
                     .le(CheckResult::getCreateTime, monthEnd));
 
             Map<String, Object> monthData = new HashMap<>();
-            monthData.put("month", monthStart.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM")));
+            monthData.put("month", monthStart.format(DateTimeFormatter.ofPattern("yyyy-MM")));
             monthData.put("submissionCount", submissionCount);
             monthData.put("checkCount", checkCount);
 
@@ -181,7 +182,8 @@ public class AdminSchoolServiceImpl implements AdminSchoolService {
                 .ge(SysLoginLog::getLoginTime, oneHourAgo));
         stats.put("onlineUsers", onlineUsers);
 
-        stats.put("systemLoad", new Random().nextInt(30) + 30);
+        double cpuLoad = ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage();
+        stats.put("systemLoad", Math.round(cpuLoad * 100) / 100.0);
 
         Long activeTasks = paperInfoMapper.selectCount(new LambdaQueryWrapper<PaperInfo>()
                 .in(PaperInfo::getPaperStatus, Arrays.asList(

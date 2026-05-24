@@ -2,8 +2,8 @@ package com.abin.checkrepeatsystem.common.websocket.handler;
 
 import com.abin.checkrepeatsystem.common.websocket.WebSocketMessage;
 import com.abin.checkrepeatsystem.common.websocket.WebSocketSender;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.annotation.SendToUser;
@@ -15,12 +15,12 @@ import java.security.Principal;
  * WebSocket消息处理器
  * 处理客户端发送的消息
  */
+@RequiredArgsConstructor
 @Controller
 @Slf4j
 public class WebSocketMessageHandler {
 
-    @Autowired
-    private WebSocketSender webSocketSender;
+    private final WebSocketSender webSocketSender;
 
     /**
      * 处理用户发送的消息

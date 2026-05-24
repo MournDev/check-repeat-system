@@ -38,7 +38,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-        
+        <!-- 缓存：Caffeine 本地缓存 + Spring Cache 抽象 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         <!-- Spring Boot Actuator 监控 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -88,6 +96,16 @@
             <artifactId>mybatis-plus-generator</artifactId>
             <version>3.5.7</version>
             <scope>test</scope>
+        </dependency>
+
+        <!-- Flyway 数据库迁移 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
 
         <!-- 工具类 -->
@@ -148,11 +166,11 @@
             <version>2.9.1</version>
         </dependency>
 
-        <!-- IK Analyzer 中文分词 -->
+        <!-- Jieba 中文分词（替代已停更的 IK Analyzer） -->
         <dependency>
-            <groupId>com.janeluo</groupId>
-            <artifactId>ikanalyzer</artifactId>
-            <version>2012_u6</version>
+            <groupId>com.huaban</groupId>
+            <artifactId>jieba-analysis</artifactId>
+            <version>1.0.2</version>
         </dependency>
         <!-- 文本相似度计算工具 -->
         <dependency>
@@ -189,22 +207,16 @@
             <artifactId>poi-ooxml</artifactId>
             <version>5.2.5</version>
         </dependency>
-        <!--        fastjson-->
+        <!-- fastjson2（替代fastjson 1.x，修复安全漏洞） -->
         <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>fastjson</artifactId>
-            <version>1.2.83</version>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+            <version>2.0.53</version>
         </dependency>
         <!-- Spring Data Redis -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-        <!-- Redis连接池 -->
-        <dependency>
-            <groupId>redis.clients</groupId>
-            <artifactId>jedis</artifactId>
-            <version>5.2.0</version>
         </dependency>
         <!-- 富文本编辑器支持（审核意见富文本） -->
         <dependency>
@@ -231,11 +243,17 @@
             <version>3.3.2</version>
         </dependency>
 
-        <!-- Springfox Swagger 3.x -->
+        <!-- SpringDoc OpenAPI（替代已废弃的springfox） -->
         <dependency>
-            <groupId>io.springfox</groupId>
-            <artifactId>springfox-boot-starter</artifactId>
-            <version>3.0.0</version>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.6.0</version>
+        </dependency>
+        <!-- Swagger 2 注解兼容（旧代码使用 @Api/@ApiModel 等） -->
+        <dependency>
+            <groupId>io.swagger</groupId>
+            <artifactId>swagger-annotations</artifactId>
+            <version>1.6.14</version>
         </dependency>
 
         <!--        mail-->
@@ -264,9 +282,9 @@
 
         <!-- 若项目使用Java 9+，需添加jaxb-api依赖（OSS SDK依赖此API） -->
         <dependency>
-            <groupId>javax.xml.bind</groupId>
-            <artifactId>jaxb-api</artifactId>
-            <version>2.3.1</version>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.2</version>
         </dependency>
 
         <!-- 数学计算（余弦相似度） -->
@@ -318,6 +336,13 @@
         <artifactId>okhttp</artifactId>
         <version>4.12.0</version>
     </dependency>
+
+    <!-- JSON 结构化日志（生产环境 Logstash/Splunk/Loki 采集） -->
+    <dependency>
+        <groupId>net.logstash.logback</groupId>
+        <artifactId>logstash-logback-encoder</artifactId>
+        <version>8.0</version>
+    </dependency>
     </dependencies>
 
     <build>
@@ -327,8 +352,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
 
                 <configuration>
-                    <source>17</source>
-                    <target>17</target>
+                    <source>21</source>
+                    <target>21</target>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

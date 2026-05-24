@@ -8,13 +8,14 @@ import com.abin.checkrepeatsystem.student.dto.StudentReviewDetailDTO;
 import com.abin.checkrepeatsystem.student.vo.StudentReviewQueryReq;
 import com.abin.checkrepeatsystem.student.service.StudentReviewService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 学生端审核结果控制器：仅学生角色可访问，统一用@RequestParam传参
@@ -22,10 +23,10 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/student/reviews")
 @PreAuthorize("hasAuthority('STUDENT')") // 权限控制：仅学生可访问
+@RequiredArgsConstructor
 public class StudentReviewController {
 
-    @Resource
-    private StudentReviewService studentReviewService;
+    private final StudentReviewService studentReviewService;
 
     /**
      * 1. 学生查询自己的论文审核结果列表（分页）

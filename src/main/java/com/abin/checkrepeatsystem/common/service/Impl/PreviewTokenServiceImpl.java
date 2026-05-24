@@ -1,22 +1,22 @@
 package com.abin.checkrepeatsystem.common.service.Impl;
 
 import com.abin.checkrepeatsystem.common.service.PreviewTokenService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class PreviewTokenServiceImpl implements PreviewTokenService {
 
     private static final String PREVIEW_TOKEN_PREFIX = "preview:token:";
 
-    @Autowired
-    private StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
     @Override
     public String generatePreviewToken(Long fileId) {

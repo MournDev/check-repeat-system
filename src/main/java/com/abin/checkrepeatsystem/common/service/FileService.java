@@ -13,9 +13,9 @@ import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.minio.MinioClient;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
@@ -33,9 +33,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class FileService {
@@ -46,11 +48,11 @@ public class FileService {
     @Value("${kkfileview.base-url}")
     private String kkfileviewUrl;
     
-    @Autowired
-    private MinioClient minioClient;
+    private final MinioClient minioClient;
 
-    @Autowired
-    private MinioProp minioProp;
+    private final MinioProp minioProp;
+
+    private final Executor taskExecutor;
 
     /**
      * 初始化MinIO存储，确保bucket存在
@@ -72,20 +74,13 @@ public class FileService {
         }
     }
 
-    @Autowired
-    private FileInfoMapper fileInfoMapper;
+    private final FileInfoMapper fileInfoMapper;
 
-    @Autowired
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Autowired
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
     
-    @Autowired
-    private PaperContentMinioService paperContentMinioService;
-
-    // 用于异步处理的线程池
-    private final ExecutorService executorService = Executors.newFixedThreadPool(3);
+    private final PaperContentMinioService paperContentMinioService;
 
     // Tika实例（线程安全，可以重用）
     private final Tika tika = new Tika();
@@ -157,6 +152,7 @@ public class FileService {
         CompletableFuture.runAsync(() -> {
             try {
                 log.info("开始异步处理文件 - 文件 ID: {}, 文件名: {}", fileInfo.getId(), fileInfo.getOriginalFilename());
+
                 
                 // 1. 统计字数
                 int wordCount = countWordsFromBytes(fileBytes);
@@ -207,7 +203,7 @@ public class FileService {
                 updateInfo.setPageCount(0);
                 fileInfoMapper.updateById(updateInfo);
             }
-        }, executorService);
+        }, taskExecutor);
     }
 
     /**
@@ -246,7 +242,7 @@ public class FileService {
             }
 
             // 根据文件扩展名判断文件类型
-            String fileExtension = getFileExtension(fileName).toLowerCase();
+            String fileExtension = FileMimeTypeUtils.getFileExtension(fileName).toLowerCase();
             log.info("文件类型: {}", fileExtension);
 
             switch (fileExtension) {
@@ -271,15 +267,6 @@ public class FileService {
         }
     }
 
-    /**
-     * 获取文件扩展名
-     */
-    private String getFileExtension(String fileName) {
-        if (fileName == null || !fileName.contains(".")) {
-            return "";
-        }
-        return fileName.substring(fileName.lastIndexOf(".") + 1);
-    }
 
     /**
      * 统计PDF文件页数

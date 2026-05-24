@@ -20,7 +20,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -37,29 +36,21 @@ import java.util.stream.Collectors;
 @Service
 public class EnhancedSimilarityDetectionService {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private CheckResultMapper checkResultMapper;
+    private final CheckResultMapper checkResultMapper;
 
-    @Resource
-    private PaperContentExtractor contentExtractor;
+    private final PaperContentExtractor contentExtractor;
 
-    @Resource
-    private TextSimilarityUtils textSimilarityUtils;
+    private final TextSimilarityUtils textSimilarityUtils;
 
-    @Resource
-    private CheckProgressWebSocketService progressWebSocketService;
+    private final CheckProgressWebSocketService progressWebSocketService;
 
-    @Resource
-    private RedisTemplate<String, Object> redisTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
 
-    @Resource
-    private ApplicationMonitorService monitorService;
+    private final ApplicationMonitorService monitorService;
 
     @Value("${check.task.max-concurrent:10}")
     private int maxConcurrentTasks;
@@ -70,7 +61,22 @@ public class EnhancedSimilarityDetectionService {
     // 用于并行处理的线程池 - 使用有界队列防止OOM
     private final ThreadPoolExecutor executorService;
 
-    public EnhancedSimilarityDetectionService() {
+    public EnhancedSimilarityDetectionService(PaperInfoMapper paperInfoMapper,
+            CheckTaskMapper checkTaskMapper,
+            CheckResultMapper checkResultMapper,
+            PaperContentExtractor contentExtractor,
+            TextSimilarityUtils textSimilarityUtils,
+            CheckProgressWebSocketService progressWebSocketService,
+            RedisTemplate<String, Object> redisTemplate,
+            ApplicationMonitorService monitorService) {
+        this.paperInfoMapper = paperInfoMapper;
+        this.checkTaskMapper = checkTaskMapper;
+        this.checkResultMapper = checkResultMapper;
+        this.contentExtractor = contentExtractor;
+        this.textSimilarityUtils = textSimilarityUtils;
+        this.progressWebSocketService = progressWebSocketService;
+        this.redisTemplate = redisTemplate;
+        this.monitorService = monitorService;
         // 创建自定义线程池：核心线程数、最大线程数、有界队列
         int corePoolSize = Runtime.getRuntime().availableProcessors();
         int maxPoolSize = corePoolSize * 2;

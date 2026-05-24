@@ -1,8 +1,8 @@
 package com.abin.checkrepeatsystem.common.jwt;
 
+import com.alibaba.fastjson2.JSON;
 import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
-import jakarta.annotation.Resource;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,27 +14,28 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * JWT认证过滤器：拦截请求，解析令牌并设置认证信息到Security上下文
  */
+@RequiredArgsConstructor
 @Slf4j
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    @Resource
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
 
-    @Resource
-    private UserDetailsServiceImpl userDetailsService;
+    private final UserDetailsServiceImpl userDetailsService;
 
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
 
     // 从配置文件获取JWT请求头与前缀
     @Value("${jwt.token-header:Authorization}")
@@ -58,40 +59,50 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 
 
-            // 2. 放行登录、注册、刷新令牌接口、Actuator监控接口和预览文件接口
-            // 使用去除上下文后的路径进行匹配
-            boolean isPreviewFile = pathWithoutContext.startsWith("/api/file/preview/");
-            boolean isPreviewApi = pathWithoutContext.startsWith("/api/preview/");
-            
-            if (pathWithoutContext.startsWith("/api/auth/login")
-                    || pathWithoutContext.startsWith("/api/auth/register")
-                    || pathWithoutContext.startsWith("/api/auth/refresh-token")
-                    || pathWithoutContext.startsWith("/api/auth/forgot-password")
+            // 2. 放行登录、注册、忘记密码接口、Actuator监控接口和预览文件接口
+            boolean isPreviewFile = pathWithoutContext.startsWith("/api/v1/file/preview/");
+            boolean isPreviewApi = pathWithoutContext.startsWith("/api/v1/preview/");
+            boolean isRefreshToken = pathWithoutContext.startsWith("/api/v1/auth/refresh-token");
+
+            if (pathWithoutContext.startsWith("/api/v1/auth/login")
+                    || pathWithoutContext.startsWith("/api/v1/auth/register")
+                    || pathWithoutContext.startsWith("/api/v1/auth/forgot-password")
                     || pathWithoutContext.startsWith("/actuator")
                     || isPreviewFile
                     || isPreviewApi
             ) {
                 log.debug("放行路径: {}", requestUri);
-                // 直接放行，不进行JWT认证
                 filterChain.doFilter(request, response);
                 return;
             }
-            // 1. 从请求头获取JWT令牌
+
+            // 对refresh-token端点：解析header中的JWT并检查黑名单，但不强制要求认证
+            if (isRefreshToken) {
+                String jwt = parseJwt(request);
+                if (jwt != null && Boolean.TRUE.equals(redisTemplate.hasKey("token_blacklist:" + jwt))) {
+                    log.warn("refresh-token请求使用的令牌已在黑名单中，拒绝访问");
+                    writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, 401, "令牌已失效，请重新登录");
+                    return;
+                }
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // 3. 从请求头获取JWT令牌
             String jwt = parseJwt(request);
-            // 2. 检查令牌是否在黑名单中（已注销）
-            if (jwt != null && redisTemplate.opsForValue().get("token_blacklist:" + jwt) != null) {
+            // 4. 检查令牌是否在黑名单中（已注销）
+            if (jwt != null && Boolean.TRUE.equals(redisTemplate.hasKey("token_blacklist:" + jwt))) {
                 log.debug("令牌已被注销，拒绝访问");
                 filterChain.doFilter(request, response);
                 return;
             }
-            // 3. 验证令牌有效性
+            // 5. 验证令牌有效性
             if (jwt != null && !jwtUtils.isTokenExpired(jwt)) {
-                // 3. 从令牌中提取用户名
+                // 从令牌中提取用户名
                 String username = jwtUtils.extractUsername(jwt);
-                // 4. 从用户详情服务获取用户信息
+                // 从用户详情服务获取用户信息
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                // 5. 构建认证令牌并设置到Security上下文
-                // 登录成功后设置认证信息
+                // 构建认证令牌并设置到Security上下文
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -103,6 +114,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // 继续执行过滤链
         filterChain.doFilter(request, response);
+    }
+
+    private void writeJsonError(HttpServletResponse response, int httpStatus, int errorCode, String message) throws IOException {
+        response.setStatus(httpStatus);
+        response.setContentType("application/json;charset=UTF-8");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", httpStatus);
+        body.put("errorCode", errorCode);
+        body.put("message", message);
+        body.put("data", null);
+        response.getWriter().write(JSON.toJSONString(body));
     }
 
     /**

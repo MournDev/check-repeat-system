@@ -3,20 +3,21 @@ package com.abin.checkrepeatsystem.student.controller;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.Major;
 import com.abin.checkrepeatsystem.student.service.MajorService;
-import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/majors")
+@RequestMapping("/api/v1/majors")
 public class MajorController {
 
-    @Resource
-    private MajorService majorService;
+    private final MajorService majorService;
 
     /**
      * 根据学院ID查询专业接口

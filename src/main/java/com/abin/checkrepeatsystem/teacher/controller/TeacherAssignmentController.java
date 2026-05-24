@@ -9,21 +9,20 @@ import com.abin.checkrepeatsystem.user.service.AdvisorAssignService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.annotations.Api;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/assignment")
+@RequestMapping("/api/v1/assignment")
 @Api(tags = "教师论文分配操作")
 @Slf4j
 public class TeacherAssignmentController {
 
-    @Resource
-    private TeacherAssignmentService teacherAssignmentService;
+    private final TeacherAssignmentService teacherAssignmentService;
 
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
 
     /**
      * 获取待确认论文列表

@@ -15,9 +15,9 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherSimilarityThresholdServ
 import com.abin.checkrepeatsystem.teacher.vo.CategorySimilarityThresholdVO;
 import com.abin.checkrepeatsystem.teacher.vo.SimilarityThresholdVO;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -27,21 +27,18 @@ import java.util.List;
 /**
  * 相似度阈值设置服务实现
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherSimilarityThresholdServiceImpl implements TeacherSimilarityThresholdService {
 
-    @Autowired
-    private SimilarityThresholdMapper similarityThresholdMapper;
+    private final SimilarityThresholdMapper similarityThresholdMapper;
 
-    @Autowired
-    private CategorySimilarityThresholdMapper categorySimilarityThresholdMapper;
+    private final CategorySimilarityThresholdMapper categorySimilarityThresholdMapper;
 
-    @Autowired
-    private BaseMapper<College> collegeMapper;
+    private final BaseMapper<College> collegeMapper;
 
-    @Autowired
-    private BaseMapper<Major> majorMapper;
+    private final BaseMapper<Major> majorMapper;
 
     /**
      * 获取相似度阈值设置

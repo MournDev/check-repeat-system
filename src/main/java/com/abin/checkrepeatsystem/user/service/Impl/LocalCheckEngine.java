@@ -12,18 +12,22 @@ import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.vo.CheckResult;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.user.service.CheckEngine;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class LocalCheckEngine implements CheckEngine {
@@ -34,16 +38,14 @@ public class LocalCheckEngine implements CheckEngine {
     @Value("${check.local.cache-enabled:true}")
     private boolean cacheEnabled;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper; // 论文信息Mapper
-    @Resource
-    private TextSimilarityUtils textSimilarityUtils; // 现有相似度工具类
-    @Resource
-    private PaperContentMinioService paperContentMinioService; // MinIO存储服务
-    @Resource
-    private ReferenceExtractor referenceExtractor; // 引用文献提取器
-    @Resource
-    private TextPreprocessor textPreprocessor; // 文本预处理工具
+    private final PaperInfoMapper paperInfoMapper; // 论文信息Mapper
+    private final TextSimilarityUtils textSimilarityUtils; // 现有相似度工具类
+    private final PaperContentMinioService paperContentMinioService; // MinIO存储服务
+    private final ReferenceExtractor referenceExtractor; // 引用文献提取器
+    private final TextPreprocessor textPreprocessor; // 文本预处理工具
+
+    // SimHash 缓存：paperId → SimHash，避免每次查重重复计算
+    private final Map<Long, BigInteger> simHashCache = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -110,82 +112,82 @@ public class LocalCheckEngine implements CheckEngine {
         }
         BigInteger targetSimHash = textSimilarityUtils.calculateSimHash(segmentedTargetText);
 
-        // 2. 查询论文信息（使用PaperInfo表）
-        List<PaperInfo> paperList = paperInfoMapper.selectList(null);
+        // 2. 查询有内容的论文（contentPath 非空）
+        List<PaperInfo> paperList = paperInfoMapper.selectList(
+                new LambdaQueryWrapper<PaperInfo>()
+                        .isNotNull(PaperInfo::getContentPath)
+                        .ne(PaperInfo::getContentPath, "")
+                        .select(PaperInfo::getId, PaperInfo::getPaperTitle,
+                                PaperInfo::getContentPath, PaperInfo::getSegmentedPath)
+        );
         double maxSimilarity = 0.0;
         String mostSimilarPaperTitle = "";
         BigInteger mostSimilarSimHash = BigInteger.ZERO;
         List<CheckResult.SimilarPaper> similarPapers = new ArrayList<>();
-        List<CheckResult.SimilarFragment> similarFragments = new ArrayList<>(); // 相似片段列表
+        List<CheckResult.SimilarFragment> similarFragments = new ArrayList<>();
 
-        // 3. 遍历论文信息，逐一比对
+        // 记录候选论文（通过 SimHash 筛选的），延迟加载完整内容
+        List<PaperInfo> candidates = new ArrayList<>();
+
+        // 3. 第一轮：SimHash 快速筛选
         for (PaperInfo paper : paperList) {
             try {
-                String libraryContent = null;
-                // 检查contentPath是否为空，如果为空则尝试提取内容
-                if (paper.getContentPath() == null || paper.getContentPath().isEmpty()) {
-                    // 尝试提取内容并存储到Minio
-                    try {
-                        PaperContentExtractor extractor = SpringContextUtil.getBean(PaperContentExtractor.class);
-                        libraryContent = extractor.extractRawContent(paper.getId());
-                    } catch (Exception e) {
-                        log.warn("提取论文内容失败（ID：{}）：", paper.getId(), e);
+                // 3.1 获取或计算库中论文的 SimHash（优先缓存）
+                BigInteger librarySimHash = simHashCache.get(paper.getId());
+                if (librarySimHash == null) {
+                    String segmentedLibraryText = null;
+                    if (paper.getSegmentedPath() != null && !paper.getSegmentedPath().isEmpty()) {
+                        segmentedLibraryText = paperContentMinioService.readSegmentedText(paper.getSegmentedPath());
+                    }
+                    if (segmentedLibraryText == null || segmentedLibraryText.isEmpty()) {
+                        // 无分词缓存，跳过（后续需要时再加载完整内容）
+                        candidates.add(paper);
                         continue;
                     }
-                } else {
-                    // 从MinIO读取库中论文内容
-                    libraryContent = paperContentMinioService.readPaperContent(paper.getContentPath());
+                    librarySimHash = textSimilarityUtils.calculateSimHash(segmentedLibraryText);
+                    simHashCache.put(paper.getId(), librarySimHash);
                 }
+
+                int hammingDistance = textSimilarityUtils.calculateHammingDistance(targetSimHash, librarySimHash);
+                if (hammingDistance <= textSimilarityUtils.getHammingThreshold()) {
+                    candidates.add(paper);
+                }
+            } catch (Exception e) {
+                log.warn("SimHash计算失败（ID：{}）：", paper.getId(), e);
+            }
+        }
+
+        // 4. 第二轮：对候选论文进行精细比对（仅此时加载完整内容）
+        for (PaperInfo paper : candidates) {
+            try {
+                String libraryContent = paperContentMinioService.readPaperContent(paper.getContentPath());
                 if (libraryContent == null || libraryContent.isEmpty()) {
                     continue;
                 }
-                
-                // 预处理库中论文（使用MinIO中的内容进行分词）
-                String segmentedLibraryText = null;
-                if (paper.getSegmentedPath() != null && !paper.getSegmentedPath().isEmpty()) {
-                    segmentedLibraryText = paperContentMinioService.readSegmentedText(paper.getSegmentedPath());
-                }
-                if (segmentedLibraryText == null || segmentedLibraryText.isEmpty()) {
-                    // 如果MinIO中没有分词结果，则实时处理
-                    segmentedLibraryText = IKAnalyzerUtils.segmentToString(libraryContent);
-                }
-                
-                if (segmentedLibraryText.isEmpty()) continue;
 
-                // 3.1 SimHash快速筛选（海明距离超过阈值，直接跳过）
-                BigInteger librarySimHash = textSimilarityUtils.calculateSimHash(segmentedLibraryText);
-                int hammingDistance = textSimilarityUtils.calculateHammingDistance(targetSimHash, librarySimHash);
-                if (hammingDistance > textSimilarityUtils.getHammingThreshold()) {
-                    continue; // 低相似，无需精细计算
-                }
-
-                // 3.2 综合相似度计算（词级+字符级组合，模拟知网规则）
                 double similarity = textSimilarityUtils.calculateFinalSimilarity(contentWithoutReferences, libraryContent);
 
-                // 3.3 记录相似度高于阈值的论文
-                if (similarity >= 5.0) { // 相似度高于5%的论文
+                if (similarity >= 5.0) {
                     CheckResult.SimilarPaper similarPaper = new CheckResult.SimilarPaper();
                     similarPaper.setPaperId(paper.getId());
                     similarPaper.setPaperTitle(paper.getPaperTitle());
                     similarPaper.setSimilarity(BigDecimal.valueOf(similarity).setScale(2, BigDecimal.ROUND_HALF_UP));
                     similarPapers.add(similarPaper);
 
-                    // 3.3.1 提取相似片段
                     List<CheckResult.SimilarFragment> fragments = extractSimilarFragments(
-                            contentWithoutReferences, libraryContent, 
+                            contentWithoutReferences, libraryContent,
                             paper.getId(), paper.getPaperTitle());
                     similarFragments.addAll(fragments);
                 }
 
-                // 3.4 记录最高相似度
                 if (similarity > maxSimilarity) {
                     maxSimilarity = similarity;
-                    mostSimilarPaperTitle = paper.getPaperTitle(); // 替代 getTitle()
-                    mostSimilarSimHash = librarySimHash;
+                    mostSimilarPaperTitle = paper.getPaperTitle();
+                    mostSimilarSimHash = textSimilarityUtils.calculateSimHash(
+                            IKAnalyzerUtils.segmentToString(libraryContent));
                 }
             } catch (Exception e) {
                 log.error("比对库中论文失败（ID：{}）：", paper.getId(), e);
-                continue; // 单篇论文比对失败，不影响整体流程
             }
         }
 

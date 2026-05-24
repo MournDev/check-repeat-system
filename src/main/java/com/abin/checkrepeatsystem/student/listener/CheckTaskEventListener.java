@@ -23,8 +23,8 @@ import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.common.websocket.handler.CheckProgressWebSocketHandler;
-import jakarta.annotation.Resource;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,32 +42,28 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 
 /**
  * 查重任务事件监听器
  * 异步处理查重任务的执行
  */
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class CheckTaskEventListener {
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private CheckTaskStateMachine stateMachine;
+    private final CheckTaskStateMachine stateMachine;
 
-    @Resource
-    private CheckEngineManager checkEngineManager;
+    private final CheckEngineManager checkEngineManager;
 
-    @Resource
-    private PdfReportGenerator pdfReportGenerator;
+    private final PdfReportGenerator pdfReportGenerator;
 
 
 
@@ -99,16 +95,36 @@ public class CheckTaskEventListener {
     @Value("${check.task.timeout:3600000}")
     private long taskTimeout;
 
+    @Value("${check.task.max-concurrent:10}")
+    private int maxConcurrentTasks;
+
+    @Value("${report.storage.base-path:/data/report}")
+    private String reportStorageBasePath;
+
+    private Semaphore checkSemaphore;
+
     private final Tika tika = new Tika();
+
+    @PostConstruct
+    private void initSemaphore() {
+        this.checkSemaphore = new Semaphore(maxConcurrentTasks);
+        log.info("查重信号量初始化: maxConcurrent={}", maxConcurrentTasks);
+    }
 
     /**
      * 处理任务创建事件
      */
-    @Async
+    @Async("checkTaskExecutor")
     @EventListener
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void handleCheckTaskCreatedEvent(CheckTaskCreatedEvent event) {
         Long taskId = event.getTaskId();
+        try {
+            checkSemaphore.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
         try {
             // 从事件中恢复用户上下文（异步线程中SecurityContext丢失，通过事件传递）
             if (event.getOperatorUserId() != null) {
@@ -215,6 +231,7 @@ public class CheckTaskEventListener {
                 log.error("更新任务失败状态时发生异常", ex);
             }
         } finally {
+            checkSemaphore.release();
             UserContextHolder.removeUser();
         }
     }
@@ -238,7 +255,7 @@ public class CheckTaskEventListener {
             progressMessage.put("message", message);
             progressMessage.put("timestamp", System.currentTimeMillis());
 
-            String messageJson = com.alibaba.fastjson.JSON.toJSONString(progressMessage);
+            String messageJson = com.alibaba.fastjson2.JSON.toJSONString(progressMessage);
 
             // 发送消息
             CheckProgressWebSocketHandler.sendProgressMessage(taskId.toString(), messageJson);
@@ -338,7 +355,7 @@ public class CheckTaskEventListener {
         String reportNo = "REPORT" + System.currentTimeMillis();
         
         // 2. 生成报告路径
-        String reportPath = "D:/data/report/" + LocalDateTime.now().format(
+        String reportPath = reportStorageBasePath + "/" + LocalDateTime.now().format(
             DateTimeFormatter.ofPattern("yyyy/MM/dd")) + "/" + reportNo + ".pdf";
         
         // 3. 构建报告实体
@@ -347,7 +364,7 @@ public class CheckTaskEventListener {
         checkReport.setPaperId(checkTask.getPaperId());
         checkReport.setReportNo(reportNo);
         checkReport.setTotalSimilarity(checkRate);
-        checkReport.setRepeatDetails(com.alibaba.fastjson.JSON.toJSONString(repeatDetails));
+        checkReport.setRepeatDetails(com.alibaba.fastjson2.JSON.toJSONString(repeatDetails));
         checkReport.setReportPath(reportPath);
         checkReport.setReportType("pdf");
         checkReport.setReportGenerateTime(LocalDateTime.now());

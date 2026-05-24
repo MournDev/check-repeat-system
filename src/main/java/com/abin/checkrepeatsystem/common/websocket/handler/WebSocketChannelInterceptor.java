@@ -2,8 +2,8 @@ package com.abin.checkrepeatsystem.common.websocket.handler;
 
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
 import com.abin.checkrepeatsystem.common.websocket.WebSocketMessage;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -18,12 +18,12 @@ import java.util.List;
  * WebSocket消息拦截器
  * 用于验证用户身份和处理消息
  */
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class WebSocketChannelInterceptor implements ChannelInterceptor {
 
-    @Autowired
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {

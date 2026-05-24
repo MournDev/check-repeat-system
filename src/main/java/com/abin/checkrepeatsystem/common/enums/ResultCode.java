@@ -26,7 +26,7 @@ public enum ResultCode {
     // ====================== 2. 资源相关错误（HTTP 404） ======================
     RESOURCE_NOT_FOUND(40401, HttpStatus.NOT_FOUND, "资源不存在"),
     RESOURCE_DELETED(40402, HttpStatus.NOT_FOUND, "资源已删除"),
-    RESOURCE_NO_PERMISSION(40403, HttpStatus.NOT_FOUND, "无权限访问该资源"),
+    RESOURCE_NO_PERMISSION(40306, HttpStatus.FORBIDDEN, "无权限访问该资源"),
 
     // 限流相关
     TOO_MANY_REQUESTS(429, HttpStatus.TOO_MANY_REQUESTS, "请求过于频繁，请稍后重试"),

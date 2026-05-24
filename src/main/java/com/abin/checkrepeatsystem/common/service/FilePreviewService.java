@@ -17,11 +17,15 @@ public interface FilePreviewService {
 
     /**
      * 智能预览（自动选择预览方式）
+     * @param fileId 文件ID
+     * @param token 预览令牌（可选）
      */
-    ResponseEntity<?> smartPreview(Long fileId);
+    ResponseEntity<?> smartPreview(Long fileId, String token);
 
     /**
      * 智能预览报告
+     * @param paperId 论文ID
+     * @param token 预览令牌（可选）
      */
-    ResponseEntity<?> smartPreviewReport(String paperId);
+    ResponseEntity<?> smartPreviewReport(String paperId, String token);
 }

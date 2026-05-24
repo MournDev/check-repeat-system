@@ -3,12 +3,12 @@ package com.abin.checkrepeatsystem.common.config;
 import com.abin.checkrepeatsystem.common.jwt.JwtAuthenticationEntryPoint;
 import com.abin.checkrepeatsystem.common.jwt.JwtAuthenticationFilter;
 import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -19,11 +19,14 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * Spring Security配置：权限控制、JWT集成、安全过滤
@@ -31,16 +34,14 @@ import java.util.Arrays;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity // 启用方法级别的权限控制
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Autowired
-    private UserDetailsServiceImpl userDetailsService;
+    private final UserDetailsServiceImpl userDetailsService;
 
-    @Autowired
-    private JwtAuthenticationEntryPoint unauthorizedHandler;
+    private final JwtAuthenticationEntryPoint unauthorizedHandler;
 
-    @Autowired
-    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     /**
      * 密码编码器（BCrypt加密）
@@ -77,9 +78,13 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         // 开发环境默认允许本地前端，生产环境通过环境变量指定
-        String allowedOrigins = System.getenv().getOrDefault("CORS_ALLOWED_ORIGINS",
-            "http://localhost:3000,http://127.0.0.1:3000");
-        config.setAllowedOriginPatterns(Arrays.asList(allowedOrigins.split(",")));
+        String allowedOrigins = System.getenv().getOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173");
+        config.setAllowedOriginPatterns(
+                java.util.Arrays.stream(allowedOrigins.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .collect(java.util.stream.Collectors.toList())
+        );
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.addAllowedHeader("*");
         config.setAllowCredentials(true);
@@ -107,52 +112,55 @@ public class SecurityConfig {
                 // 允许iframe嵌入预览页面（禁用默认的 X-Frame-Options: DENY）
                 .headers(headers -> headers
                         .frameOptions(frameOptions -> frameOptions.sameOrigin())
-                        .xssProtection(xss -> xss.disable())
-                        .contentTypeOptions(org.springframework.security.config.Customizer.withDefaults())
+                        .xssProtection(xss -> xss.headerValue(XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK))
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31536000))
                 )
                 // 配置URL权限规则
                 .authorizeHttpRequests(auth -> auth
                         // 放行公开接口
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/avatar/**").permitAll()
+                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/avatar/**").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/**").hasAuthority("ADMIN")
                         // WebSocket连接路径放行
                         .requestMatchers("/ws/**").permitAll()
                         // 预览文件访问接口放行（通过临时令牌验证）
-                        .requestMatchers("/api/file/preview/**").permitAll()
-                        // 智能预览接口放行（在iframe中加载，无法携带Auth header）
-                        .requestMatchers("/api/file/smartPreview").permitAll()
-                        .requestMatchers("/api/file/smartPreviewReport").permitAll()
+                        .requestMatchers("/api/v1/file/preview/**").permitAll()
+                        // 智能预览接口放行（iframe加载，通过临时预览令牌验证）
+                        .requestMatchers("/api/v1/file/smartPreview").permitAll()
+                        .requestMatchers("/api/v1/file/smartPreviewReport").permitAll()
                         // 预览API接口放行（获取预览信息不需要认证）
-                        .requestMatchers("/api/preview/**").permitAll()
-                        // 报告下载接口放行（kkFileView回调，通过报告ID访问）
-                        .requestMatchers("/api/file/downloadReport/**").permitAll()
+                        .requestMatchers("/api/v1/preview/**").permitAll()
+                        // 报告下载接口需要认证
+                        .requestMatchers("/api/v1/file/downloadReport/**").authenticated()
                         // MinIO 接口需要认证
-                        .requestMatchers("/api/minio/**").authenticated()
+                        .requestMatchers("/api/v1/minio/**").authenticated()
                         // 文件下载接口需要认证
-                        .requestMatchers("/api/file/download/**").authenticated()
-                        .requestMatchers("/api/file/download/export").authenticated()
+                        .requestMatchers("/api/v1/file/download/**").authenticated()
+                        .requestMatchers("/api/v1/file/download/export").authenticated()
                         // 学生接口：允许学生、教师和管理员访问
-                        .requestMatchers("/api/student/check-tasks/taskDetail").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
-                        .requestMatchers("/api/student/dashboard/advisor").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
-                        .requestMatchers("/api/student/reports/list").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/v1/student/check-tasks/taskDetail").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/v1/student/dashboard/advisor").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/v1/student/reports/list").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
                         // 查重报告接口：允许学生、教师和管理员访问（根据论文ID验证权限）
-                        .requestMatchers("/api/student/check-report/**").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/v1/student/check-report/**").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
                         // 其他学生接口：仅学生角色可访问
-                        .requestMatchers("/api/student/**").hasAuthority("STUDENT")
+                        .requestMatchers("/api/v1/student/**").hasAuthority("STUDENT")
                         // 教师接口：仅教师角色可访问
-                        .requestMatchers("/api/teacher/**").hasAuthority("TEACHER")
+                        .requestMatchers("/api/v1/teacher/**").hasAuthority("TEACHER")
                         // 管理员接口：仅管理员角色可访问
-                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
+                        .requestMatchers("/api/v1/admin/**").hasAuthority("ADMIN")
                         // 知识库公开接口（帮助中心，无需登录）
-                        .requestMatchers(HttpMethod.GET, "/api/knowledge/categories").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/knowledge/articles").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/knowledge/articles/popular").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/knowledge/articles/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/knowledge/search").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/categories").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/articles").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/articles/popular").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/articles/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/search").permitAll()
                         // 知识库管理接口（仅管理员）
-                        .requestMatchers("/api/knowledge/admin/**").hasAuthority("ADMIN")
+                        .requestMatchers("/api/v1/knowledge/admin/**").hasAuthority("ADMIN")
                         // 其他接口需认证
                         .anyRequest().authenticated()
                 )

@@ -4,23 +4,24 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.service.EnhancedCheckTaskService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
-import jakarta.annotation.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 增强版查重任务控制器
  * 提供更完善的API接口和功能
  */
 @RestController
-@RequestMapping("/api/enhanced/check-tasks")
+@RequestMapping("/api/v1/enhanced/check-tasks")
 @PreAuthorize("hasAuthority('STUDENT')")
+@RequiredArgsConstructor
 public class EnhancedCheckTaskController {
     
-    @Resource
-    private EnhancedCheckTaskService enhancedCheckTaskService;
+    private final EnhancedCheckTaskService enhancedCheckTaskService;
     
     /**
      * 创建增强版查重任务

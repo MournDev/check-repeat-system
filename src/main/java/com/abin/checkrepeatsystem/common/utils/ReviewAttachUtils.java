@@ -1,7 +1,7 @@
 package com.abin.checkrepeatsystem.common.utils;
 
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import jakarta.annotation.PostConstruct;
 import lombok.Data;

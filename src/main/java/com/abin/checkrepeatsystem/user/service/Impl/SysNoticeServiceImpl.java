@@ -10,7 +10,7 @@ import com.abin.checkrepeatsystem.user.vo.PageResultVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -23,16 +23,14 @@ import java.util.*;
 /**
  * 站内信服务实现（增强版：含分页、统计、批量操作等）
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice> implements SysNoticeService {
 
-    @Resource
-    private SysNoticeMapper sysNoticeMapper;
-    @Resource
-    private SysUserMapper sysUserMapper;
-    @Resource
-    private IntelligentNotificationService intelligentNotificationService;
+    private final SysNoticeMapper sysNoticeMapper;
+    private final SysUserMapper sysUserMapper;
+    private final IntelligentNotificationService intelligentNotificationService;
 
     // 通知类型映射
     private static final Map<Integer, String> NOTICE_TYPE_MAP = new HashMap<>();
@@ -102,7 +100,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
                     log.warn("用户邮箱不存在，无法发送邮箱通知：userId={}", userId);
                 }
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送通知失败：userId={}, noticeType={}", userId, noticeType, e);
             // 通知失败不阻断主业务（如提交/查重），仅记录日志
         }
@@ -116,7 +114,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
                 sendNotice(userId, noticeType, title, content, sendEmail);
             }
             log.info("批量发送通知完成：用户数量={}, noticeType={}", userIds.size(), noticeType);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("批量发送通知失败", e);
         }
     }
@@ -189,7 +187,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
             }
             
             return priorityCountMap;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("按优先级统计未读通知失败：userId={}", userId, e);
             return Collections.emptyMap();
         }
@@ -208,7 +206,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
             
             processNoticeList(noticeList);
             return noticeList;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取最新通知失败：userId={}", userId, e);
             return Collections.emptyList();
         }
@@ -245,6 +243,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
                     new LambdaQueryWrapper<SysNotice>()
                             .eq(SysNotice::getUserId, userId)
                             .eq(SysNotice::getIsDeleted, 0)
+                            .last("LIMIT 500")
             );
             
             for (SysNotice notice : notices) {
@@ -262,7 +261,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
             stats.put("priorityStats", priorityStats);
             
             return stats;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取通知统计信息失败：userId={}", userId, e);
             return Collections.emptyMap();
         }
@@ -302,7 +301,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
                 }
             }
             return successCount;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("批量标记通知已读失败：userId={}", userId, e);
             return 0;
         }
@@ -344,7 +343,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
                 }
             }
             return successCount;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("批量删除通知失败：userId={}", userId, e);
             return 0;
         }
@@ -363,7 +362,7 @@ public class SysNoticeServiceImpl extends ServiceImpl<SysNoticeMapper, SysNotice
                             .eq(SysNotice::getIsDeleted, 0)
             );
             return rows;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("清空所有通知失败：userId={}", userId, e);
             return 0;
         }

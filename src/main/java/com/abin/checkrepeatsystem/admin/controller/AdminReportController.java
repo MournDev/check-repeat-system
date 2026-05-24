@@ -2,21 +2,21 @@ package com.abin.checkrepeatsystem.admin.controller;
 
 import com.abin.checkrepeatsystem.admin.service.ReportService;
 import com.abin.checkrepeatsystem.common.Result;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
+@RequiredArgsConstructor
 @Slf4j
 @RestController
-@RequestMapping("/api/admin/reports")
+@RequestMapping("/api/v1/admin/reports")
 public class AdminReportController {
 
-    @Resource
-    private ReportService reportService;
+    private final ReportService reportService;
 
     @GetMapping("/list")
     public Result<Map<String, Object>> getReportList(

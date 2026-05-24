@@ -1,33 +1,28 @@
 package com.abin.checkrepeatsystem.student.controller;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
-import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.annotation.RateLimit;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
-import jakarta.annotation.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import lombok.RequiredArgsConstructor;
+
 
 @RestController
-@RequestMapping("/api/check")
+@RequestMapping("/api/v1/check")
 @PreAuthorize("hasAuthority('STUDENT')")
+@RequiredArgsConstructor
 public class CheckTaskController {
-    @Resource
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
     /**
      * 创建查重任务
      */
     @PostMapping("/create")
+    @RateLimit(maxRequests = 5, windowSeconds = 60, message = "查重请求过于频繁，请60秒后重试")
     public Result<CheckResultVO> createCheckTask(@RequestParam Long paperId) {
-        try {
-            return checkTaskService.createCheckTask(paperId);
-        } catch (BusinessException e) {
-            return Result.error(ResultCode.SYSTEM_ERROR, "系统异常");
-        } catch (Exception e) {
-            return Result.error(ResultCode.SYSTEM_ERROR, "系统异常：");
-        }
+        return checkTaskService.createCheckTask(paperId);
     }
 
     /**
@@ -35,13 +30,7 @@ public class CheckTaskController {
      */
     @GetMapping("/result")
     public Result<CheckResultVO> getCheckResult(@RequestParam Long paperId) {
-        try {
-            CheckResultVO resultVO = checkTaskService.getCheckResult(paperId);
-            return Result.success("查询成功", resultVO);
-        } catch (BusinessException e) {
-            return Result.error(ResultCode.SYSTEM_ERROR,"系统异常");
-        } catch (Exception e) {
-            return Result.error(ResultCode.SYSTEM_ERROR, "系统异常：");
-        }
+        CheckResultVO resultVO = checkTaskService.getCheckResult(paperId);
+        return Result.success("查询成功", resultVO);
     }
 }

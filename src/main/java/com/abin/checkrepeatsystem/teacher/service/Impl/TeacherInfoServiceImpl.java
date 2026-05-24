@@ -15,7 +15,7 @@ import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
 import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -26,24 +26,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, TeacherInfo> implements TeacherInfoService{
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private TeacherInfoMapper teacherInfoMapper;
+    private final TeacherInfoMapper teacherInfoMapper;
 
-    @Resource
-    private PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
     
-    @Resource
-    private CollegeAndMajorService collegeAndMajorService;
+    private final CollegeAndMajorService collegeAndMajorService;
     
-    @Resource
-    private ConversationMemberMapper conversationMemberMapper;
+    private final ConversationMemberMapper conversationMemberMapper;
     @Override
     public Result<String> updateInfo(UpdateTeacherInfoReq updateReq){
         try {
@@ -165,20 +161,24 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
     }
 
     @Override
-    public Result<String> changePasswordByUserId(Long userId, String newPassword) {
-        if (userId == null || newPassword == null){
-            return Result.error(ResultCode.PARAM_ERROR, "用户ID或密码不能为空");
+    public Result<String> changePasswordByUserId(Long userId, String oldPassword, String newPassword) {
+        if (userId == null || oldPassword == null || newPassword == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "参数不能为空");
         }
-        
-        // 添加密码长度验证
+
         if (newPassword.length() < 6 || newPassword.length() > 50) {
             return Result.error(ResultCode.PARAM_ERROR, "密码长度必须在6-50位之间");
         }
-        
+
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
             return Result.error(ResultCode.RESOURCE_NOT_FOUND, "用户不存在");
         }
+
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            return Result.error(ResultCode.PARAM_ERROR, "旧密码不正确");
+        }
+
         String encodePassword = passwordEncoder.encode(newPassword);
         user.setPassword(encodePassword);
         sysUserMapper.updateById(user);

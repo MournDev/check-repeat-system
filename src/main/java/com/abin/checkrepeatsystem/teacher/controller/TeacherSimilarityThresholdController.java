@@ -4,18 +4,19 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.teacher.dto.SimilarityThresholdDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherSimilarityThresholdService;
 import com.abin.checkrepeatsystem.teacher.vo.SimilarityThresholdVO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 相似度阈值设置控制器
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/teacher/similarity-thresholds")
+@RequestMapping("/api/v1/teacher/similarity-thresholds")
 public class TeacherSimilarityThresholdController {
 
-    @Autowired
-    private TeacherSimilarityThresholdService similarityThresholdService;
+    private final TeacherSimilarityThresholdService similarityThresholdService;
 
     /**
      * 获取相似度阈值设置

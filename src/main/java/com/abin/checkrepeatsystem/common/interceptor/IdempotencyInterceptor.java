@@ -2,9 +2,9 @@ package com.abin.checkrepeatsystem.common.interceptor;
 
 import com.abin.checkrepeatsystem.common.annotation.Idempotent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 幂等性拦截器 — 基于Redis检查Idempotency-Key
  */
+@RequiredArgsConstructor
 @Slf4j
 @Component
 public class IdempotencyInterceptor implements HandlerInterceptor {
@@ -25,8 +26,7 @@ public class IdempotencyInterceptor implements HandlerInterceptor {
     private static final String IDEMPOTENT_KEY_PREFIX = "idempotent:";
     private static final String HEADER_NAME = "Idempotency-Key";
 
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 

@@ -5,22 +5,23 @@ import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
 import com.abin.checkrepeatsystem.student.service.CheckReportService;
 import com.abin.checkrepeatsystem.student.vo.ReportDownloadReq;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 学生端查重报告控制器：仅学生角色可访问
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/student/reports")
+@RequestMapping("/api/v1/student/reports")
 public class StudentReportController {
 
-    @Resource
-    private CheckReportService checkReportService;
+    private final CheckReportService checkReportService;
 
     /**
      * 1. 学生预览报告详情

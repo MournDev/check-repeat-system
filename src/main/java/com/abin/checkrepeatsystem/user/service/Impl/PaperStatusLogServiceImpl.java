@@ -4,15 +4,16 @@ import com.abin.checkrepeatsystem.pojo.entity.PaperStatusLog;
 import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
 import com.abin.checkrepeatsystem.user.service.PaperStatusLogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import lombok.RequiredArgsConstructor;
 
 
+
+@RequiredArgsConstructor
 @Service
 public class PaperStatusLogServiceImpl extends ServiceImpl<PaperStatusLogMapper, PaperStatusLog> implements PaperStatusLogService {
 
-    @Resource
-    private PaperStatusLogMapper paperStatusLogMapper;
+    private final PaperStatusLogMapper paperStatusLogMapper;
 
     @Override
     public void recordStatusLog(Long paperId, String oldStatus, String newStatus,

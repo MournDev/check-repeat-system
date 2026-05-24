@@ -3,18 +3,19 @@ package com.abin.checkrepeatsystem.student.controller;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.student.service.CheckReportService;
-import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.*;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 查重报告通用控制器：支持学生、教师、管理员三种角色访问
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/student")
+@RequestMapping("/api/v1/student")
 public class CheckReportController {
 
-    @Resource
-    private CheckReportService checkReportService;
+    private final CheckReportService checkReportService;
 
     /**
      * 根据论文ID获取查重报告

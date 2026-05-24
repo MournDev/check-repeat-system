@@ -16,10 +16,9 @@ import com.abin.checkrepeatsystem.teacher.vo.StudentVO;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -29,21 +28,18 @@ import java.util.List;
 /**
  * 学生分组管理服务实现
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class TeacherStudentGroupServiceImpl implements TeacherStudentGroupService {
 
-    @Autowired
-    private StudentGroupMapper studentGroupMapper;
+    private final StudentGroupMapper studentGroupMapper;
 
-    @Autowired
-    private StudentGroupStudentRelMapper studentGroupStudentRelMapper;
+    private final StudentGroupStudentRelMapper studentGroupStudentRelMapper;
 
-    @Autowired
-    private BaseMapper<SysUser> sysUserMapper;
+    private final BaseMapper<SysUser> sysUserMapper;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
     /**
      * 获取分组列表

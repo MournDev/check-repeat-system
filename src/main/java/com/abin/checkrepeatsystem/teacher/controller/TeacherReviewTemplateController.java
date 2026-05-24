@@ -4,20 +4,21 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewTemplateDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewTemplateService;
 import com.abin.checkrepeatsystem.teacher.vo.ReviewTemplateVO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 审核意见模板控制器
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/teacher/review-templates")
+@RequestMapping("/api/v1/teacher/review-templates")
 public class TeacherReviewTemplateController {
 
-    @Autowired
-    private TeacherReviewTemplateService reviewTemplateService;
+    private final TeacherReviewTemplateService reviewTemplateService;
 
     /**
      * 获取模板列表

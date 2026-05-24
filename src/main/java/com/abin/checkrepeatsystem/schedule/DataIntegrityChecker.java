@@ -9,11 +9,12 @@ import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,18 +24,16 @@ import java.util.stream.Collectors;
  * 数据完整性校验定时任务
  * 用于检查和修复查重相关数据的一致性问题
  */
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class DataIntegrityChecker {
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private CheckResultMapper checkResultMapper;
+    private final CheckResultMapper checkResultMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
     /**
      * 每天凌晨 3 点执行数据完整性检查
@@ -69,6 +68,7 @@ public class DataIntegrityChecker {
      * 修复缺失的查重结果记录
      * 场景：check_task 状态为 completed，但 check_result 表无对应记录
      */
+    @Transactional
     private int fixMissingCheckResults() {
         log.info("检查缺失的查重结果记录...");
         
@@ -125,6 +125,7 @@ public class DataIntegrityChecker {
      * 修复论文信息与查重结果不一致的问题
      * 场景：paper_info.similarity_rate 与最新 check_result.repeat_rate 不一致
      */
+    @Transactional
     private int fixInconsistentPaperInfo() {
         log.info("检查论文信息与查重结果的一致性...");
         
@@ -178,6 +179,7 @@ public class DataIntegrityChecker {
      * 修复未设置查重完成标记的记录
      * 场景：有完成的查重任务，但 paper_info.check_completed 为 null 或 0
      */
+    @Transactional
     private int fixMissingCheckCompletedFlag() {
         log.info("检查缺失的查重完成标记...");
         

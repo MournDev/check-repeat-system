@@ -3,10 +3,10 @@ package com.abin.checkrepeatsystem.notification.service;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.SystemMessage;
 import com.abin.checkrepeatsystem.user.service.MessageService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,12 +15,12 @@ import java.util.Map;
  * 消息通知服务
  * 专门处理师生互动、系统公告、状态变更提醒等通知功能
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class NotificationService {
 
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
 
     /**
      * 发送论文状态变更通知给学生
@@ -62,7 +62,7 @@ public class NotificationService {
                         studentId, paperId, newStatus);
             }
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送论文状态变更通知失败: studentId={}, paperId={}", studentId, paperId, e);
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "发送通知失败: " + e.getMessage());
@@ -109,7 +109,7 @@ public class NotificationService {
                         studentId, paperId, reviewResult);
             }
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送论文审核结果通知失败: studentId={}, paperId={}", studentId, paperId, e);
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "发送通知失败: " + e.getMessage());
@@ -152,7 +152,7 @@ public class NotificationService {
                         teacherId, studentId, paperId);
             }
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送新论文提交通知失败: teacherId={}, studentId={}", teacherId, studentId, e);
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "发送通知失败: " + e.getMessage());
@@ -190,7 +190,7 @@ public class NotificationService {
                 log.info("系统公告发送成功: targetType={}, title={}", targetType, title);
             }
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送系统公告失败: targetType={}, title={}", targetType, title, e);
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "发送公告失败: " + e.getMessage());
@@ -233,7 +233,7 @@ public class NotificationService {
                         studentId, paperId, similarityRate);
             }
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送查重结果通知失败: studentId={}, paperId={}", studentId, paperId, e);
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "发送通知失败: " + e.getMessage());
@@ -265,7 +265,7 @@ public class NotificationService {
                 log.info("紧急通知发送成功: userId={}, title={}", userId, title);
             }
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送紧急通知失败: userId={}, title={}", userId, title, e);
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "发送紧急通知失败: " + e.getMessage());

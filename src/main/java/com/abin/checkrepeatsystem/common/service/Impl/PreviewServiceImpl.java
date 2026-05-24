@@ -13,8 +13,8 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.http.Method;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -28,24 +28,20 @@ import java.util.concurrent.TimeUnit;
 /**
  * 预览服务实现
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class PreviewServiceImpl implements PreviewService {
 
-    @Autowired
-    private FileService fileService;
+    private final FileService fileService;
 
-    @Autowired
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Autowired
-    private MinioClient minioClient;
+    private final MinioClient minioClient;
 
-    @Autowired
-    private MinioProp minioProp;
+    private final MinioProp minioProp;
 
-    @Autowired
-    private PreviewTokenService previewTokenService;
+    private final PreviewTokenService previewTokenService;
 
     @Value("${kkfileview.base-url}")
     private String kkfileviewUrl;
@@ -59,7 +55,7 @@ public class PreviewServiceImpl implements PreviewService {
     @Value("${server.servlet.context-path}")
     private String contextPath;
 
-    @Value("${server.external-address:192.168.30.1}")
+    @Value("${server.external-address:localhost}")
     private String externalAddress;
 
     private final RestTemplate restTemplate = new RestTemplate();

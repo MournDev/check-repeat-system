@@ -19,8 +19,8 @@ import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.write.builder.ExcelWriterBuilder;
 import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.StrUtil;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -37,18 +37,15 @@ import java.util.*;
 /**
  * 数据统计服务实现类：完整实现提交趋势、查重结果、审核效率统计与Excel导出
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class DataStatServiceImpl implements DataStatService {
 
-    @Resource
-    private PaperSubmitMapper paperSubmitMapper;
-    @Resource
-    private CheckResultMapper checkResultMapper;
-    @Resource
-    private TeacherAuditMapper teacherAuditMapper;
-    @Resource
-    private SysUserMapper SysUserMapper;
+    private final PaperSubmitMapper paperSubmitMapper;
+    private final CheckResultMapper checkResultMapper;
+    private final TeacherAuditMapper teacherAuditMapper;
+    private final SysUserMapper SysUserMapper;
 
     // ========================== 1. 提交趋势统计 ==========================
     @Override

@@ -16,7 +16,6 @@ import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,23 +32,17 @@ import java.util.*;
 @Slf4j
 public class StudentDashboardService {
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
     
-    @Resource
-    private FileInfoMapper fileInfoMapper;
+    private final FileInfoMapper fileInfoMapper;
     
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
     
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
     
-    @Resource
-    private SystemConfigMapper systemConfigMapper;
+    private final SystemConfigMapper systemConfigMapper;
 
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
 
     public StudentDashboardStatsDTO getDashboardStats(Long studentId) {
         StudentDashboardStatsDTO stats = new StudentDashboardStatsDTO();

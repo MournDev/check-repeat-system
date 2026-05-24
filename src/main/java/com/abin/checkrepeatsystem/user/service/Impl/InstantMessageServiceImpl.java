@@ -8,24 +8,24 @@ import com.abin.checkrepeatsystem.user.service.InstantMessageService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
  * 即时通讯服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class InstantMessageServiceImpl implements InstantMessageService {
 
-    @Autowired
-    private InstantMessageMapper instantMessageMapper;
+    private final InstantMessageMapper instantMessageMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)

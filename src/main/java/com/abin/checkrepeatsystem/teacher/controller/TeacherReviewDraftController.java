@@ -5,7 +5,7 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewDraftDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewDraftService;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -17,12 +17,12 @@ import java.util.List;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/teacher/review-drafts")
+@RequestMapping("/api/v1/teacher/review-drafts")
 @PreAuthorize("hasAuthority('TEACHER')")
+@RequiredArgsConstructor
 public class TeacherReviewDraftController {
 
-    @Resource
-    private TeacherReviewDraftService reviewDraftService;
+    private final TeacherReviewDraftService reviewDraftService;
 
     /**
      * 保存或更新审核草稿
@@ -37,14 +37,9 @@ public class TeacherReviewDraftController {
             @RequestParam(value = "reviewStatus", required = false) String reviewStatus,
             @RequestParam(value = "reviewOpinion", required = false) String reviewOpinion,
             @RequestParam(value = "reviewAttach", required = false) String reviewAttach) {
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("保存审核草稿 - teacherId: {}, paperId: {}", teacherId, paperId);
-            return reviewDraftService.saveDraft(paperId, teacherId, reviewStatus, reviewOpinion, reviewAttach);
-        } catch (Exception e) {
-            log.error("保存草稿失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "保存草稿失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("保存审核草稿 - teacherId: {}, paperId: {}", teacherId, paperId);
+        return reviewDraftService.saveDraft(paperId, teacherId, reviewStatus, reviewOpinion, reviewAttach);
     }
 
     /**
@@ -53,14 +48,9 @@ public class TeacherReviewDraftController {
      */
     @GetMapping("/get")
     public Result<ReviewDraftDTO> getDraft(@RequestParam("paperId") Long paperId) {
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("获取审核草稿 - teacherId: {}, paperId: {}", teacherId, paperId);
-            return reviewDraftService.getDraft(paperId, teacherId);
-        } catch (Exception e) {
-            log.error("获取草稿失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取草稿失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("获取审核草稿 - teacherId: {}, paperId: {}", teacherId, paperId);
+        return reviewDraftService.getDraft(paperId, teacherId);
     }
 
     /**
@@ -69,14 +59,9 @@ public class TeacherReviewDraftController {
      */
     @DeleteMapping("/delete")
     public Result<String> deleteDraft(@RequestParam("paperId") Long paperId) {
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("删除审核草稿 - teacherId: {}, paperId: {}", teacherId, paperId);
-            return reviewDraftService.deleteDraft(paperId, teacherId);
-        } catch (Exception e) {
-            log.error("删除草稿失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "删除草稿失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("删除审核草稿 - teacherId: {}, paperId: {}", teacherId, paperId);
+        return reviewDraftService.deleteDraft(paperId, teacherId);
     }
 
     /**
@@ -84,13 +69,8 @@ public class TeacherReviewDraftController {
      */
     @GetMapping("/list")
     public Result<List<ReviewDraftDTO>> listDrafts() {
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("获取教师草稿列表 - teacherId: {}", teacherId);
-            return reviewDraftService.listDrafts(teacherId);
-        } catch (Exception e) {
-            log.error("获取草稿列表失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取草稿列表失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("获取教师草稿列表 - teacherId: {}", teacherId);
+        return reviewDraftService.listDrafts(teacherId);
     }
 }

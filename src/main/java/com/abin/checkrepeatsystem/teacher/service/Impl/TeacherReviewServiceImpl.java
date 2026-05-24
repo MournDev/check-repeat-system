@@ -1,11 +1,12 @@
 package com.abin.checkrepeatsystem.teacher.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ReviewStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
@@ -14,6 +15,7 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.mapper.ReviewRecordMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.ReviewAttachUtils;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
@@ -22,7 +24,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -47,45 +49,36 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+
 /**
  * 教师审核服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, ReviewRecord> implements TeacherReviewService {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private ReviewRecordMapper reviewRecordMapper;
+    private final ReviewRecordMapper reviewRecordMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private ReviewAttachUtils reviewAttachUtils;
+    private final ReviewAttachUtils reviewAttachUtils;
 
-    @Resource
-    private PaperStatusLogMapper paperStatusLogMapper;
+    private final PaperStatusLogMapper paperStatusLogMapper;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
-    @Resource
-    private com.abin.checkrepeatsystem.common.service.FileService fileService;
-
-    @Resource
-    private com.abin.checkrepeatsystem.common.component.MinioProp minioProp;
-
-    @Value("${app.host:192.168.30.1}")
+    @Value("${app.host:localhost}")
     private String serverHost;
+
+    private final FileService fileService;
 
     @Value("${server.port:8080}")
     private String serverPort;
@@ -193,7 +186,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                 }
                 // 校验是否为当前教师指导的论文，管理员可以审核任何论文
                 String currentRole = UserBusinessInfoUtils.getCurrentUserRoleCode();
-                if (!"ADMIN".equals(currentRole) && !paperInfo.getTeacherId().equals(currentTeacherId)) {
+                if (!UserTypeEnum.ROLE_ADMIN.equals(currentRole) && !paperInfo.getTeacherId().equals(currentTeacherId)) {
                     failReasons.add(String.format("论文ID：%s，原因：无权限审核他人指导的论文", paperId));
                     continue;
                 }
@@ -521,7 +514,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
             FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
             if (fileInfo != null) {
                 dto.setFileName(fileInfo.getOriginalFilename());
-                dto.setFileType(getFileExtension(fileInfo.getOriginalFilename()));
+                dto.setFileType(FileMimeTypeUtils.getFileExtension(fileInfo.getOriginalFilename()));
 
                 // 构建文件访问URL
                 String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
@@ -550,12 +543,6 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         }
     }
 
-    private String getFileExtension(String fileName) {
-        if (fileName == null || fileName.lastIndexOf('.') == -1) {
-            return "unknown";
-        }
-        return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
-    }
 
     // ------------------------------ 私有辅助方法 ------------------------------
 
@@ -707,7 +694,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
                     }
                     attachDTO.setAttachType(attachPath.substring(attachPath.lastIndexOf(".") + 1));
                     // 构建下载URL（前端拼接域名）
-                    attachDTO.setDownloadUrl("/api/teacher/reviews/download-attach?attachPath=" + URLEncoder.encode(attachPath, StandardCharsets.UTF_8));
+                    attachDTO.setDownloadUrl("/api/v1/teacher/reviews/download-attach?attachPath=" + URLEncoder.encode(attachPath, StandardCharsets.UTF_8));
                     dto.setReviewAttach(attachDTO);
                 }
 

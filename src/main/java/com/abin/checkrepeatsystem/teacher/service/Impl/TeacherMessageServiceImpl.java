@@ -22,8 +22,8 @@ import com.abin.checkrepeatsystem.user.service.ConversationService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -43,36 +43,32 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+
 /**
  * 教师消息服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherMessageServiceImpl implements TeacherMessageService {
 
-    @Resource
-    private InstantMessageMapper instantMessageMapper;
+    private final InstantMessageMapper instantMessageMapper;
 
-    @Resource
-    private FileService fileService;
+    private final FileService fileService;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private ConversationMapper conversationMapper;
+    private final ConversationMapper conversationMapper;
 
-    @Resource
-    private ConversationMemberMapper conversationMemberMapper;
+    private final ConversationMemberMapper conversationMemberMapper;
 
     @Value("${file.upload.base-path}")
     private String uploadBasePath;
 
-    @Resource
-    private WebSocketSender webSocketSender;
+    private final WebSocketSender webSocketSender;
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
 
     @Override
@@ -392,8 +388,8 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
             fileVO.setId(fileId);
             fileVO.setName(file.getOriginalFilename());
             fileVO.setSize(file.getSize());
-            fileVO.setType(getFileExtension(file.getOriginalFilename()));
-            fileVO.setUrl("/api/teacher/messages/attachment/" + fileId);
+            fileVO.setType(FileMimeTypeUtils.getFileExtension(file.getOriginalFilename()));
+            fileVO.setUrl("/api/v1/teacher/messages/attachment/" + fileId);
             fileVO.setUploadTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
             log.info("文件上传成功 - 文件 ID: {}", fileId);
@@ -420,7 +416,7 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
                     // 设置响应头
                     String fileName = fileInfo.getOriginalFilename() != null ?
                         fileInfo.getOriginalFilename() : "attachment_" + attachmentId;
-                    response.setContentType(getContentType(fileName));
+                    response.setContentType(FileMimeTypeUtils.getContentType(fileName));
                     response.setHeader("Content-Disposition",
                         "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
                     response.setContentLength((int) file.length());
@@ -541,7 +537,7 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
                             SharedFileVO fileVO = new SharedFileVO();
                             fileVO.setId(String.valueOf(attachment.get("id")));
                             fileVO.setName((String) attachment.get("name"));
-                            fileVO.setType(getFileExtension((String) attachment.get("name")));
+                            fileVO.setType(FileMimeTypeUtils.getFileExtension((String) attachment.get("name")));
                             fileVO.setSize(Long.valueOf(attachment.get("size").toString()));
 
                             // 上传者信息
@@ -709,15 +705,6 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
         }
     }
 
-    /**
-     * 获取文件扩展名
-     */
-    private String getFileExtension(String fileName) {
-        if (fileName == null || fileName.lastIndexOf(".") == -1) {
-            return "unknown";
-        }
-        return fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
-    }
 
     /**
      * 生成聊天记录导出内容
@@ -917,29 +904,6 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
         }
     }
 
-    /**
-     * 根据文件名获取内容类型
-     */
-    private String getContentType(String fileName) {
-        if (fileName == null) return "application/octet-stream";
-
-        String lowerName = fileName.toLowerCase();
-        if (lowerName.endsWith(".pdf")) {
-            return "application/pdf";
-        } else if (lowerName.endsWith(".docx")) {
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        } else if (lowerName.endsWith(".doc")) {
-            return "application/msword";
-        } else if (lowerName.endsWith(".txt")) {
-            return "text/plain";
-        } else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
-            return "image/jpeg";
-        } else if (lowerName.endsWith(".png")) {
-            return "image/png";
-        } else {
-            return "application/octet-stream";
-        }
-    }
 
     /**
      * 获取或创建教师与学生之间的会话

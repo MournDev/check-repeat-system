@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.common.utils;
 
+import com.abin.checkrepeatsystem.common.exception.UserAuthException;
 import com.abin.checkrepeatsystem.common.jwt.JwtProperties;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
@@ -45,9 +46,9 @@ public class JwtUtils {
      * 2. 从Token中解析用户ID（核心方法，适配拦截器需求）
      * @param token JWT Token字符串
      * @return 解析出的用户ID（Long类型）
-     * @throws Exception Token无效、过期、签名错误时抛异常
+     * @throws UserAuthException Token无效、过期、签名错误时抛异常
      */
-    public Long getUserIdFromToken(String token) throws Exception {
+    public Long getUserIdFromToken(String token) {
         try {
             // 1. 生成加密密钥（与生成Token时的密钥一致）
             SecretKey key = getSecretKey();
@@ -63,19 +64,19 @@ public class JwtUtils {
 
         } catch (ExpiredJwtException e) {
             // Token已过期
-            throw new Exception("Token已过期，请重新登录", e);
+            throw new UserAuthException("Token已过期，请重新登录", e);
         } catch (UnsupportedJwtException e) {
             // Token格式不支持（如不是JWT格式）
-            throw new Exception("Token格式不支持", e);
+            throw new UserAuthException("Token格式不支持", e);
         } catch (MalformedJwtException e) {
             // Token格式错误（如签名部分缺失、格式混乱）
-            throw new Exception("Token格式错误，请检查Token有效性", e);
+            throw new UserAuthException("Token格式错误，请检查Token有效性", e);
         } catch (SignatureException e) {
             // Token签名错误（如密钥不匹配、Token被篡改）
-            throw new Exception("Token签名错误，可能已被篡改", e);
+            throw new UserAuthException("Token签名错误，可能已被篡改", e);
         } catch (IllegalArgumentException e) {
             // Token参数为空或解析失败
-            throw new Exception("Token无效，无法解析用户信息", e);
+            throw new UserAuthException("Token无效，无法解析用户信息", e);
         }
     }
 

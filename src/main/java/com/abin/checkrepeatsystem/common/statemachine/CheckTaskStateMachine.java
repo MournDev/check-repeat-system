@@ -3,28 +3,27 @@ package com.abin.checkrepeatsystem.common.statemachine;
 import com.abin.checkrepeatsystem.common.enums.CheckTaskStatusEnum;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * 查重任务状态机管理器
  * 负责安全的状态流转控制和并发处理
  */
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class CheckTaskStateMachine {
     
-    @Autowired
-    private CheckTaskMapper checkTaskMapper;
-    
-    @Autowired(required = false)
-    private RedissonClient redissonClient;
+    private final CheckTaskMapper checkTaskMapper;
+    private final RedissonClient redissonClient;
     
     private static final String LOCK_PREFIX = "check_task_lock:";
     private static final long LOCK_WAIT_TIME = 3000; // 3秒等待锁
@@ -106,23 +105,24 @@ public class CheckTaskStateMachine {
     /**
      * 批量状态转换（用于定时任务清理等场景）
      */
-    public int batchTransitionStatus(CheckTaskStatusEnum targetStatus, String reason, String conditionSql) {
+    public int batchTransitionStatus(CheckTaskStatusEnum targetStatus, String reason,
+            Consumer<com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CheckTask>> conditions) {
         try {
-            // 直接使用LambdaUpdateWrapper
-            com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CheckTask> updateWrapper = 
+            com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CheckTask> updateWrapper =
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CheckTask>()
                     .set(CheckTask::getCheckStatus, targetStatus.getCode())
                     .set(CheckTask::getEndTime, LocalDateTime.now())
-                    .set(CheckTask::getFailReason, reason != null ? reason : "")
-                    .apply(conditionSql);
-            
+                    .set(CheckTask::getFailReason, reason != null ? reason : "");
+
+            conditions.accept(updateWrapper);
+
             int affectedRows = checkTaskMapper.update(null, updateWrapper);
-            
-            log.info("批量状态转换完成：目标状态={}，影响行数={}，条件={}", 
-                    targetStatus.getDescription(), affectedRows, conditionSql);
-            
+
+            log.info("批量状态转换完成：目标状态={}，影响行数={}",
+                    targetStatus.getDescription(), affectedRows);
+
             return affectedRows;
-            
+
         } catch (Exception e) {
             log.error("批量状态转换失败", e);
             return 0;

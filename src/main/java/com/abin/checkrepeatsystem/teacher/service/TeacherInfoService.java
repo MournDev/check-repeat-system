@@ -21,9 +21,11 @@ public interface TeacherInfoService extends IService<TeacherInfo> {
     Result<UpdateTeacherInfoReq> getInfoByUserId(Long userId);
 
     /**
-     * 修改密码
+     * 修改密码（需验证旧密码）
      * @param userId 教师ID
+     * @param oldPassword 旧密码
+     * @param newPassword 新密码
      * @return 修改密码结果
      */
-    Result<String> changePasswordByUserId(Long userId, String newPassword);
+    Result<String> changePasswordByUserId(Long userId, String oldPassword, String newPassword);
 }

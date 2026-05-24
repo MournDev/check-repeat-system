@@ -77,7 +77,7 @@ public class SystemMonitorService {
             }
             
             cpuInfo.put("status", getCpuStatus(cpuInfo));
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             cpuInfo.put("status", "unknown");
             cpuInfo.put("error", e.getMessage());
         }
@@ -125,7 +125,7 @@ public class SystemMonitorService {
             memoryInfo.put("jvmUsagePercent", Math.round(jvmUsage * 100.0) / 100.0);
             
             memoryInfo.put("status", getMemoryStatus(memoryInfo));
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             memoryInfo.put("status", "unknown");
             memoryInfo.put("error", e.getMessage());
         }
@@ -154,7 +154,7 @@ public class SystemMonitorService {
             threadInfo.put("threadStates", threadStates);
             
             threadInfo.put("status", getThreadStatus(threadInfo));
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             threadInfo.put("status", "unknown");
             threadInfo.put("error", e.getMessage());
         }
@@ -177,7 +177,7 @@ public class SystemMonitorService {
             runtimeInfo.put("javaVersion", runtimeBean.getSpecVersion());
             runtimeInfo.put("inputArguments", runtimeBean.getInputArguments());
             runtimeInfo.put("classpath", runtimeBean.getClassPath());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             runtimeInfo.put("error", e.getMessage());
         }
         
@@ -203,7 +203,7 @@ public class SystemMonitorService {
             gcInfo.put("totalCollections", totalCollections);
             gcInfo.put("totalCollectionTime", totalCollectionTime + "ms");
             gcInfo.put("collectionBeans", gcBeans.size());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             gcInfo.put("error", e.getMessage());
         }
         
@@ -238,11 +238,10 @@ public class SystemMonitorService {
             diskInfo.put("usagePercent", Math.round(usagePercent * 100.0) / 100.0);
             diskInfo.put("status", getDiskStatus(usagePercent));
             
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             diskInfo.put("status", "unknown");
             diskInfo.put("error", e.getMessage());
-            // 返回估算值
-            diskInfo.put("usagePercent", 65.0 + new Random().nextDouble() * 20); // 65-85%
+            diskInfo.put("usagePercent", -1.0);
         }
         
         return diskInfo;
@@ -269,7 +268,7 @@ public class SystemMonitorService {
             status.put("overallStatus", getOverallStatus(healthScore));
             
             return Result.success("系统状态获取成功", status);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             return Result.error(com.abin.checkrepeatsystem.common.enums.ResultCode.SYSTEM_ERROR, 
                               "获取系统状态失败: " + e.getMessage());
         }
@@ -365,7 +364,7 @@ public class SystemMonitorService {
                 else if (diskUsage > 80) score -= 10;
             }
             
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             // 发生异常时给较低分数
             score = 60;
         }

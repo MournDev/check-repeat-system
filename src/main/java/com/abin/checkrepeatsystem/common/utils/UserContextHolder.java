@@ -31,10 +31,13 @@ public class UserContextHolder {
     }
     
     /**
-     * 获取当前线程的用户ID
+     * 获取当前线程的用户ID，未设置用户上下文时抛出异常
      */
     public static Long getUserId() {
         SysUser user = getUser();
-        return user != null ? user.getId() : 1L; // 默认系统用户ID为1
+        if (user == null) {
+            throw new IllegalStateException("用户上下文未设置，无法获取用户ID。请确保在认证流程中正确设置了UserContextHolder。");
+        }
+        return user.getId();
     }
 }

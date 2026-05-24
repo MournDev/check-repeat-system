@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.Major;
 import com.abin.checkrepeatsystem.student.mapper.MajorMapper;

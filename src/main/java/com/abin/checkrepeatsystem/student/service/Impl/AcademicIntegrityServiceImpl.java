@@ -4,7 +4,7 @@ import com.abin.checkrepeatsystem.ai.config.AIConfigProperties;
 import com.abin.checkrepeatsystem.ai.dto.AIAnalysisResponse;
 import com.abin.checkrepeatsystem.ai.prompt.AcademicPromptTemplates;
 import com.abin.checkrepeatsystem.ai.service.AIService;
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.pojo.entity.AcademicChecklist;
@@ -19,13 +19,13 @@ import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.AcademicIntegrityService;
-import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,27 +36,22 @@ import java.util.stream.Collectors;
 /**
  * 学术诚信服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AcademicIntegrityServiceImpl implements AcademicIntegrityService {
     
-    @Resource
-    private AcademicChecklistMapper academicChecklistMapper;
+    private final AcademicChecklistMapper academicChecklistMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private AIService aiService;
+    private final AIService aiService;
 
-    @Resource
-    private AIConfigProperties aiConfig;
+    private final AIConfigProperties aiConfig;
     
     @Override
     public PersonalAdviceDTO getPersonalAdvice(Long studentId) {

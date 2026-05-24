@@ -8,7 +8,7 @@ import com.abin.checkrepeatsystem.teacher.mapper.ReviewDraftMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewDraftService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,15 +20,15 @@ import java.util.stream.Collectors;
 /**
  * 审核草稿服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class TeacherReviewDraftServiceImpl extends ServiceImpl<ReviewDraftMapper, ReviewDraft> implements TeacherReviewDraftService {
 
-    @Resource
-    private ReviewDraftMapper reviewDraftMapper;
+    private final ReviewDraftMapper reviewDraftMapper;
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Result<ReviewDraftDTO> saveDraft(Long paperId, Long teacherId, String reviewStatus, String reviewOpinion, String reviewAttach) {
         try {
             log.info("保存审核草稿 - paperId: {}, teacherId: {}", paperId, teacherId);
@@ -96,7 +96,7 @@ public class TeacherReviewDraftServiceImpl extends ServiceImpl<ReviewDraftMapper
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Result<String> deleteDraft(Long paperId, Long teacherId) {
         try {
             log.info("删除审核草稿 - paperId: {}, teacherId: {}", paperId, teacherId);

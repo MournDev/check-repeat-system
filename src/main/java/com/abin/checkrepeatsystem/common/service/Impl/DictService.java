@@ -4,20 +4,20 @@ import com.abin.checkrepeatsystem.mapper.SysDictDataMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysDictData;
 import com.abin.checkrepeatsystem.student.vo.DictTreeVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class DictService {
 
-    @Autowired
-    private SysDictDataMapper sysDictDataMapper;
+    private final SysDictDataMapper sysDictDataMapper;
 
     /**
      * 根据字典类型获取字典数据列表

@@ -11,8 +11,8 @@ import com.abin.checkrepeatsystem.student.vo.LoginLogQueryReq;
 import com.abin.checkrepeatsystem.user.dto.UpdateUserInfoReq;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -20,12 +20,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @Slf4j
-@RequestMapping("/api/user/info")
+@RequestMapping("/api/v1/user/info")
 @PreAuthorize("isAuthenticated()")
+@RequiredArgsConstructor
 public class StudentInfoController {
 
-    @Resource
-    private InfoService infoService;
+    private final InfoService infoService;
     /**
      * 更新用户信息接口
      * @param updateReq 用户信息更新请求
@@ -46,13 +46,8 @@ public class StudentInfoController {
     @PostMapping("/upload-avatar")
     public Result<String> uploadAvatar(@RequestParam("file") MultipartFile file) {
         log.info("接收用户头像上传请求：");
-        try {
-            Result<String> avatar = infoService.uploadAvatar(file);
-            return Result.success( "头像上传成功",avatar.getData());
-        } catch (Exception e) {
-            log.error("头像上传失败：", e);
-            return Result.error(ResultCode.SYSTEM_ERROR,"头像上传失败：" );
-        }
+        Result<String> avatar = infoService.uploadAvatar(file);
+        return Result.success( "头像上传成功",avatar.getData());
     }
     /**
      * 查询用户登录历史接口
@@ -97,13 +92,8 @@ public class StudentInfoController {
     @OperationLog(type = "user_verify_email", description = "验证邮箱", recordResult = true)
     @GetMapping("/verify-email")
     public Result<String> verifyEmail(@RequestParam String token) {
-        try {
-            infoService.verifyEmail(token);
-            return Result.success("邮箱验证成功");
-        } catch (Exception e) {
-            log.error("邮箱验证失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "邮箱验证失败：" + e.getMessage());
-        }
+        infoService.verifyEmail(token);
+        return Result.success("邮箱验证成功");
     }
 
     /**

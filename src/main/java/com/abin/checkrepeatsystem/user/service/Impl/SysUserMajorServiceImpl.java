@@ -7,14 +7,15 @@ import com.abin.checkrepeatsystem.user.service.SysUserMajorService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @Service
 public class SysUserMajorServiceImpl extends ServiceImpl<SysUserMajorMapper, Major> implements SysUserMajorService {
 
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
 
     /**
      * 完整权限校验逻辑：管理员可修改所有，教师仅能查看自己（不能修改）

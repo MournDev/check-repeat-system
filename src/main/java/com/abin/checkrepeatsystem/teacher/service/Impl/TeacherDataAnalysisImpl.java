@@ -1,7 +1,7 @@
 package com.abin.checkrepeatsystem.teacher.service.Impl;
 
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.TrendQueryDTO;
@@ -16,12 +16,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,15 +38,14 @@ import java.time.temporal.WeekFields;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class TeacherDataAnalysisImpl implements TeacherDataAnalysisService {
 
-    @Autowired
-    private ReviewRecordMapper reviewRecordMapper;
+    private final ReviewRecordMapper reviewRecordMapper;
 
-    @Autowired
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
     @Override
     public TrendResultDTO getReviewTrend(TrendQueryDTO query) {
@@ -371,7 +370,7 @@ public class TeacherDataAnalysisImpl implements TeacherDataAnalysisService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> getReviewStats(Long teacherId, String timeRange) {
         log.info("获取审核统计数据: teacherId={}, timeRange={}", teacherId, timeRange);
 

@@ -26,11 +26,11 @@ import cn.hutool.http.HttpResponse;
 
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.write.builder.ExcelWriterBuilder;
+import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -51,30 +51,24 @@ import java.util.stream.Collectors;
 /**
  * 管理员论文管理服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class AdminPaperServiceImpl implements AdminPaperService {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private MajorMapper majorMapper;
+    private final MajorMapper majorMapper;
 
-    @Resource
-    private FileService fileService;
+    private final FileService fileService;
     
-    @Resource
-    private EnhancedSimilarityDetectionService detectionService;
+    private final EnhancedSimilarityDetectionService detectionService;
     
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
-    @Resource
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
 
     @Override
     public Result<Page<PaperInfo>> getPaperList(Integer page, Integer size, String paperStatus, 
@@ -580,7 +574,7 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             }
             
             // 构造文件下载链接
-            String downloadUrl = "/api/file/download/" + paperInfo.getFileId();
+            String downloadUrl = "/api/v1/file/download/" + paperInfo.getFileId();
             
             log.info("论文文件下载准备就绪: paperId={}, fileName={}", paperId, fileInfo.getOriginalFilename());
             return Result.success("论文文件下载链接生成成功", downloadUrl);

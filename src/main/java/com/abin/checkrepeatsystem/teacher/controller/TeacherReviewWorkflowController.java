@@ -5,20 +5,21 @@ import com.abin.checkrepeatsystem.teacher.dto.ReviewWorkflowDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewWorkflowService;
 import com.abin.checkrepeatsystem.teacher.vo.ReviewWorkflowVO;
 import com.abin.checkrepeatsystem.teacher.vo.StudentVO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 审核工作流配置控制器
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/teacher/review-workflow")
+@RequestMapping("/api/v1/teacher/review-workflow")
 public class TeacherReviewWorkflowController {
 
-    @Autowired
-    private TeacherReviewWorkflowService reviewWorkflowService;
+    private final TeacherReviewWorkflowService reviewWorkflowService;
 
     /**
      * 获取审核工作流配置

@@ -10,7 +10,7 @@ import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -29,18 +29,16 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class ReportServiceImpl implements ReportService {
 
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
     @Override
     public Result<Map<String, Object>> getReportList(Integer pageNum, Integer pageSize, String paperTitle,

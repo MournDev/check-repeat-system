@@ -2,7 +2,7 @@ package com.abin.checkrepeatsystem.common.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.service.CommonDictService;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -15,13 +15,13 @@ import java.util.Map;
  * 提供无权限限制的字典数据查询，供所有角色（学生、教师、管理员）使用
  */
 @RestController
-@RequestMapping("/api/common/dict")
+@RequestMapping("/api/v1/common/dict")
 @Slf4j
 @PreAuthorize("isAuthenticated()")
+@RequiredArgsConstructor
 public class CommonDictController {
 
-    @Resource
-    private CommonDictService commonDictService;
+    private final CommonDictService commonDictService;
 
     /**
      * 获取学院列表

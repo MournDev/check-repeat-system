@@ -6,11 +6,11 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -19,13 +19,13 @@ import java.util.stream.Collectors;
  * 安全日志控制器
  */
 @RestController
-@RequestMapping("/api/admin/logs/security")
+@RequestMapping("/api/v1/admin/logs/security")
 @PreAuthorize("hasAuthority('ADMIN')")
+@RequiredArgsConstructor
 @Slf4j
 public class SecurityLogController {
 
-    @Resource
-    private LoginLogService loginLogService;
+    private final LoginLogService loginLogService;
 
     /**
      * 获取安全日志列表
@@ -41,42 +41,37 @@ public class SecurityLogController {
         log.info("接收获取安全日志列表请求: page={}, size={}, eventType={}, startDate={}, endDate={}", 
                 page, size, eventType, startDate, endDate);
         
-        try {
-            Page<SysLoginLog> logPage = new Page<>(page, size);
-            LambdaQueryWrapper<SysLoginLog> wrapper = new LambdaQueryWrapper<>();
-            
-            // 事件类型筛选（登录失败等）
-            if (eventType != null && !eventType.isEmpty()) {
-                if ("login_failed".equals(eventType)) {
-                    wrapper.eq(SysLoginLog::getLoginResult, 0);
-                }
+        Page<SysLoginLog> logPage = new Page<>(page, size);
+        LambdaQueryWrapper<SysLoginLog> wrapper = new LambdaQueryWrapper<>();
+
+        // 事件类型筛选（登录失败等）
+        if (eventType != null && !eventType.isEmpty()) {
+            if ("login_failed".equals(eventType)) {
+                wrapper.eq(SysLoginLog::getLoginResult, 0);
             }
-            
-            // 时间范围筛选
-            if (startDate != null && !startDate.isEmpty()) {
-                wrapper.ge(SysLoginLog::getLoginTime, LocalDateTime.parse(startDate));
-            }
-            if (endDate != null && !endDate.isEmpty()) {
-                wrapper.le(SysLoginLog::getLoginTime, LocalDateTime.parse(endDate));
-            }
-            
-            // 按登录时间倒序
-            wrapper.orderByDesc(SysLoginLog::getLoginTime);
-            
-            Page<SysLoginLog> resultPage = loginLogService.selectPage(logPage, wrapper);
-            
-            // 转换为安全日志VO
-            Page<LogSecurityVO> voPage = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());
-            List<LogSecurityVO> voList = resultPage.getRecords().stream().map(this::convertToSecurityVO).collect(Collectors.toList());
-            voPage.setRecords(voList);
-            
-            log.info("安全日志列表获取成功，共{}条记录", voList.size());
-            return Result.success("安全日志列表获取成功", voPage);
-            
-        } catch (Exception e) {
-            log.error("获取安全日志列表失败: {}", e.getMessage(), e);
-            return Result.error(500, "获取安全日志列表失败: " + e.getMessage());
         }
+
+        // 时间范围筛选
+        if (startDate != null && !startDate.isEmpty()) {
+            wrapper.ge(SysLoginLog::getLoginTime, LocalDateTime.parse(startDate));
+        }
+        if (endDate != null && !endDate.isEmpty()) {
+            wrapper.le(SysLoginLog::getLoginTime, LocalDateTime.parse(endDate));
+        }
+
+        // 按登录时间倒序
+        wrapper.orderByDesc(SysLoginLog::getLoginTime);
+
+        Page<SysLoginLog> resultPage = loginLogService.selectPage(logPage, wrapper);
+
+        // 转换为安全日志VO
+        Page<LogSecurityVO> voPage = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());
+        List<LogSecurityVO> voList = resultPage.getRecords().stream().map(this::convertToSecurityVO).collect(Collectors.toList());
+        voPage.setRecords(voList);
+
+        log.info("安全日志列表获取成功，共{}条记录", voList.size());
+        return Result.success("安全日志列表获取成功", voPage);
+
     }
 
     /**

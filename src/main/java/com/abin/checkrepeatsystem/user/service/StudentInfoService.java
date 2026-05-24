@@ -21,4 +21,11 @@ public interface StudentInfoService extends IService<StudentInfo> {
      * @return 是否成功
      */
     boolean saveOrUpdateByUserId(StudentInfo studentInfo);
+
+    /**
+     * 批量根据用户ID列表获取学生信息
+     * @param userIds 用户ID列表
+     * @return 学生信息列表
+     */
+    java.util.List<StudentInfo> listByUserIds(java.util.List<Long> userIds);
 }

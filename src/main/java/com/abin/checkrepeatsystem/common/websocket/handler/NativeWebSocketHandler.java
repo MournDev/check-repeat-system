@@ -1,6 +1,9 @@
 package com.abin.checkrepeatsystem.common.websocket.handler;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -15,25 +18,15 @@ import com.abin.checkrepeatsystem.common.utils.JwtUtils;
  * 原生 WebSocket 处理器
  * 处理原生 WebSocket 连接，支持消息推送
  */
+@Slf4j
+@RequiredArgsConstructor
 public class NativeWebSocketHandler extends TextWebSocketHandler {
 
-    // 存储用户会话映射
     private static final Map<String, WebSocketSession> userSessions = new ConcurrentHashMap<>();
-
-    // 存储会话认证状态
     private static final Map<WebSocketSession, String> sessionAuthStatus = new ConcurrentHashMap<>();
-
-    // 存储会话对应的用户ID
     private static final Map<WebSocketSession, String> sessionUserIdMap = new ConcurrentHashMap<>();
 
-    private JwtUtils jwtUtils;
-
-    public NativeWebSocketHandler() {
-    }
-
-    public NativeWebSocketHandler(JwtUtils jwtUtils) {
-        this.jwtUtils = jwtUtils;
-    }
+    private final JwtUtils jwtUtils;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -41,7 +34,7 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
         String path = uri.getPath();
         // 连接建立时，先不认证，等待客户端发送认证消息
         sessionAuthStatus.put(session, "PENDING");
-        System.out.println("✅ WebSocket 连接建立，等待认证: " + path);
+        log.info("WebSocket 连接建立，等待认证: {}", path);
     }
 
     @Override
@@ -51,7 +44,7 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
 
         try {
             // 解析消息
-            com.alibaba.fastjson.JSONObject jsonMessage = com.alibaba.fastjson.JSON.parseObject(payload);
+            JSONObject jsonMessage = JSON.parseObject(payload);
             String type = jsonMessage.getString("type");
 
             // 处理认证消息
@@ -89,14 +82,14 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
                 }
             }
         } catch (Exception e) {
-            System.err.println("处理消息失败: " + e.getMessage());
+            log.error("处理消息失败", e);
         }
     }
 
     /**
      * 处理认证消息
      */
-    private void handleAuthMessage(WebSocketSession session, com.alibaba.fastjson.JSONObject message) {
+    private void handleAuthMessage(WebSocketSession session, JSONObject message) {
         try {
             String token = message.getString("token");
             String userId = message.getString("userId");
@@ -129,26 +122,26 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
                 sessionUserIdMap.put(session, userId);
                 userSessions.put(userId, session);
 
-                System.out.println("✅ WebSocket 认证成功: " + userId);
+                log.info("WebSocket 认证成功: {}", userId);
 
                 // 发送认证成功消息
-                com.alibaba.fastjson.JSONObject response = new com.alibaba.fastjson.JSONObject();
+                JSONObject response = new JSONObject();
                 response.put("type", "AUTH_SUCCESS");
                 response.put("message", "认证成功");
                 session.sendMessage(new TextMessage(response.toJSONString()));
 
             } catch (Exception e) {
-                System.err.println("❌ WebSocket 认证失败: " + e.getMessage());
+                log.error("WebSocket 认证失败", e);
                 sessionAuthStatus.put(session, "FAILED");
                 session.close(CloseStatus.POLICY_VIOLATION);
             }
 
         } catch (Exception e) {
-            System.err.println("❌ 处理认证消息失败: " + e.getMessage());
+            log.error("处理认证消息失败", e);
             try {
                 session.close(CloseStatus.SERVER_ERROR);
             } catch (Exception ex) {
-                // 忽略
+                log.debug("关闭异常WebSocket连接失败", ex);
             }
         }
     }
@@ -156,7 +149,7 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
     /**
      * 处理聊天消息
      */
-    private void handleChatMessage(com.alibaba.fastjson.JSONObject message, String senderId) {
+    private void handleChatMessage(JSONObject message, String senderId) {
         // 处理聊天消息
         String receiverId = message.getString("receiverId");
         String conversationId = message.getString("conversationId");
@@ -165,10 +158,10 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
 
         if (receiverId != null) {
             // 构建推送消息，包装成前端期望的格式
-            com.alibaba.fastjson.JSONObject pushMessage = new com.alibaba.fastjson.JSONObject();
+            JSONObject pushMessage = new JSONObject();
             pushMessage.put("type", "NEW_MESSAGE");
 
-            com.alibaba.fastjson.JSONObject messageContent = new com.alibaba.fastjson.JSONObject();
+            JSONObject messageContent = new JSONObject();
             messageContent.put("conversationId", conversationId);
             messageContent.put("senderId", senderId);
             messageContent.put("senderName", senderName);
@@ -181,13 +174,12 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
             sendMessageToUser(receiverId, pushMessage.toJSONString());
         }
 
-        // System.out.println("聊天消息处理完成 - 发送者: " + senderId + ", 接收者: " + receiverId); // 移除调试输出
     }
 
     /**
      * 处理输入状态消息
      */
-    private void handleTypingMessage(com.alibaba.fastjson.JSONObject message, String senderId) {
+    private void handleTypingMessage(JSONObject message, String senderId) {
         // 通知对方用户正在输入
         String receiverId = message.getString("receiverId");
         if (receiverId != null) {
@@ -198,10 +190,9 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
     /**
      * 处理已读状态消息
      */
-    private void handleReadMessage(com.alibaba.fastjson.JSONObject message, String senderId) {
+    private void handleReadMessage(JSONObject message, String senderId) {
         // 更新消息已读状态
         String conversationId = message.getString("conversationId");
-        // System.out.println("处理已读状态消息 - 会话ID: " + conversationId); // 移除调试输出
     }
 
     @Override
@@ -209,13 +200,13 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
         // 获取会话对应的用户ID
         String userId = sessionUserIdMap.get(session);
 
-        System.out.println("WebSocket 连接关闭: 用户=" + userId + ", 状态=" + status);
+        log.info("WebSocket 连接关闭: 用户={}, 状态={}", userId, status);
 
         if (userId != null) {
             userSessions.remove(userId);
             sessionUserIdMap.remove(session);
             sessionAuthStatus.remove(session);
-            System.out.println("WebSocket 用户会话移除: 用户 " + userId + ", 当前在线用户数: " + userSessions.size());
+            log.info("WebSocket 用户会话移除: 用户 {}, 当前在线用户数: {}", userId, userSessions.size());
         } else {
             sessionAuthStatus.remove(session);
         }
@@ -223,7 +214,7 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        System.err.println("WebSocket 传输错误: " + exception.getMessage());
+        log.error("WebSocket 传输错误", exception);
     }
 
     /**
@@ -259,7 +250,7 @@ public class NativeWebSocketHandler extends TextWebSocketHandler {
             try {
                 session.sendMessage(new TextMessage(message));
             } catch (Exception e) {
-                System.err.println("发送消息失败: " + e.getMessage());
+                log.warn("发送WebSocket消息失败 - userId: {}", userId, e);
             }
         }
     }

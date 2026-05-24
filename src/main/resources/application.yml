@@ -2,23 +2,24 @@
 server:
   address: 0.0.0.0
   port: ${SERVER_PORT:8080}
+  shutdown: graceful
   servlet:
     context-path: /check
   tomcat:
     threads:
       max: 200
       min-spare: 20
-  external-address: ${SERVER_EXTERNAL_ADDRESS:192.168.30.1}
+  external-address: ${SERVER_EXTERNAL_ADDRESS:}
 
 # 预览服务
 kkfileview:
-  base-url: ${KKFILEVIEW_BASE_URL:http://192.168.30.128:8012}
+  base-url: ${KKFILEVIEW_BASE_URL:http://localhost:8012}
 
 # 对象存储
 minio:
-  endpoint: ${MINIO_ENDPOINT:http://192.168.30.128:9000}
-  accesskey: ${MINIO_ACCESSKEY:admin}
-  secretkey: ${MINIO_SECRETKEY:12345678}
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  accesskey: ${MINIO_ACCESSKEY:}   # 必须通过环境变量设置
+  secretkey: ${MINIO_SECRETKEY:}   # 必须通过环境变量设置
   bucket:
     main: check-repeat-system
     avatar: avatar
@@ -35,12 +36,20 @@ minio:
 spring:
   application:
     name: check-repeat-system
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # Caffeine 缓存配置
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=500,expireAfterWrite=300s
 
   # 数据源配置
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&initialTimeout=2
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:89864243}
+    password: ${MYSQL_PASSWORD:}   # 必须通过环境变量设置
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -50,7 +59,15 @@ spring:
       max-lifetime: 1800000
       validation-timeout: 5000
       leak-detection-threshold: 60000
-      connection-test-query: SELECT 1
+
+  # Flyway 数据库迁移
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
+    table: flyway_schema_history
+    clean-disabled: true
 
   # 文件上传配置
   servlet:
@@ -63,7 +80,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:123456}
+      password: ${REDIS_PASSWORD:}   # 必须通过环境变量设置
       database: 0
       timeout: 2000ms
       lettuce:
@@ -74,7 +91,7 @@ spring:
 
   # JWT 配置
   jwt:
-    secret-key: ${JWT_SECRET_KEY:paperCheckSystem2024SecretKey123456}
+    secret-key: ${JWT_SECRET_KEY:}   # 必须通过环境变量设置
     expiration: 86400000
     token-header: Authorization
 
@@ -82,8 +99,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.qq.com}
     port: ${MAIL_PORT:465}
-    username: ${MAIL_USERNAME:3070500838@qq.com}
-    password: ${MAIL_PASSWORD:tedxbsknokhmdecj}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}   # 必须通过环境变量设置
     protocol: smtp
     default-encoding: UTF-8
     properties:
@@ -179,7 +196,7 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: never
+      show-details: when-authorized
       probes:
         enabled: true
     metrics:
@@ -232,6 +249,14 @@ file:
     storage-type: ${STORAGE_TYPE:MINIO}
     base-path: ${UPLOAD_BASE_PATH:/data/upload/}
     max-size-mb: 50
+  virus-scan:
+    enabled: ${VIRUS_SCAN_ENABLED:false}
+    clamav:
+      host: ${CLAMAV_HOST:localhost}
+      port: ${CLAMAV_PORT:3310}
+    quarantine-path: ${QUARANTINE_PATH:/data/quarantine/}
+  cleanup:
+    temp-file-retention-hours: ${TEMP_FILE_RETENTION_HOURS:24}
 
 # 论文查重服务配置
 paper-check:
@@ -242,6 +267,14 @@ paper-check:
   compare-library:
     #校内论文库：true
     network-resource: false
+
+# 系统告警配置
+monitor:
+  alert:
+    enabled: ${MONITOR_ALERT_ENABLED:true}
+    cpu-threshold: ${CPU_ALERT_THRESHOLD:90.0}
+    memory-threshold: ${MEMORY_ALERT_THRESHOLD:85.0}
+    disk-threshold: ${DISK_ALERT_THRESHOLD:90.0}
 
 # 指导老师分配配置
 advisor-assign:

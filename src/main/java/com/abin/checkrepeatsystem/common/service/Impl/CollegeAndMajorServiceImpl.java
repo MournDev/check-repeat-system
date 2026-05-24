@@ -9,8 +9,8 @@ import com.abin.checkrepeatsystem.pojo.entity.Major;
 import com.abin.checkrepeatsystem.student.mapper.MajorMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class CollegeAndMajorServiceImpl implements CollegeAndMajorService {
@@ -31,14 +32,9 @@ public class CollegeAndMajorServiceImpl implements CollegeAndMajorService {
 
     private static final long CACHE_EXPIRE_HOURS = 24;
 
-    @Autowired
-    private CollegeMapper collegeMapper;
-
-    @Autowired
-    private MajorMapper majorMapper;
-
-    @Autowired(required = false)
-    private RedisTemplate<String, Object> redisTemplate;
+    private final CollegeMapper collegeMapper;
+    private final MajorMapper majorMapper;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @Override
     public Result<List<College>> getAllColleges() {

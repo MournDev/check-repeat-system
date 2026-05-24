@@ -14,8 +14,8 @@ kkfileview:
 # 对象存储
 minio:
   endpoint: http://192.168.30.128:9000
-  accessKey: admin
-  secretKey: 12345678
+  accessKey: ${MINIO_ACCESSKEY:}   # 必须通过环境变量设置
+  secretKey: ${MINIO_SECRETKEY:}   # 必须通过环境变量设置
   bucket:
     main: check-repeat-system
     avatar: avatar
@@ -26,9 +26,9 @@ spring:
     name: check-repeat-system
   # 数据源配置
   datasource:
-    url: jdbc:mysql://localhost:3306/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&initialTimeout=2
+    url: jdbc:mysql://localhost:3306/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
     username: root
-    password: 89864243
+    password: ${MYSQL_PASSWORD:}   # 必须通过环境变量设置
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10 # 连接池最大连接数
@@ -50,7 +50,7 @@ spring:
     redis:
       host: localhost
       port: 6379
-      password: 123456
+      password: ${REDIS_PASSWORD:}   # 必须通过环境变量设置
       database: 0
       timeout: 2000ms
       lettuce:
@@ -60,7 +60,7 @@ spring:
           min-idle: 2
   # 自定义配置：JWT
   jwt:
-    secret-key: paperCheckSystem2024SecretKey123456 # 密钥（生产环境需加密存储）
+    secret-key: ${JWT_SECRET_KEY:}   # 必须通过环境变量设置
     expiration: 86400000 # 令牌有效期（24小时，单位：毫秒）
     token-header: Authorization # 请求头名
   # 1. 邮件发送核心配置（QQ邮箱专属）
@@ -68,7 +68,7 @@ spring:
     host: smtp.qq.com  # QQ邮箱SMTP服务器地址（固定值，不可修改）
     port: 465  # QQ邮箱SMTP SSL加密端口（固定465，非加密端口25易被屏蔽，优先用465）
     username: 3070500838@qq.com  # 系统发送邮箱账号（即你刚才开启SMTP的QQ邮箱，如123456789@qq.com）
-    password: tedxbsknokhmdecj  # 此处填第一步获取的16位授权码（不是QQ登录密码！）
+    password: ${MAIL_PASSWORD:}  # QQ邮箱SMTP授权码，通过环境变量MAIL_PASSWORD设置
     protocol: smtp  # 邮件传输协议（固定smtp）
     default-encoding: UTF-8  # 编码格式（防止邮件内容乱码）
     # 2. SMTP额外属性（QQ邮箱需开启SSL）
@@ -124,7 +124,7 @@ check:
 ai:
   deepseek:
     enabled: true
-    api-key: sk-2ae4f1b5ab5c45f6b26727b30d248686
+    api-key: ${DEEPSEEK_API_KEY:}
     base-url: https://api.deepseek.com
     model: deepseek-chat
     timeout: 30s
@@ -148,7 +148,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,env,logfile,prometheus
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
@@ -176,7 +176,7 @@ report:
     max-paragraph-length: 500 # 在线预览时单段最大长度（避免页面过长）
   storage:
     enabled: true
-    base-path: D:/data/report # 报告文件存储根路径
+    base-path: ${REPORT_STORAGE_PATH:./data/report} # 报告文件存储根路径
     expire-days: 365 # 报告文件过期时间（365天，过期可清理）
   # 增强版报告配置
   enhanced:
@@ -209,7 +209,7 @@ admin:
 # 头像存储配置
 avatar:
   storage:
-    base-path: D:/data/avatar-storage # 头像文件存储根路径
+    base-path: ${AVATAR_STORAGE_PATH:./data/avatar-storage} # 头像文件存储根路径
     max-size: 5MB # 头像文件最大大小
     allowed-types: jpg,jpeg,png # 允许的头像格式
   access:
@@ -219,15 +219,15 @@ avatar:
 file:
   upload:
     storage-type: LOCAL # 存储类型：LOCAL（本地）/OSS（阿里云OSS）
-    base-path: D:/upload/ # 本地存储根路径（Windows）/ 或 /home/upload/（Linux）
+    base-path: ${UPLOAD_BASE_PATH:./upload/} # 本地存储根路径
     max-size-mb: 50 # 最大文件大小（MB）
 
 # 阿里云OSS配置（存储类型为OSS时生效）
 aliyun:
   oss:
     endpoint: oss-cn-shenzhen.aliyuncs.com # OSS地域Endpoint（需替换为你的地域，如oss-cn-beijing）
-    access-key-id: LTAI5txxxxxxxxxxxxxxx # 你的OSS AccessKeyId（从阿里云控制台获取）
-    access-key-secret: 8xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx # 你的OSS AccessKeySecret
+    access-key-id: ${ALIYUN_ACCESS_KEY_ID:} # 你的OSS AccessKeyId（从阿里云控制台获取）
+    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:} # 你的OSS AccessKeySecret
     bucket-name: your-bucket-name # 你的OSS Bucket名称（需提前创建，且配置跨域）
     # OSS文件访问前缀（可选，CDN加速时配置）
     access-prefix: https://your-bucket-name.oss-cn-shenzhen.aliyuncs.com/
@@ -236,9 +236,9 @@ paper-check:
   threshold: 20.0 # 查重通过阈值（重复率≤20%为通过）
   min-hash-distance: 3 # SimHash汉明距离阈值（≤3视为相似）
   parse-timeout: 30000 # 文本解析超时时间（30秒）
-  report-storage-path: D:/check-report/ # 查重报告存储路径（Linux：/home/check-report/）
+  report-storage-path: ${CHECK_REPORT_PATH:./check-report/} # 查重报告存储路径
   compare-library:
-    校内论文库: true # 是否启用校内论文库比对
+    campus-paper-lib: true # 是否启用校内论文库比对
     network-resource: false # 是否启用网络资源比对（默认关闭，避免版权问题）
 advisor-assign:
   max-task-count: 10
@@ -246,4 +246,4 @@ advisor-assign:
 
 # 兼容性配置（用于旧代码）
 upload:
-  base-path: D:/upload/
+  base-path: ${UPLOAD_BASE_PATH:./upload/}

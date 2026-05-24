@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.common.utils;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;

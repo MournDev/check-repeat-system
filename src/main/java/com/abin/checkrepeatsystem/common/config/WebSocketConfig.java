@@ -1,7 +1,7 @@
 package com.abin.checkrepeatsystem.common.config;
 
 import com.abin.checkrepeatsystem.common.websocket.handler.WebSocketChannelInterceptor;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -10,21 +10,34 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+
+
 /**
  * WebSocket配置类
  */
+@RequiredArgsConstructor
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    @Autowired
-    private WebSocketChannelInterceptor webSocketChannelInterceptor;
+    private final WebSocketChannelInterceptor webSocketChannelInterceptor;
+
+    @Value("${websocket.allowed-origins:}")
+    private String allowedOriginsConfig;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // 注册STOMP协议的节点(endpoint)，并指定SockJS协议
+        List<String> allowedOrigins = Arrays.stream(allowedOriginsConfig.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+        // 生产环境通过环境变量 WEBSOCKET_ALLOWED_ORIGINS 指定允许的来源
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins.toArray(new String[0]))
                 .withSockJS();
     }
 

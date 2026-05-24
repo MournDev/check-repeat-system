@@ -7,10 +7,9 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.abin.checkrepeatsystem.student.service.Impl.StudentDashboardService;
-import com.alibaba.fastjson.JSON;
-import jakarta.annotation.Resource;
+import com.alibaba.fastjson2.JSON;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,21 +21,20 @@ import java.util.Map;
 /**
  * 系统配置服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class SystemConfigServiceImpl implements SystemConfigService {
     
-    @Autowired
-    private SystemConfigMapper systemConfigMapper;
+    private final SystemConfigMapper systemConfigMapper;
 
-    @Resource
-    private StudentDashboardService studentDashboardService;
+    private final StudentDashboardService studentDashboardService;
     
     // 配置键常量
     private static final String PERFORMANCE_CONFIG_KEY = "performance";
     
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Result<Void> updatePerformanceConfig(PerformanceConfigDTO performanceConfig) {
         try {
             log.info("开始更新性能配置: {}", performanceConfig);
@@ -216,7 +214,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     }
     
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void saveConfig(String configKey, String configValue, String description) {
         try {
             SystemConfig existingConfig = systemConfigMapper.selectByConfigKey(configKey);
@@ -247,7 +245,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     }
     
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void deleteAllConfigs() {
         try {
             // 软删除所有配置

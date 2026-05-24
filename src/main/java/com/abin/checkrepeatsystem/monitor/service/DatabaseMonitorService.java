@@ -5,7 +5,6 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
@@ -13,14 +12,16 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @Service
 public class DatabaseMonitorService {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseMonitorService.class);
 
-    @Autowired
-    private DataSource dataSource;
+    private final DataSource dataSource;
 
     public Result<Map<String, Object>> getDatabaseStatus() {
         Map<String, Object> status = new HashMap<>();

@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.common.utils;
 
-import com.abin.checkrepeatsystem.common.Exception.UserAuthException;
+import com.abin.checkrepeatsystem.common.exception.UserAuthException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;

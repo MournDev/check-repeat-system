@@ -4,17 +4,18 @@ import com.abin.checkrepeatsystem.knowledge.service.KnowledgeCategoryService;
 import com.abin.checkrepeatsystem.mapper.KnowledgeCategoryMapper;
 import com.abin.checkrepeatsystem.pojo.entity.KnowledgeCategory;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 
+
+@RequiredArgsConstructor
 @Service
 public class KnowledgeCategoryServiceImpl extends ServiceImpl<KnowledgeCategoryMapper, KnowledgeCategory>
         implements KnowledgeCategoryService {
 
-    @Resource
-    private KnowledgeCategoryMapper knowledgeCategoryMapper;
+    private final KnowledgeCategoryMapper knowledgeCategoryMapper;
 
     @Override
     public List<KnowledgeCategory> listAllWithCount() {

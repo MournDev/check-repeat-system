@@ -14,10 +14,10 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -27,21 +27,18 @@ import java.util.*;
 /**
  * 教师控制台服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherDashboardServiceImpl implements TeacherDashboardService {
 
-    @Resource
-    private TeacherDashboardMapper teacherDashboardMapper;
+    private final TeacherDashboardMapper teacherDashboardMapper;
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
     
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
     
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
     @Override
     public Result<Map<String, Object>> getDashboardStats(Long teacherId) {
@@ -344,7 +341,7 @@ public class TeacherDashboardServiceImpl implements TeacherDashboardService {
             }
             
             // 生成下载链接（这里返回文件ID，前端根据文件ID下载）
-            String downloadUrl = "/api/file/download/" + paper.getFileId();
+            String downloadUrl = "/api/v1/file/download/" + paper.getFileId();
             
             log.info("教师{}下载论文{}, 文件ID: {}", teacherId, paperId, paper.getFileId());
             return Result.success("获取下载链接成功", downloadUrl);

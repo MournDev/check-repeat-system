@@ -5,20 +5,20 @@ import com.abin.checkrepeatsystem.admin.service.AlertService;
 import com.abin.checkrepeatsystem.pojo.entity.AlertRecord;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AlertServiceImpl implements AlertService {
 
-    @Resource
-    private AlertRecordMapper alertRecordMapper;
+    private final AlertRecordMapper alertRecordMapper;
 
     @Override
     public List<AlertRecord> listActive() {
@@ -51,7 +51,7 @@ public class AlertServiceImpl implements AlertService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AlertRecord create(AlertRecord record) {
         record.setTriggerTime(LocalDateTime.now());
         record.setStatus("ACTIVE");
@@ -61,7 +61,7 @@ public class AlertServiceImpl implements AlertService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AlertRecord resolve(Long id, String resolvedBy) {
         AlertRecord record = alertRecordMapper.selectById(id);
         if (record == null) return null;
@@ -110,7 +110,7 @@ public class AlertServiceImpl implements AlertService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AlertRecord dismiss(Long id, String resolvedBy) {
         AlertRecord record = alertRecordMapper.selectById(id);
         if (record == null) return null;

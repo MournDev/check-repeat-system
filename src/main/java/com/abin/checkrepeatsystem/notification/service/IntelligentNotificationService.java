@@ -4,27 +4,29 @@ import com.abin.checkrepeatsystem.common.enums.NoticeType;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.user.service.Impl.InternalMessageNotificationService;
 import com.abin.checkrepeatsystem.user.service.Impl.OptimizedEmailService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * 智能通知服务
  * 整合邮件和站内信，根据场景智能选择通知方式
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class IntelligentNotificationService {
 
-    @Resource
-    private OptimizedEmailService emailService;
+    private final OptimizedEmailService emailService;
 
-    @Resource
-    private InternalMessageNotificationService internalMessageService;
+    private final InternalMessageNotificationService internalMessageService;
+
+    private final Executor asyncExecutor;
 
     /**
      * 发送论文提交成功通知
@@ -41,7 +43,7 @@ public class IntelligentNotificationService {
             // 同时发送邮件和站内信
             sendDualNotification(student, NoticeType.PAPER_SUBMITTED, params, paperId, "PAPER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送论文提交通知失败: paperId={}, studentId={}", paperId, studentId, e);
         }
     }
@@ -65,7 +67,7 @@ public class IntelligentNotificationService {
             // 同时发送邮件和站内信
             sendDualNotification(student, NoticeType.PAPER_CHECK_COMPLETED, params, paperId, "PAPER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送查重完成通知失败: paperId={}, studentId={}", paperId, studentId, e);
         }
     }
@@ -86,7 +88,7 @@ public class IntelligentNotificationService {
             // 同时发送邮件和站内信
             sendDualNotification(student, NoticeType.PAPER_NEEDS_REVISION, params, paperId, "PAPER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送修改通知失败: paperId={}, studentId={}", paperId, studentId, e);
         }
     }
@@ -104,7 +106,7 @@ public class IntelligentNotificationService {
             // 同时发送邮件和站内信
             sendDualNotification(student, NoticeType.PAPER_APPROVED, params, paperId, "PAPER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送审核通过通知失败: paperId={}, studentId={}", paperId, studentId, e);
         }
     }
@@ -135,7 +137,7 @@ public class IntelligentNotificationService {
 
             sendDualNotification(advisor, NoticeType.SYSTEM_ANNOUNCEMENT, advisorParams, paperId, "PAPER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送老师分配通知失败: paperId={}, studentId={}, advisorId={}", 
                     paperId, studentId, advisorId, e);
         }
@@ -157,7 +159,7 @@ public class IntelligentNotificationService {
             // 同时发送邮件和站内信
             sendDualNotification(advisor, NoticeType.SYSTEM_ANNOUNCEMENT, params, paperId, "PAPER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送高相似度预警通知失败: paperId={}, advisorId={}", paperId, advisorId, e);
         }
     }
@@ -175,7 +177,7 @@ public class IntelligentNotificationService {
             // 同时发送邮件和站内信
             sendDualNotification(user, NoticeType.SYSTEM_ANNOUNCEMENT, params, null, "SYSTEM");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送系统公告失败: userId={}", user.getId(), e);
         }
     }
@@ -193,7 +195,7 @@ public class IntelligentNotificationService {
             // 只发送邮件（重要通知）
             sendEmailNotification(user, NoticeType.ACCOUNT_ACTIVATION, params, null, "USER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送账户激活通知失败: userId={}", user.getId(), e);
         }
     }
@@ -211,7 +213,7 @@ public class IntelligentNotificationService {
             // 只发送邮件（安全通知）
             sendEmailNotification(user, NoticeType.PASSWORD_RESET, params, null, "USER");
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送密码重置通知失败: userId={}", user.getId(), e);
         }
     }
@@ -228,10 +230,10 @@ public class IntelligentNotificationService {
                     emailService.sendTaskCompletionEmailAsync(
                             user.getEmail(), noticeType, params, relatedId, relatedType);
                 }
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.warn("邮件发送失败: userId={}, error={}", user.getId(), e.getMessage());
             }
-        });
+        }, asyncExecutor);
 
         // 发送站内信
         try {
@@ -240,7 +242,7 @@ public class IntelligentNotificationService {
                     noticeType.getTitle(), 
                     buildInternalMessageContent(noticeType, params)
             );
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("站内信发送失败: userId={}, error={}", user.getId(), e.getMessage());
         }
     }
@@ -255,10 +257,10 @@ public class IntelligentNotificationService {
                 try {
                     emailService.sendTaskCompletionEmailAsync(
                             user.getEmail(), noticeType, params, relatedId, relatedType);
-                } catch (Exception e) {
+                } catch (RuntimeException e) {
                     log.warn("邮件发送失败: userId={}, error={}", user.getId(), e.getMessage());
                 }
-            });
+            }, asyncExecutor);
         }
     }
 
@@ -302,7 +304,7 @@ public class IntelligentNotificationService {
         for (SysUser user : users) {
             try {
                 sendDualNotification(user, noticeType, params, relatedId, relatedType);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.warn("批量通知失败: userId={}, error={}", user.getId(), e.getMessage());
             }
         }
@@ -319,14 +321,14 @@ public class IntelligentNotificationService {
                 emailService.sendNoticeEmail(
                         user.getEmail(), title, content, "EMERGENCY", relatedId, relatedType);
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("紧急邮件发送失败: userId={}, error={}", user.getId(), e.getMessage());
         }
 
         // 发送站内信
         try {
             internalMessageService.sendSimpleNotice(user.getId(), title, content);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("紧急站内信发送失败: userId={}, error={}", user.getId(), e.getMessage());
         }
     }
@@ -348,7 +350,7 @@ public class IntelligentNotificationService {
             // 调用现有的方法
             sendEmailNotification(user, NoticeType.SYSTEM_ANNOUNCEMENT, params, null, "USER");
             return true;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("发送邮件通知失败: email={}, error={}", email, e.getMessage());
             return false;
         }

@@ -17,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.Resource;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -32,22 +31,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 管理员日志中心控制器
  */
 @RestController
-@RequestMapping("/api/admin/logs")
+@RequestMapping("/api/v1/admin/logs")
 @PreAuthorize("hasAuthority('ADMIN')")
+@RequiredArgsConstructor
 public class AdminLogController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminLogController.class);
 
-    @Resource
-    private LoginLogService loginLogService;
+    private final LoginLogService loginLogService;
 
-    @Resource
-    private SysOperationLogService sysOperationLogService;
+    private final SysOperationLogService sysOperationLogService;
 
     /**
      * 获取操作日志列表

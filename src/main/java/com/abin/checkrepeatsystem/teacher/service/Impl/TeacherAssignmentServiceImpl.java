@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.teacher.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
@@ -15,7 +15,7 @@ import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -24,27 +24,22 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
 
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
 
-    @Resource
-    private com.abin.checkrepeatsystem.user.service.AdvisorAssignService advisorAssignService;
+    private final com.abin.checkrepeatsystem.user.service.AdvisorAssignService advisorAssignService;
 
     @Override
     public Result<Boolean> confirmAssignment(Long paperId, Long teacherId) {

@@ -8,6 +8,7 @@ import com.abin.checkrepeatsystem.admin.vo.BatchDeleteReq;
 import com.abin.checkrepeatsystem.admin.vo.ResetPasswordReq;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
@@ -22,8 +23,8 @@ import com.alibaba.excel.annotation.ExcelProperty;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.alibaba.excel.EasyExcel;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,27 +45,22 @@ import java.util.stream.Collectors;
 /**
  * 管理员用户管理服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AdminUserServiceImpl implements AdminUserService {
 
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
     
-    @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
+    private final SysLoginLogMapper sysLoginLogMapper;
     
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
     
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
     
-    @Resource
-    private AdminInfoService adminInfoService;
+    private final AdminInfoService adminInfoService;
     
-    @Resource
-    private PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     public Result<Page<UserInfoDTO>> getUserList(Integer page, Integer size, String userType, 
@@ -138,13 +134,13 @@ public class AdminUserServiceImpl implements AdminUserService {
             }
             
             // 根据用户类型创建对应的信息记录
-            if ("TEACHER".equals(createReq.getUserType())) {
+            if (UserTypeEnum.ROLE_TEACHER.equals(createReq.getUserType())) {
                 TeacherInfo teacherInfo = new TeacherInfo();
                 teacherInfo.setUserId(newUser.getId());
                 teacherInfo.setCollegeName(createReq.getCollegeName());
                 teacherInfo.setMajor(createReq.getMajor());
                 teacherInfoService.save(teacherInfo);
-            } else if ("STUDENT".equals(createReq.getUserType())) {
+            } else if (UserTypeEnum.ROLE_STUDENT.equals(createReq.getUserType())) {
                 StudentInfo studentInfo = new StudentInfo();
                 studentInfo.setUserId(newUser.getId());
                 studentInfo.setCollegeName(createReq.getCollegeName());
@@ -152,7 +148,7 @@ public class AdminUserServiceImpl implements AdminUserService {
                 studentInfo.setGrade(createReq.getGrade());
                 studentInfo.setClassName(createReq.getClassName());
                 studentInfoService.save(studentInfo);
-            } else if ("ADMIN".equals(createReq.getUserType())) {
+            } else if (UserTypeEnum.ROLE_ADMIN.equals(createReq.getUserType())) {
                 AdminInfo adminInfo = new AdminInfo();
                 adminInfo.setUserId(newUser.getId());
                 adminInfoService.save(adminInfo);
@@ -192,7 +188,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         sysUserService.updateById(user);
         
         // 根据用户类型更新对应的信息记录
-        if ("TEACHER".equals(user.getUserType())) {
+        if (UserTypeEnum.ROLE_TEACHER.equals(user.getUserType())) {
             TeacherInfo teacherInfo = teacherInfoService.getByUserId(userId);
             if (teacherInfo == null) {
                 teacherInfo = new TeacherInfo();
@@ -201,7 +197,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             teacherInfo.setCollegeName(updateReq.getCollegeName());
             teacherInfo.setMajor(updateReq.getMajor());
             teacherInfoService.saveOrUpdateByUserId(teacherInfo);
-        } else if ("STUDENT".equals(user.getUserType())) {
+        } else if (UserTypeEnum.ROLE_STUDENT.equals(user.getUserType())) {
             StudentInfo studentInfo = studentInfoService.getByUserId(userId);
             if (studentInfo == null) {
                 studentInfo = new StudentInfo();
@@ -212,7 +208,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             studentInfo.setGrade(updateReq.getGrade());
             studentInfo.setClassName(updateReq.getClassName());
             studentInfoService.saveOrUpdateByUserId(studentInfo);
-        } else if ("ADMIN".equals(user.getUserType())) {
+        } else if (UserTypeEnum.ROLE_ADMIN.equals(user.getUserType())) {
             AdminInfo adminInfo = adminInfoService.getByUserId(userId);
             if (adminInfo == null) {
                 adminInfo = new AdminInfo();
@@ -530,13 +526,13 @@ public class AdminUserServiceImpl implements AdminUserService {
         dto.setLastLoginTime(user.getLastLoginTime());
         
         // 根据用户类型获取额外信息
-        if ("TEACHER".equals(user.getUserType())) {
+        if (UserTypeEnum.ROLE_TEACHER.equals(user.getUserType())) {
             TeacherInfo teacherInfo = teacherInfoService.getByUserId(user.getId());
             if (teacherInfo != null) {
                 dto.setCollegeName(teacherInfo.getCollegeName());
                 dto.setMajor(teacherInfo.getMajor());
             }
-        } else if ("STUDENT".equals(user.getUserType())) {
+        } else if (UserTypeEnum.ROLE_STUDENT.equals(user.getUserType())) {
             StudentInfo studentInfo = studentInfoService.getByUserId(user.getId());
             if (studentInfo != null) {
                 dto.setCollegeName(studentInfo.getCollegeName());
@@ -544,7 +540,7 @@ public class AdminUserServiceImpl implements AdminUserService {
                 dto.setGrade(studentInfo.getGrade());
                 dto.setClassName(studentInfo.getClassName());
             }
-        } else if ("ADMIN".equals(user.getUserType())) {
+        } else if (UserTypeEnum.ROLE_ADMIN.equals(user.getUserType())) {
             AdminInfo adminInfo = adminInfoService.getByUserId(user.getId());
             if (adminInfo != null) {
                 dto.setPosition(adminInfo.getPosition());

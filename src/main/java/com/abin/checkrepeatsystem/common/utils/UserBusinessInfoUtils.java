@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.common.utils;
 
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
 import com.abin.checkrepeatsystem.mapper.SysRoleMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysRole;
@@ -7,7 +8,6 @@ import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * 业务信息工具类：用于获取用户业务相关信息
  */
 @Slf4j
-@Service
 public class UserBusinessInfoUtils {
     // 角色编码缓存（角色ID -> 角色编码）
     private static final Map<Long, String> roleCodeCache = new ConcurrentHashMap<>();
@@ -152,7 +151,7 @@ public class UserBusinessInfoUtils {
      */
     public static boolean isAdmin() {
         String roleCode = getCurrentUserRoleCode();
-        return "ADMIN".equals(roleCode);
+        return UserTypeEnum.ROLE_ADMIN.equals(roleCode);
     }
 
     /**
@@ -161,7 +160,7 @@ public class UserBusinessInfoUtils {
      */
     public static boolean isStudent() {
         String roleCode = getCurrentUserRoleCode();
-        return "STUDENT".equals(roleCode);
+        return UserTypeEnum.ROLE_STUDENT.equals(roleCode);
     }
 
     /**
@@ -170,7 +169,7 @@ public class UserBusinessInfoUtils {
      */
     public static boolean isTeacher() {
         String roleCode = getCurrentUserRoleCode();
-        return "TEACHER".equals(roleCode);
+        return UserTypeEnum.ROLE_TEACHER.equals(roleCode);
     }
     // 在 UserBusinessInfoUtils.java 中新增如下方法：
 

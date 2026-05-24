@@ -13,7 +13,6 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.minio.MinioClient;
-import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -26,8 +25,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class FileUploadServiceImpl implements FileUploadService {
@@ -36,20 +37,14 @@ public class FileUploadServiceImpl implements FileUploadService {
     @Value("${file.upload.storage-type}") // 配置切换存储类型（LOCAL/MINIO）
     private String storageType;
 
-    @Resource
-    private LocalFileStorageService localFileStorageService;
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
-    @Resource
-    private MinioClient minioClient;
-    @Resource
-    private MinioProp minioProp;
+    private final LocalFileStorageService localFileStorageService;
+    private final PaperInfoMapper paperInfoMapper;
+    private final MinioClient minioClient;
+    private final MinioProp minioProp;
 
-    @Resource
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
 
-    @Resource
-    private ApplicationMonitorService monitorService;
+    private final ApplicationMonitorService monitorService;
 
     @Override
     public FileUploadResp uploadFile(FileBaseParam baseParam, FileBusinessBindParam businessParam,Long loginUserId) throws Exception {
@@ -166,16 +161,27 @@ public class FileUploadServiceImpl implements FileUploadService {
         throw new IllegalArgumentException("上传文件不能为空");
     }
 
-    // 检查文件大小（示例限制为10MB）
+    // 检查文件大小
     long maxSize = 50 * 1024 * 1024; // 50MB
     if (baseParam.getFile().getSize() > maxSize) {
-        throw new IllegalArgumentException("文件大小不能超过10MB");
+        throw new IllegalArgumentException("文件大小不能超过50MB");
     }
 
-    // 检查文件类型（根据实际需求调整允许的类型）
+    // 检查文件类型（Content-Type + Tika magic bytes双重校验）
     String contentType = baseParam.getFile().getContentType();
     if (contentType == null || !isValidFileType(contentType)) {
         throw new IllegalArgumentException("不支持的文件类型: " + contentType);
+    }
+
+    // 使用Tika检测实际MIME类型，防止Content-Type伪造
+    try (java.io.InputStream is = baseParam.getFile().getInputStream()) {
+        org.apache.tika.Tika tika = new org.apache.tika.Tika();
+        String detectedType = tika.detect(is, baseParam.getFile().getOriginalFilename());
+        if (!isValidFileType(detectedType)) {
+            throw new IllegalArgumentException("文件内容与声称的类型不匹配，请上传有效的文件");
+        }
+    } catch (Exception e) {
+        throw new IllegalArgumentException("文件类型校验失败，请重试");
     }
 
     // 检查文件MD5值

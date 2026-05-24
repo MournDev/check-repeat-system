@@ -30,4 +30,15 @@ public class TeacherInfoDataServiceImpl extends ServiceImpl<TeacherInfoMapper, T
         }
         return saveOrUpdate(teacherInfo);
     }
+
+    @Override
+    public java.util.List<TeacherInfo> listByUserIds(java.util.List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        LambdaQueryWrapper<TeacherInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.in(TeacherInfo::getUserId, userIds)
+                    .eq(TeacherInfo::getIsDeleted, 0);
+        return baseMapper.selectList(queryWrapper);
+    }
 }

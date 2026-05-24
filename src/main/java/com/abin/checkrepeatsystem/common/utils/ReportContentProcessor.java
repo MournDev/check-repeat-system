@@ -7,7 +7,7 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -20,14 +20,13 @@ import java.util.stream.Collectors;
 /**
  * 报告内容处理工具类：分段、标红、来源匹配
  */
+@RequiredArgsConstructor
 @Slf4j
 @Component
 public class ReportContentProcessor {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
-    @Resource
-    private PaperContentMinioService paperContentMinioService;
+    private final PaperInfoMapper paperInfoMapper;
+    private final PaperContentMinioService paperContentMinioService;
     
     @Value("${report.preview.max-paragraph-length:500}")
     private int maxParagraphLength;

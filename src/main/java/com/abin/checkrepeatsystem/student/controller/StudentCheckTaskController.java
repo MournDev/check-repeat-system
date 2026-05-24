@@ -9,25 +9,25 @@ import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.student.service.Impl.BatchCheckTaskServiceImpl;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 学生端查重任务控制器：仅学生角色可访问
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/student/check-tasks")
+@RequestMapping("/api/v1/student/check-tasks")
 public class StudentCheckTaskController {
 
-    @Resource
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
-    @Resource
-    private BatchCheckTaskServiceImpl batchCheckTaskService;
+    private final BatchCheckTaskServiceImpl batchCheckTaskService;
 
     /**
      * 1. 学生发起查重任务

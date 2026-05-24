@@ -18,7 +18,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -36,21 +36,18 @@ import java.util.stream.Collectors;
 /**
  * 管理员规则配置服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, CheckRule> implements AdminRuleConfigService {
 
-    @Resource
-    private CompareLibMapper compareLibMapper;
+    private final CompareLibMapper compareLibMapper;
 
-    @Resource
-    private RuleLibRelationMapper ruleLibRelationMapper;
+    private final RuleLibRelationMapper ruleLibRelationMapper;
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private SystemParamMapper systemParamMapper;
+    private final SystemParamMapper systemParamMapper;
 
     // 默认配置（从配置文件获取）
     @Value("${admin.check-rule.default-threshold}")

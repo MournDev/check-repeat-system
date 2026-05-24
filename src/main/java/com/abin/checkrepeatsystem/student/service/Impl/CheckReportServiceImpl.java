@@ -1,7 +1,7 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
-import com.abin.checkrepeatsystem.common.Exception.PermissionDeniedException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.PermissionDeniedException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
@@ -23,13 +23,13 @@ import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.ReportContentProcessor;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.user.service.MessageService;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.TypeReference;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -49,33 +49,26 @@ import java.util.stream.Collectors;
 /**
  * 查重报告服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, CheckReport> implements CheckReportService {
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private AuthService authService;
+    private final AuthService authService;
 
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
 
-    @Resource
-    private ReportContentProcessor reportContentProcessor;
+    private final ReportContentProcessor reportContentProcessor;
 
-    @Resource
-    private PdfReportGenerator pdfReportGenerator;
+    private final PdfReportGenerator pdfReportGenerator;
 
-    @Resource
-    private PaperContentMinioService paperContentMinioService;
+    private final PaperContentMinioService paperContentMinioService;
 
-    @Resource
-    private SysUserMapper userMapper;
+    private final SysUserMapper userMapper;
 
     // 报告存储根路径（从配置文件获取）
     @Value("${report.storage.base-path}")
@@ -301,7 +294,8 @@ public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, Check
             // 学生：查询自己论文的报告
             LambdaQueryWrapper<PaperInfo> paperQueryWrapper = new LambdaQueryWrapper<>();
             paperQueryWrapper.eq(PaperInfo::getStudentId, currentUser.getId())
-                    .eq(PaperInfo::getIsDeleted, 0);
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .last("LIMIT 500");
             List<PaperInfo> studentPapers = paperInfoMapper.selectList(paperQueryWrapper);
             if (!studentPapers.isEmpty()) {
                 List<Long> paperIds = studentPapers.stream().map(PaperInfo::getId).collect(Collectors.toList());
@@ -313,7 +307,8 @@ public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, Check
             // 教师：查询自己指导论文的报告
             LambdaQueryWrapper<PaperInfo> paperQueryWrapper = new LambdaQueryWrapper<>();
             paperQueryWrapper.eq(PaperInfo::getTeacherId, currentUser.getId())
-                    .eq(PaperInfo::getIsDeleted, 0);
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .last("LIMIT 500");
             List<PaperInfo> teacherPapers = paperInfoMapper.selectList(paperQueryWrapper);
             if (!teacherPapers.isEmpty()) {
                 List<Long> paperIds = teacherPapers.stream().map(PaperInfo::getId).collect(Collectors.toList());
@@ -399,7 +394,7 @@ public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, Check
         PaperInfo paperInfo = paperInfoMapper.selectById(checkTask.getPaperId());
         try {
             authService.checkReportAccess(checkReport);
-        } catch (com.abin.checkrepeatsystem.common.Exception.PermissionDeniedException e) {
+        } catch (com.abin.checkrepeatsystem.common.exception.PermissionDeniedException e) {
             return Result.error(e.getResultCode(), e.getMessage());
         }
 
@@ -965,6 +960,7 @@ public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, Check
             List<CheckReport> reports = this.list(
                     new LambdaQueryWrapper<CheckReport>()
                             .eq(CheckReport::getIsDeleted, 0)
+                            .last("LIMIT 1000")
             );
 
             for (CheckReport report : reports) {

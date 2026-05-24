@@ -67,5 +67,19 @@ public interface CheckTaskService extends IService<CheckTask> {
      */
     Result<String> createBatchCheckTasks(List<Long> paperIds);
 
+    /**
+     * 获取论文最新的查重任务
+     * @param paperId 论文ID
+     * @return 最新查重任务
+     */
+    CheckTask getLatestCheckTaskByPaperId(Long paperId);
+
+    /**
+     * 将CheckTask转换为DTO
+     * @param checkTask 查重任务实体
+     * @param withFullReport 是否包含完整报告
+     * @return 查重任务DTO
+     */
+    CheckTaskResultDTO convertToTaskResultDTO(CheckTask checkTask, boolean withFullReport);
 
 }

@@ -1,24 +1,26 @@
 package com.abin.checkrepeatsystem.common.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.PermissionDeniedException;
+import com.abin.checkrepeatsystem.common.exception.PermissionDeniedException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.common.service.AuthService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 权限管理服务实现类
  */
+@RequiredArgsConstructor
 @Service
 public class PermissionServiceImpl implements AuthService {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
     /**
      * 检查用户是否有权限访问论文
@@ -168,19 +170,19 @@ public class PermissionServiceImpl implements AuthService {
     @Override
     public boolean isAdmin() {
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
-        return currentUser != null && "ADMIN".equals(currentUser.getUserType());
+        return currentUser != null && UserTypeEnum.ROLE_ADMIN.equals(currentUser.getUserType());
     }
 
     @Override
     public boolean isStudent() {
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
-        return currentUser != null && "STUDENT".equals(currentUser.getUserType());
+        return currentUser != null && UserTypeEnum.ROLE_STUDENT.equals(currentUser.getUserType());
     }
 
     @Override
     public boolean isTeacher() {
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
-        return currentUser != null && "TEACHER".equals(currentUser.getUserType());
+        return currentUser != null && UserTypeEnum.ROLE_TEACHER.equals(currentUser.getUserType());
     }
 
     @Override

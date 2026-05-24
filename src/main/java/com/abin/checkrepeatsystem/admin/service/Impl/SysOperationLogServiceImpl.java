@@ -6,11 +6,11 @@ import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -18,12 +18,12 @@ import java.util.Map;
 /**
  * 操作日志服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class SysOperationLogServiceImpl extends ServiceImpl<SysOperationLogMapper, SysOperationLog> implements SysOperationLogService {
 
-    @Resource
-    private SysOperationLogMapper sysOperationLogMapper;
+    private final SysOperationLogMapper sysOperationLogMapper;
 
     @Override
     public Page<SysOperationLog> selectPage(Page<SysOperationLog> page, LambdaQueryWrapper<SysOperationLog> wrapper) {

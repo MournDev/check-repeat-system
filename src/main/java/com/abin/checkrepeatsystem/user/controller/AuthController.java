@@ -9,11 +9,11 @@ import com.abin.checkrepeatsystem.user.dto.UpdateUserInfoReq;
 import com.abin.checkrepeatsystem.user.service.AuthService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.user.vo.RefreshTokenVO;
-import jakarta.annotation.Resource;
 import com.abin.checkrepeatsystem.common.annotation.Idempotent;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.annotation.RateLimit;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,12 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/auth") // 接口前缀，便于版本管理（后续可扩展为 /api/v1/auth）
+@RequestMapping("/api/v1/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
     // 仅依赖Service接口，不依赖具体实现（符合依赖倒置原则）
-    @Resource
-    private AuthService authService;
+    private final AuthService authService;
 
     /**
      * 用户注册接口（请求→Service→响应）
@@ -39,6 +39,7 @@ public class AuthController {
     @PostMapping("/register")
     @OperationLog(type = "user_register", description = "用户注册")
     @Idempotent(message = "请勿重复提交注册请求")
+    @RateLimit(maxRequests = 3, windowSeconds = 60, message = "注册过于频繁，请60秒后重试")
     public Result<String> register(@Valid @RequestBody RegisterReq registerReq) {
         log.info("接收用户注册请求：用户名={}，角色ID={}", registerReq.getUsername(), registerReq.getRoleId());
         return authService.register(registerReq);

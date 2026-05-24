@@ -30,4 +30,15 @@ public class StudentInfoServiceImpl extends ServiceImpl<StudentInfoMapper, Stude
         }
         return saveOrUpdate(studentInfo);
     }
+
+    @Override
+    public java.util.List<StudentInfo> listByUserIds(java.util.List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        LambdaQueryWrapper<StudentInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.in(StudentInfo::getUserId, userIds)
+                    .eq(StudentInfo::getIsDeleted, 0);
+        return baseMapper.selectList(queryWrapper);
+    }
 }

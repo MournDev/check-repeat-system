@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
@@ -20,7 +20,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -46,24 +46,20 @@ import java.util.stream.Collectors;
 /**
  * 学生端审核结果服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo> implements StudentReviewService {
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private ReviewRecordMapper reviewRecordMapper;
+    private final ReviewRecordMapper reviewRecordMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private CheckRuleMapper checkRuleMapper;
+    private final CheckRuleMapper checkRuleMapper;
 
     // 论文存储根路径（复用之前的配置）
     @Value("${paper.upload.base-path:/data/paper-upload}")

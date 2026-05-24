@@ -5,19 +5,19 @@ import com.abin.checkrepeatsystem.student.mapper.CheckRuleMapper;
 import com.abin.checkrepeatsystem.student.service.CheckRuleService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class CheckRuleServiceImpl extends ServiceImpl<CheckRuleMapper, CheckRule> implements CheckRuleService {
 
-    @Resource
-    private CheckRuleMapper checkRuleMapper;
+    private final CheckRuleMapper checkRuleMapper;
 
     @Override
     public List<CheckRule> getAllRules() {

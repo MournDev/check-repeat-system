@@ -4,20 +4,20 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.service.Impl.DictService;
 import com.abin.checkrepeatsystem.pojo.entity.SysDictData;
 import com.abin.checkrepeatsystem.student.vo.DictTreeVO;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/dict")
+@RequestMapping("/api/v1/dict")
 @Slf4j
 public class DictController {
 
-    @Autowired
-    private DictService dictService;
+    private final DictService dictService;
 
     /**
      * 根据字典类型获取字典数据

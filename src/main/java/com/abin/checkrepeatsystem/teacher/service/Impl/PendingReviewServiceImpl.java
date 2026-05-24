@@ -21,12 +21,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.minio.MinioClient;
 import io.minio.GetObjectArgs;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
@@ -39,6 +39,8 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.Base64;
+
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
 import org.apache.commons.io.FileUtils;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -47,36 +49,28 @@ import java.util.stream.Collectors;
 /**
  * 待审核论文服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class PendingReviewServiceImpl implements PendingReviewService {
 
-    @Resource
-    private PendingReviewMapper pendingReviewMapper;
+    private final PendingReviewMapper pendingReviewMapper;
     
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
     
-    @Resource
-    private InstantMessageService instantMessageService;
+    private final InstantMessageService instantMessageService;
     
-    @Resource
-    private MinioClient minioClient;
+    private final MinioClient minioClient;
     
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
     
-    @Resource
-    private FileService fileService;
+    private final FileService fileService;
     
-    @Resource
-    private TeacherAllocationRecordMapper teacherAllocationRecordMapper;
+    private final TeacherAllocationRecordMapper teacherAllocationRecordMapper;
     
-    @Resource
-    private ReviewRecordMapper reviewRecordMapper;
+    private final ReviewRecordMapper reviewRecordMapper;
     
-    @Resource
-    private SystemMessageMapper systemMessageMapper;
+    private final SystemMessageMapper systemMessageMapper;
     
     @Value("${minio.bucket.main:check-repeat-system}")
     private String mainBucket;
@@ -556,7 +550,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
 
             // 解析文件信息
             String fileName = extractFileName(filePath);
-            String contentType = getContentType(fileName);
+            String contentType = FileMimeTypeUtils.getContentType(fileName);
 
             // 设置响应头
             response.setContentType(contentType);
@@ -598,24 +592,6 @@ public class PendingReviewServiceImpl implements PendingReviewService {
         if (filePath == null) return "paper.docx";
         int lastSlash = filePath.lastIndexOf('/');
         return lastSlash >= 0 ? filePath.substring(lastSlash + 1) : filePath;
-    }
-
-    /**
-     * 根据文件名获取内容类型
-     */
-    private String getContentType(String fileName) {
-        if (fileName == null) return "application/octet-stream";
-        
-        String lowerName = fileName.toLowerCase();
-        if (lowerName.endsWith(".pdf")) {
-            return "application/pdf";
-        } else if (lowerName.endsWith(".docx")) {
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        } else if (lowerName.endsWith(".doc")) {
-            return "application/msword";
-        } else {
-            return "application/octet-stream";
-        }
     }
 
     @Override
@@ -732,7 +708,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                     FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
                     if (fileInfo != null) {
                         contentDTO.setFileSizeDesc(fileInfo.getFileSizeDesc());
-                        contentDTO.setFileType(getFileExtension(fileInfo.getOriginalFilename()));
+                        contentDTO.setFileType(FileMimeTypeUtils.getFileExtension(fileInfo.getOriginalFilename()));
 
                         // 获取文件内容（如果是文本文件）
                         if (isTextFile(fileInfo.getFileType())) {
@@ -958,7 +934,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
             FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
             if (fileInfo != null) {
                 previewUrlDTO.setFileName(fileInfo.getOriginalFilename());
-                previewUrlDTO.setFileType(getFileExtension(fileInfo.getOriginalFilename()));
+                previewUrlDTO.setFileType(FileMimeTypeUtils.getFileExtension(fileInfo.getOriginalFilename()));
                 
                 // 构建文件访问URL（包含文件名，符合KKFileView要求）
                 String fileUrl = String.format("http://%s:%s%s/api/file/download/%s/%s",
@@ -995,18 +971,7 @@ public class PendingReviewServiceImpl implements PendingReviewService {
                contentType.equals("application/json") ||
                contentType.equals("application/xml");
     }
-    
-    private String getFileExtension(String contentType) {
-        if (contentType == null) return "unknown";
-        switch (contentType) {
-            case "application/pdf": return "pdf";
-            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": return "docx";
-            case "application/msword": return "doc";
-            case "text/plain": return "txt";
-            default: return "file";
-        }
-    }
-    
+
     private String formatFileSize(long size) {
         if (size < 1024) return size + "B";
         if (size < 1024 * 1024) return String.format("%.1fKB", size / 1024.0);

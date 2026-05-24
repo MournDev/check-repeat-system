@@ -5,20 +5,21 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.teacher.dto.StudentListDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentListService;
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 教师端学生列表控制器：仅教师角色可访问
  */
 @RestController
-@RequestMapping("/api/teacher/student-list")
+@RequestMapping("/api/v1/teacher/student-list")
 @PreAuthorize("hasAuthority('TEACHER')")
+@RequiredArgsConstructor
 public class TeacherStudentListController {
 
-    @Autowired
-    private TeacherStudentListService teacherStudentService;
+    private final TeacherStudentListService teacherStudentService;
 
     @GetMapping("/list")
     public Result<PageResultVO<StudentListDTO>> getStudentList(

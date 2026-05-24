@@ -9,7 +9,7 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.TeacherAllocationRecordService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,18 +17,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAllocationRecordMapper, TeacherAllocationRecord> implements TeacherAllocationRecordService {
 
-    @Resource
-    private TeacherAllocationRecordMapper teacherAllocationRecordMapper;
+    private final TeacherAllocationRecordMapper teacherAllocationRecordMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
     @Override
     public List<TeacherAllocationRecord> getByPaperId(Long paperId) {
@@ -39,7 +37,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
                     .eq(TeacherAllocationRecord::getIsDeleted, 0)
                     .orderByDesc(TeacherAllocationRecord::getAllocationTime)
             );
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取论文分配记录失败 - 论文ID: {}", paperId, e);
             return Collections.emptyList();
         }
@@ -54,7 +52,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
                     .eq(TeacherAllocationRecord::getIsDeleted, 0)
                     .orderByDesc(TeacherAllocationRecord::getAllocationTime)
             );
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取教师分配记录失败 - 教师ID: {}", teacherId, e);
             return Collections.emptyList();
         }
@@ -69,7 +67,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
                     .eq(TeacherAllocationRecord::getIsDeleted, 0)
                     .orderByDesc(TeacherAllocationRecord::getAllocationTime)
             );
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取学生分配记录失败 - 学生ID: {}", studentId, e);
             return Collections.emptyList();
         }
@@ -127,7 +125,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
             
             int result = teacherAllocationRecordMapper.insert(record);
             return result > 0;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("创建分配记录失败", e);
             return false;
         }
@@ -150,7 +148,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
 
             int result = teacherAllocationRecordMapper.updateById(updateRecord);
             return result > 0;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("撤销分配记录失败 - 记录ID: {}", id, e);
             return false;
         }
@@ -167,7 +165,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
                     .orderByDesc(TeacherAllocationRecord::getAllocationTime)
                     .last("LIMIT 1")
             );
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取当前有效分配失败 - 论文ID: {}", paperId, e);
             return null;
         }
@@ -226,7 +224,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
             }
             
             return saveBatch(records);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("批量创建分配记录失败", e);
             return false;
         }
@@ -265,7 +263,7 @@ public class TeacherAllocationRecordServiceImpl extends ServiceImpl<TeacherAlloc
             stats.put("typeStats", typeStats);
 
             return stats;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("获取分配统计信息失败", e);
             return Collections.emptyMap();
         }

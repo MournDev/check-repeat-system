@@ -3,11 +3,11 @@ package com.abin.checkrepeatsystem.admin.controller;
 import com.abin.checkrepeatsystem.admin.service.AdminDashboardService;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.Resource;
 
 import java.util.List;
 import java.util.Map;
@@ -17,13 +17,13 @@ import java.util.Map;
  * 职责：接收HTTP请求，调用服务层，返回响应结果
  */
 @RestController
-@RequestMapping("/api/admin/dashboard")
+@RequestMapping("/api/v1/admin/dashboard")
 @PreAuthorize("hasAuthority('ADMIN')")
+@RequiredArgsConstructor
 @Slf4j
 public class AdminDashboardController {
 
-    @Resource
-    private AdminDashboardService adminDashboardService;
+    private final AdminDashboardService adminDashboardService;
 
     /**
      * 获取系统统计数据
@@ -31,12 +31,7 @@ public class AdminDashboardController {
     @GetMapping("/stats")
     public Result<Map<String, Object>> getSystemStats() {
         log.info("接收获取系统统计数据请求");
-        try {
-            return adminDashboardService.getSystemStats();
-        } catch (Exception e) {
-            log.error("获取系统统计数据失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取系统统计数据失败: " + e.getMessage());
-        }
+        return adminDashboardService.getSystemStats();
     }
 
     /**
@@ -45,12 +40,7 @@ public class AdminDashboardController {
     @GetMapping("/quick-actions")
     public Result<List<Map<String, Object>>> getQuickActions() {
         log.info("接收获取快捷操作菜单请求");
-        try {
-            return adminDashboardService.getQuickActions();
-        } catch (Exception e) {
-            log.error("获取快捷操作菜单失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取快捷操作菜单失败: " + e.getMessage());
-        }
+        return adminDashboardService.getQuickActions();
     }
 
     /**
@@ -59,11 +49,6 @@ public class AdminDashboardController {
     @GetMapping("/realtime-stats")
     public Result<Map<String, Object>> getRealtimeStats() {
         log.info("接收获取实时统计数据请求");
-        try {
-            return adminDashboardService.getRealtimeStats();
-        } catch (Exception e) {
-            log.error("获取实时统计数据失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取实时统计数据失败: " + e.getMessage());
-        }
+        return adminDashboardService.getRealtimeStats();
     }
 }

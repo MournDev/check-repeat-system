@@ -16,9 +16,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -28,18 +28,16 @@ import java.util.List;
 /**
  * 审核工作流配置服务实现
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherReviewWorkflowServiceImpl implements TeacherReviewWorkflowService {
 
-    @Autowired
-    private ReviewWorkflowMapper reviewWorkflowMapper;
+    private final ReviewWorkflowMapper reviewWorkflowMapper;
 
-    @Autowired
-    private BaseMapper<SysUser> sysUserMapper;
+    private final BaseMapper<SysUser> sysUserMapper;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
 
     /**
      * 获取审核工作流配置

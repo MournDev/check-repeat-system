@@ -4,6 +4,8 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 /**
  * 教师学生管理服务接口
  */
@@ -86,4 +88,20 @@ public interface TeacherStudentManagementService {
      * @return 添加结果
      */
     Result<Object> addStudent(AddStudentDTO addStudentDTO);
+
+    /**
+     * 获取学生最新论文信息
+     * @param teacherId 教师ID
+     * @param studentId 学生ID
+     * @return 论文信息
+     */
+    Result<StudentPaperInfoDTO> getStudentPaperInfo(Long teacherId, Long studentId);
+
+    /**
+     * 获取学生所有论文
+     * @param teacherId 教师ID
+     * @param studentId 学生ID
+     * @return 论文列表
+     */
+    Result<List<StudentPaperInfoDTO>> getStudentAllPapers(Long teacherId, Long studentId);
 }

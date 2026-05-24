@@ -3,9 +3,9 @@ package com.abin.checkrepeatsystem.common.interceptor;
 import com.abin.checkrepeatsystem.common.annotation.RateLimit;
 import com.abin.checkrepeatsystem.common.utils.HttpIpUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
@@ -19,14 +19,14 @@ import java.util.Map;
  * 限流拦截器 — 基于Redis滑动窗口算法
  * time bucket 粒度：1秒一个bucket，windowSeconds个bucket组成窗口
  */
+@RequiredArgsConstructor
 @Slf4j
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
 
     private static final String RATE_LIMIT_PREFIX = "rate_limit:";
 
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -82,9 +82,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // 添加当前请求记录（score = 当前时间戳，value = 唯一请求ID）
-        redisTemplate.opsForZSet().add(key, String.valueOf(now), now);
-        // 不设置过期时间，由下次请求的removeRangeByScore清理（极端情况用max TTL兜底）
+        // 添加当前请求记录（score = 当前时间戳，value = 纳秒级唯一ID避免毫秒碰撞）
+        String memberId = now + ":" + System.nanoTime();
+        redisTemplate.opsForZSet().add(key, memberId, now);
+        // 设置TTL兜底：窗口的2倍时间后自动过期
+        redisTemplate.expire(key, java.time.Duration.ofSeconds(config.windowSeconds() * 2L));
         return true;
     }
 

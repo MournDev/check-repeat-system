@@ -1,7 +1,7 @@
 package com.abin.checkrepeatsystem.user.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
-import com.abin.checkrepeatsystem.common.Exception.ParamInvalidException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.ParamInvalidException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.PaperAdvisorRel;
 import com.abin.checkrepeatsystem.user.mapper.PaperAdvisorRelMapper;
@@ -11,20 +11,21 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 论文-指导老师关联服务实现（适配 AdvisorAssignService 调用）
  */
+@RequiredArgsConstructor
 @Service
 public class PaperAdvisorRelServiceImpl extends ServiceImpl<PaperAdvisorRelMapper, PaperAdvisorRel> implements PaperAdvisorRelService {
 
-    @Resource
-    private PaperAdvisorRelMapper paperAdvisorRelMapper;
+    private final PaperAdvisorRelMapper paperAdvisorRelMapper;
 
     // 常量：关联状态
     private static final Integer REL_STATUS_VALID = 1; // 有效

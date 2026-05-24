@@ -2,10 +2,10 @@ package com.abin.checkrepeatsystem.detection.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.detection.service.PdfReportGeneratorService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -14,13 +14,13 @@ import java.io.OutputStream;
  * PDF查重报告控制器
  * 负责处理PDF报告的生成和下载
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/detection/report")
+@RequestMapping("/api/v1/detection/report")
 @Slf4j
 public class PdfReportController {
 
-    @Resource
-    private PdfReportGeneratorService reportGeneratorService;
+    private final PdfReportGeneratorService reportGeneratorService;
 
     /**
      * 生成并下载PDF报告

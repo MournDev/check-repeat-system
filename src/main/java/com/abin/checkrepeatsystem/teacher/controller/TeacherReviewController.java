@@ -9,7 +9,7 @@ import com.abin.checkrepeatsystem.teacher.dto.ReviewQueryReq;
 import com.abin.checkrepeatsystem.teacher.dto.ReviewResultDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -26,12 +26,12 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/teacher/reviews")
+@RequestMapping("/api/v1/teacher/reviews")
 @PreAuthorize("hasAuthority('TEACHER')") // 权限控制：仅教师可访问
+@RequiredArgsConstructor
 public class TeacherReviewController {
 
-    @Resource
-    private TeacherReviewService teacherReviewService;
+    private final TeacherReviewService teacherReviewService;
 
     /**
      * 1. 教师查询待审核论文列表（分页）
@@ -133,14 +133,9 @@ public class TeacherReviewController {
      */
     @GetMapping("/paper-content/{paperId}")
     public Result<PaperContentDTO> getPaperContent(@PathVariable Long paperId) {
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("教师{}获取论文内容: paperId={}", teacherId, paperId);
-            return teacherReviewService.getPaperContent(teacherId, paperId);
-        } catch (Exception e) {
-            log.error("获取论文内容失败: paperId={}", paperId, e);
-            return Result.error(500, "获取论文内容失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("教师{}获取论文内容: paperId={}", teacherId, paperId);
+        return teacherReviewService.getPaperContent(teacherId, paperId);
     }
 
     /**
@@ -149,14 +144,9 @@ public class TeacherReviewController {
      */
     @GetMapping("/paper-preview/{paperId}")
     public Result<PaperPreviewUrlDTO> getPaperPreview(@PathVariable Long paperId) {
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("教师{}获取论文预览URL: paperId={}", teacherId, paperId);
-            return teacherReviewService.getPaperPreviewUrl(teacherId, paperId);
-        } catch (Exception e) {
-            log.error("获取论文预览URL失败: paperId={}", paperId, e);
-            return Result.error(500, "获取论文预览URL失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("教师{}获取论文预览URL: paperId={}", teacherId, paperId);
+        return teacherReviewService.getPaperPreviewUrl(teacherId, paperId);
     }
 
     /**

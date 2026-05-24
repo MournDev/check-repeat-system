@@ -20,7 +20,7 @@ import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
 import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,30 +33,24 @@ import java.util.List;
 /**
  * 学生个人信息管理服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class StudentProfileServiceImpl implements StudentProfileService {
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
     
-    @Resource
-    private FileInfoMapper fileInfoMapper;
+    private final FileInfoMapper fileInfoMapper;
     
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
     
-    @Resource
-    private ConversationMemberMapper conversationMemberMapper;
+    private final ConversationMemberMapper conversationMemberMapper;
 
     @Override
     public Result<StudentProfileDTO> getStudentProfile(Long studentId) {

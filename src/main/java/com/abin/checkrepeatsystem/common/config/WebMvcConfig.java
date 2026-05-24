@@ -4,39 +4,37 @@ import com.abin.checkrepeatsystem.common.interceptor.IdempotencyInterceptor;
 import com.abin.checkrepeatsystem.common.interceptor.LoginInterceptor;
 import com.abin.checkrepeatsystem.common.interceptor.MonitoringInterceptor;
 import com.abin.checkrepeatsystem.common.interceptor.RateLimitInterceptor;
-import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * Web MVC配置：添加拦截器
  */
+@RequiredArgsConstructor
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
-    @Resource
-    private LoginInterceptor loginInterceptor;
+    private final LoginInterceptor loginInterceptor;
 
-    @Resource
-    private MonitoringInterceptor monitoringInterceptor;
+    private final MonitoringInterceptor monitoringInterceptor;
 
-    @Resource
-    private RateLimitInterceptor rateLimitInterceptor;
+    private final RateLimitInterceptor rateLimitInterceptor;
 
-    @Resource
-    private IdempotencyInterceptor idempotencyInterceptor;
+    private final IdempotencyInterceptor idempotencyInterceptor;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 限流拦截器：基于注解@RateLimit检查频率
+        // 限流拦截器：基于注解@RateLimit检查频率（含actuator端点防止爬取）
         registry.addInterceptor(rateLimitInterceptor)
-                .addPathPatterns("/api/**")
+                .addPathPatterns("/api/v1/**", "/actuator/**")
                 .order(1);
 
         // 幂等性拦截器：基于注解@Idempotent防止重复提交
         registry.addInterceptor(idempotencyInterceptor)
-                .addPathPatterns("/api/**")
+                .addPathPatterns("/api/v1/**")
                 .order(2);
 
         // 监控拦截器：记录所有请求的性能指标
@@ -47,17 +45,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
         // 登录拦截器：验证用户登录状态
         registry.addInterceptor(loginInterceptor)
-                .addPathPatterns("/api/**")
+                .addPathPatterns("/api/v1/**")
                 .excludePathPatterns(
-                        "/api/auth/**",
-                        "/api/avatar/**",
-                        "/api/papers/public/**",
-                        "/api/minio/test-connection",
-                        "/api/file/preview/**",
-                        "/api/file/smartPreview",
-                        "/api/file/smartPreviewReport",
-                        "/api/file/downloadReport/**",
-                        "/api/preview/**",
+                        "/api/v1/auth/**",
+                        "/api/v1/avatar/**",
+                        "/api/v1/papers/public/**",
+                        "/api/v1/minio/test-connection",
+                        "/api/v1/file/preview/**",
+                        "/api/v1/file/smartPreview",
+                        "/api/v1/file/smartPreviewReport",
+                        "/api/v1/file/downloadReport/**",
+                        "/api/v1/preview/**",
                         "/check/actuator/**"
                 );
     }

@@ -16,8 +16,8 @@ kkfileview:
 # 对象存储
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-  accesskey: ${MINIO_ACCESSKEY:minioadmin}
-  secretkey: ${MINIO_SECRETKEY:minioadmin}
+  accesskey: ${MINIO_ACCESSKEY}
+  secretkey: ${MINIO_SECRETKEY}
   bucket:
     main: check-repeat-system
     avatar: avatar
@@ -30,9 +30,9 @@ spring:
 
   # 数据源配置
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&initialTimeout=2
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:your_password}
+    password: ${MYSQL_PASSWORD}   # 必须通过环境变量设置
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -42,7 +42,6 @@ spring:
       max-lifetime: 1800000
       validation-timeout: 5000
       leak-detection-threshold: 60000
-      connection-test-query: SELECT 1
 
   # 文件上传配置
   servlet:
@@ -55,7 +54,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:your_redis_password}
+      password: ${REDIS_PASSWORD}   # 必须通过环境变量设置
       database: 0
       timeout: 2000ms
       lettuce:
@@ -66,7 +65,7 @@ spring:
 
   # JWT 配置（密钥必须通过环境变量设置）
   jwt:
-    secret-key: ${JWT_SECRET_KEY:change-this-secret-key-in-production}
+    secret-key: ${JWT_SECRET_KEY}   # 必须通过环境变量设置
     expiration: 86400000
     token-header: Authorization
 
@@ -157,7 +156,7 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: never
+      show-details: when-authorized
       probes:
         enabled: true
     metrics:

@@ -6,25 +6,26 @@ import com.abin.checkrepeatsystem.user.service.SysUserMajorService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
-import jakarta.annotation.Resource;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import lombok.RequiredArgsConstructor;
+
 
 
 /**
  * 用户-专业关联控制器（指导任务上限相关接口）
  */
 @RestController
-@RequestMapping("/api/sys/user-major")
+@RequestMapping("/api/v1/sys/user-major")
 @Api(tags = "指导任务上限管理")
 @PreAuthorize("hasAuthority('ADMIN')")
+@RequiredArgsConstructor
 public class SysUserMajorController {
 
-    @Resource
-    private SysUserMajorService sysUserMajorService;
+    private final SysUserMajorService sysUserMajorService;
 
     /**
      * 修改指导任务上限接口（仅管理员可调用）

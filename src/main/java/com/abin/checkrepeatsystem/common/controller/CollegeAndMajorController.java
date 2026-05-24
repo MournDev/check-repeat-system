@@ -7,8 +7,8 @@ import com.abin.checkrepeatsystem.pojo.entity.Major;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,13 +21,13 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/college-major")
+@RequestMapping("/api/v1/college-major")
 @Tag(name = "学院和专业接口", description = "学院和专业数据统一管理接口")
 @PreAuthorize("isAuthenticated()")
+@RequiredArgsConstructor
 public class CollegeAndMajorController {
 
-    @Autowired
-    private CollegeAndMajorService collegeAndMajorService;
+    private final CollegeAndMajorService collegeAndMajorService;
 
     @GetMapping("/colleges")
     @Operation(summary = "获取所有学院列表", description = "获取所有未删除的学院列表，带缓存支持")

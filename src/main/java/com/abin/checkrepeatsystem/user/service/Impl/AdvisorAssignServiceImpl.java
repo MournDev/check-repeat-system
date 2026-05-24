@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.user.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
@@ -14,7 +14,6 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.abin.checkrepeatsystem.user.vo.PaperAdvisorTaskVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -35,26 +34,20 @@ import java.util.stream.Collectors;
 @Slf4j
 public class AdvisorAssignServiceImpl implements AdvisorAssignService {
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    /** 教师角色在角色表中的主键ID（Snowflake） */
+    private static final Long TEACHER_ROLE_ID = 2001L;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private TeacherAllocationRecordMapper teacherAllocationRecordMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private InternalMessageNotificationService internalMessageNotificationService;
+    private final TeacherAllocationRecordMapper teacherAllocationRecordMapper;
 
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final InternalMessageNotificationService internalMessageNotificationService;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final TeacherInfoDataService teacherInfoService;
 
-    @Resource
-    private  UserBusinessInfoUtils userBusinessInfoUtils;
+    private final StudentInfoService studentInfoService;
 
     @Value("${advisor-assign.max-task-count}")
     private Integer maxTaskCount;
@@ -62,8 +55,18 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     @Value("${advisor-assign.retry-count}")
     private Integer retryCount;
 
-    public AdvisorAssignServiceImpl(UserBusinessInfoUtils userBusinessInfoUtils) {
-        this.userBusinessInfoUtils = userBusinessInfoUtils;
+    public AdvisorAssignServiceImpl(SysUserMapper sysUserMapper,
+            PaperInfoMapper paperInfoMapper,
+            TeacherAllocationRecordMapper teacherAllocationRecordMapper,
+            InternalMessageNotificationService internalMessageNotificationService,
+            TeacherInfoDataService teacherInfoService,
+            StudentInfoService studentInfoService) {
+        this.sysUserMapper = sysUserMapper;
+        this.paperInfoMapper = paperInfoMapper;
+        this.teacherAllocationRecordMapper = teacherAllocationRecordMapper;
+        this.internalMessageNotificationService = internalMessageNotificationService;
+        this.teacherInfoService = teacherInfoService;
+        this.studentInfoService = studentInfoService;
     }
 
     @Override
@@ -258,8 +261,9 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     private List<PaperAdvisorTaskVO> queryEligibleAdvisors(Long studentMajorId, Set<Long> excludedTeacherIds) {
         List<SysUser> teachers = sysUserMapper.selectList(
                 new LambdaQueryWrapper<SysUser>()
-                        .eq(SysUser::getRoleId, 2001L)
+                        .eq(SysUser::getRoleId, TEACHER_ROLE_ID)
                         .eq(SysUser::getIsDeleted, 0)
+                        .last("LIMIT 500")
         );
 
         return teachers.stream().map(teacher -> {
@@ -335,7 +339,7 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     private void sendNotification(Long advisorId, Long paperId) {
         SysUser advisor = sysUserMapper.selectById(advisorId);
         String message = String.format("您已分配到新论文指导任务（论文ID：%d），请及时审核", paperId);
-        // System.out.println("通知老师[" + advisor.getRealName() + "]：" + message); // 移除调试输出
+        log.debug("通知老师[{}]：{}", advisor.getRealName(), message);
         // 实际项目集成站内信/邮件服务
     }
 

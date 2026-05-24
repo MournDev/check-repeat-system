@@ -9,28 +9,26 @@ import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.student.mapper.MajorMapper;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * 管理员公共字典服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AdminDictServiceImpl implements AdminDictService {
 
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
 
-    @Resource
-    private CollegeMapper collegeMapper;
+    private final CollegeMapper collegeMapper;
 
-    @Resource
-    private MajorMapper majorMapper;
+    private final MajorMapper majorMapper;
 
     @Override
     public Result<List<Map<String, Object>>> getMajors() {

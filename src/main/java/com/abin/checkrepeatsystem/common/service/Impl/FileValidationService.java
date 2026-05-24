@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Set;
 
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+
 @Slf4j
 @Service
 public class FileValidationService {
@@ -39,7 +41,7 @@ public class FileValidationService {
 
         // 检查文件扩展名
         String originalFilename = file.getOriginalFilename();
-        String fileType = getFileExtension(originalFilename).toLowerCase();
+        String fileType = FileMimeTypeUtils.getFileExtension(originalFilename).toLowerCase();
 
         boolean isValidExtension = false;
         for (String allowedExtension : ALLOWED_EXTENSIONS) {
@@ -68,13 +70,6 @@ public class FileValidationService {
         }
 
         return Result.success(null);
-    }
-
-    private String getFileExtension(String filename) {
-        if (filename == null || filename.lastIndexOf(".") == -1) {
-            return "";
-        }
-        return filename.substring(filename.lastIndexOf(".") + 1);
     }
 }
 

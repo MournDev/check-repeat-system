@@ -51,7 +51,10 @@
 
     <!-- 查询高重复率论文列表 -->
     <select id="selectHighSimilarityPapers" resultType="com.abin.checkrepeatsystem.pojo.entity.CheckResult">
-        SELECT *
+        SELECT id, task_id, paper_id, submit_id, rule_id, repeat_rate, check_source,
+               most_similar_paper, similar_paper_id, report_url, check_time,
+               check_duration, word_count, repeat_word_count, status,
+               create_time, update_time, is_deleted
         FROM check_result
         WHERE repeat_rate >= #{threshold}
           AND status = 1

@@ -19,12 +19,12 @@ import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,9 +41,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
+
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -53,27 +53,22 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/file")
+@RequestMapping("/api/v1/file")
 @PreAuthorize("isAuthenticated()")
+@RequiredArgsConstructor
 public class FileUploadController {
 
-    @Autowired
-    private PreviewTokenService previewTokenService;
+    private final PreviewTokenService previewTokenService;
 
-    @Autowired
-    private FileService fileService;
+    private final FileService fileService;
 
-    @Autowired
-    private FileValidationService fileValidationService;
+    private final FileValidationService fileValidationService;
 
-    @Autowired
-    private PaperInfoService paperInfoService;
+    private final PaperInfoService paperInfoService;
 
-    @Autowired
-    private CheckReportService checkReportService;
+    private final CheckReportService checkReportService;
 
-    @Autowired
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
     @Value("${file.upload.base-path}")
     private String uploadBasePath;
@@ -118,8 +113,7 @@ public class FileUploadController {
         }
     }
 
-    @Autowired
-    private FilePreviewService filePreviewService;
+    private final FilePreviewService filePreviewService;
 
     /**
      * 通用文件上传接口
@@ -131,45 +125,40 @@ public class FileUploadController {
     public Result<FileUploadResponse> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Long userId
-            ) {
+            ) throws IOException {
 
-        try {
-            log.info("文件上传请求 - 文件名：{},",
-                    file.getOriginalFilename());
+        log.info("文件上传请求 - 文件名：{},",
+                file.getOriginalFilename());
 
-            // 1. 文件基础校验
-            Result<Void> validationResult = fileValidationService.validateFile(file);
-            if (!validationResult.isSuccess()) {
-                return Result.error(ResultCode.PARAM_ERROR, validationResult.getMessage());
-            }
-
-            // 2. 获取文件字节数组并计算文件 MD5（用于秒传和校验）
-            byte[] fileBytes = file.getBytes();
-            String fileMd5 = fileService.calculateFileMd5FromBytes(fileBytes);
-
-
-            // 3. 检查是否已存在相同文件（秒传功能）
-            FileInfo existingFile = fileService.getByMd5(fileMd5);
-            if (existingFile != null) {
-                log.info("文件已存在，使用秒传 - 文件 ID: {}", existingFile.getId());
-                FileUploadResponse response = buildFileUploadResponse(existingFile, true);
-                return Result.success("文件上传成功（秒传）", response);
-            }
-
-            // 4. 执行文件上传
-            Long fileId = fileService.uploadFile(file, userId);
-
-            // 5. 获取文件信息
-            FileInfo fileInfo = fileService.getById(fileId);
-            FileUploadResponse response = buildFileUploadResponse(fileInfo, false);
-
-            log.info("文件上传成功 - 文件 ID: {}, 文件名：{}", fileId, file.getOriginalFilename());
-            return Result.success("文件上传成功", response);
-
-        } catch (Exception e) {
-            log.error("文件上传失败 - 文件名：{}", file.getOriginalFilename(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "文件上传失败：" + e.getMessage());
+        // 1. 文件基础校验
+        Result<Void> validationResult = fileValidationService.validateFile(file);
+        if (!validationResult.isSuccess()) {
+            return Result.error(ResultCode.PARAM_ERROR, validationResult.getMessage());
         }
+
+        // 2. 获取文件字节数组并计算文件 MD5（用于秒传和校验）
+        byte[] fileBytes = file.getBytes();
+        String fileMd5 = fileService.calculateFileMd5FromBytes(fileBytes);
+
+
+        // 3. 检查是否已存在相同文件（秒传功能）
+        FileInfo existingFile = fileService.getByMd5(fileMd5);
+        if (existingFile != null) {
+            log.info("文件已存在，使用秒传 - 文件 ID: {}", existingFile.getId());
+            FileUploadResponse response = buildFileUploadResponse(existingFile, true);
+            return Result.success("文件上传成功（秒传）", response);
+        }
+
+        // 4. 执行文件上传
+        Long fileId = fileService.uploadFile(file, userId);
+
+        // 5. 获取文件信息
+        FileInfo fileInfo = fileService.getById(fileId);
+        FileUploadResponse response = buildFileUploadResponse(fileInfo, false);
+
+        log.info("文件上传成功 - 文件 ID: {}, 文件名：{}", fileId, file.getOriginalFilename());
+        return Result.success("文件上传成功", response);
+
     }
 
     /**
@@ -177,17 +166,12 @@ public class FileUploadController {
      */
     @GetMapping("/check")
     public Result<FileUploadResponse> checkFileByMd5(@RequestParam String md5) {
-        try {
-            FileInfo fileInfo = fileService.getByMd5(md5);
-            if (fileInfo != null) {
-                FileUploadResponse response = buildFileUploadResponse(fileInfo, true);
-                return Result.success("文件已存在", response);
-            } else {
-                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
-            }
-        } catch (Exception e) {
-            log.error("文件检查失败 - MD5: {}", md5, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "文件检查失败");
+        FileInfo fileInfo = fileService.getByMd5(md5);
+        if (fileInfo != null) {
+            FileUploadResponse response = buildFileUploadResponse(fileInfo, true);
+            return Result.success("文件已存在", response);
+        } else {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
         }
     }
 
@@ -196,16 +180,11 @@ public class FileUploadController {
      */
     @GetMapping("/info")
     public Result<FileInfo> getFileInfo(@RequestParam Long fileId) {
-        try {
-            FileInfo fileInfo = fileService.getById(fileId);
-            if (fileInfo == null) {
-                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
-            }
-            return Result.success(fileInfo);
-        } catch (Exception e) {
-            log.error("获取文件信息失败 - 文件ID: {}", fileId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取文件信息失败");
+        FileInfo fileInfo = fileService.getById(fileId);
+        if (fileInfo == null) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
         }
+        return Result.success(fileInfo);
     }
 
     /**
@@ -231,56 +210,56 @@ public class FileUploadController {
 
             // 3. 根据存储类型获取文件内容
             String storagePath = fileInfo.getStoragePath();
-            byte[] fileContent;
-            
+            Resource resource;
+            long contentLength;
+
             if (storagePath.startsWith("files/")) {
                 // MinIO存储：从MinIO读取
                 log.info("从MinIO读取文件 - fileId: {}, 存储路径: {}", fileId, storagePath);
-                fileContent = fileService.getFileContentFromMinio(storagePath);
+                byte[] fileContent = fileService.getFileContentFromMinio(storagePath);
+                resource = new org.springframework.core.io.ByteArrayResource(fileContent);
+                contentLength = fileContent.length;
             } else {
-                // 本地存储：从本地磁盘读取
+                // 本地存储：流式传输，避免大文件全部读入内存
                 log.info("原始存储路径: {}", storagePath);
-                
+
                 storagePath = storagePath.replace("/data/upload/", "");
                 storagePath = storagePath.replace("\\data\\upload\\", "");
                 while (storagePath.startsWith("\\") || storagePath.startsWith("/")) {
                     storagePath = storagePath.substring(1);
                 }
                 storagePath = storagePath.replace("\\\\", "\\");
-                
+
                 String fileStoragePath = uploadBasePath + File.separator + storagePath;
                 fileStoragePath = fileStoragePath.replace("\\", File.separator);
                 fileStoragePath = fileStoragePath.replace("/", File.separator);
-                
+
                 File file = new File(fileStoragePath);
 
                 log.info("上传基础路径: {}", uploadBasePath);
                 log.info("最终文件路径: {}", fileStoragePath);
-                log.info("文件是否存在: {}", file.exists());
-                if (file.exists()) {
-                    log.info("文件大小: {} bytes", file.length());
-                }
 
                 if (!file.exists()) {
                     log.error("文件不存在 - fileId: {}, 路径: {}", fileId, fileStoragePath);
                     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
                 }
-                
+
                 if (file.length() == 0) {
                     log.error("文件为空 - fileId: {}, 路径: {}", fileId, fileStoragePath);
                     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
                 }
-                
-                fileContent = Files.readAllBytes(file.toPath());
-                log.info("文件读取成功 - 读取大小: {} bytes", fileContent.length);
+
+                resource = new org.springframework.core.io.FileSystemResource(file);
+                contentLength = file.length();
+                log.info("准备流式下载文件 - 大小: {} bytes", contentLength);
             }
 
             // 4. 日志打印
             log.info("文件下载请求成功 - fileId: {}, 文件名: {}, 大小: {} bytes",
-                    fileId, actualFileName, fileContent.length);
+                    fileId, actualFileName, contentLength);
 
             // 5. 获取Content-Type
-            String contentType = getContentTypeFromExtension(actualFileName);
+            String contentType = FileMimeTypeUtils.getContentType(actualFileName);
             if (contentType == null) {
                 contentType = "application/octet-stream";
             }
@@ -288,26 +267,21 @@ public class FileUploadController {
             // 6. 设置响应头 - 支持中文文件名下载
             String encodedFileName = URLEncoder.encode(actualFileName, StandardCharsets.UTF_8)
                     .replace("+", "%20");
-            
-            // 构建符合RFC 5987标准的Content-Disposition头
-            // filename使用ISO-8859-1编码（兼容旧浏览器），filename*使用UTF-8编码
+
             String isoFileName = actualFileName;
             try {
                 isoFileName = new String(actualFileName.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1);
             } catch (Exception e) {
                 // 保持原文件名
             }
-            
+
             String contentDisposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s",
                     isoFileName, encodedFileName);
-
-            // 7. 构建Resource对象
-            Resource resource = new org.springframework.core.io.ByteArrayResource(fileContent);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileContent.length))
+                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength))
                     .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
                     .header(HttpHeaders.PRAGMA, "no-cache")
                     .header(HttpHeaders.EXPIRES, "0")
@@ -352,14 +326,17 @@ public class FileUploadController {
 
             // 4. 根据存储类型获取文件内容
             String storagePath = fileInfo.getStoragePath();
-            byte[] fileContent;
-            
+            Resource resource;
+            long contentLength;
+
             if (storagePath.startsWith("files/")) {
                 // MinIO存储：从MinIO读取
                 log.info("从MinIO读取预览文件 - fileId: {}, 存储路径: {}", fileId, storagePath);
-                fileContent = fileService.getFileContentFromMinio(storagePath);
+                byte[] fileContent = fileService.getFileContentFromMinio(storagePath);
+                resource = new org.springframework.core.io.ByteArrayResource(fileContent);
+                contentLength = fileContent.length;
             } else {
-                // 本地存储：从本地磁盘读取
+                // 本地存储：流式传输，避免大文件全部读入内存
                 storagePath = storagePath.replace("/data/upload/", "");
                 storagePath = storagePath.replace("\\data\\upload\\", "");
                 while (storagePath.startsWith("\\") || storagePath.startsWith("/")) {
@@ -377,26 +354,23 @@ public class FileUploadController {
                     log.error("预览文件不存在 - fileId: {}, 路径: {}", fileId, fileStoragePath);
                     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
                 }
-                
-                // 检查文件大小
-                long fileSize = file.length();
-                log.info("文件大小: {} bytes", fileSize);
-                
-                if (fileSize == 0) {
+
+                if (file.length() == 0) {
                     log.error("预览文件为空 - fileId: {}, 路径: {}", fileId, fileStoragePath);
                     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
                 }
-                
-                fileContent = Files.readAllBytes(file.toPath());
-                log.info("文件读取成功 - 读取大小: {} bytes", fileContent.length);
+
+                resource = new org.springframework.core.io.FileSystemResource(file);
+                contentLength = file.length();
+                log.info("准备流式预览文件 - 大小: {} bytes", contentLength);
             }
 
             // 5. 日志打印
             log.info("预览文件请求成功 - fileId: {}, 文件名: {}, 大小: {} bytes",
-                    fileId, actualFileName, fileContent.length);
+                    fileId, actualFileName, contentLength);
 
             // 6. 获取Content-Type
-            String contentType = getContentTypeFromExtension(actualFileName);
+            String contentType = FileMimeTypeUtils.getContentType(actualFileName);
             if (contentType == null) {
                 contentType = "application/octet-stream";
             }
@@ -409,15 +383,13 @@ public class FileUploadController {
             String contentDisposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s",
                     encodedFileName, encodedFileName);
 
-            // 8. 构建Resource对象
-            Resource resource = new ByteArrayResource(fileContent);
-
-            log.info("准备返回预览文件 - ContentType: {}, ContentLength: {}", contentType, fileContent.length);
+            // 8. 返回预览文件
+            log.info("准备返回预览文件 - ContentType: {}, ContentLength: {}", contentType, contentLength);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileContent.length))
+                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength))
                     .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
                     .header(HttpHeaders.PRAGMA, "no-cache")
                     .header(HttpHeaders.EXPIRES, "0")
@@ -430,33 +402,6 @@ public class FileUploadController {
             log.error("预览文件异常 - token: {}", token, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
-    }
-    
-    private String getContentTypeFromExtension(String fileName) {
-        String extension = getFileExtension(fileName);
-        Map<String, String> mimeTypes = new HashMap<String, String>() {{
-            put("pdf", "application/pdf");
-            put("doc", "application/msword");
-            put("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-            put("xls", "application/vnd.ms-excel");
-            put("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            put("ppt", "application/vnd.ms-powerpoint");
-            put("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-            put("txt", "text/plain");
-            put("jpg", "image/jpeg");
-            put("jpeg", "image/jpeg");
-            put("png", "image/png");
-            put("gif", "image/gif");
-        }};
-
-        return mimeTypes.getOrDefault(extension.toLowerCase(), "application/octet-stream");
-    }
-
-    private String getFileExtension(String fileName) {
-        if (fileName == null || fileName.lastIndexOf('.') == -1) {
-            return "";
-        }
-        return fileName.substring(fileName.lastIndexOf('.') + 1);
     }
     /**
      * KKFileView在线预览接口（通过URL）
@@ -473,9 +418,9 @@ public class FileUploadController {
      * 自动根据文件类型选择最佳预览方式
      */
     @GetMapping("/smartPreview")
-    public ResponseEntity<?> smartPreview(@RequestParam Long fileId) {
+    public ResponseEntity<?> smartPreview(@RequestParam Long fileId, @RequestParam(required = false) String token) {
         log.info("接收智能预览请求 - fileId: {}", fileId);
-        return filePreviewService.smartPreview(fileId);
+        return filePreviewService.smartPreview(fileId, token);
     }
     /**
      * 构建文件上传响应
@@ -497,9 +442,9 @@ public class FileUploadController {
      * 自动根据文件类型选择最佳预览方式
      */
     @GetMapping("/smartPreviewReport")
-    public ResponseEntity<?> smartPreviewReport(@RequestParam String paperId) {
+    public ResponseEntity<?> smartPreviewReport(@RequestParam String paperId, @RequestParam(required = false) String token) {
         log.info("接收智能预览请求 - paperId: {}", paperId);
-        return filePreviewService.smartPreviewReport(paperId);
+        return filePreviewService.smartPreviewReport(paperId, token);
     }
 
     /**
@@ -563,25 +508,23 @@ public class FileUploadController {
      */
     @DeleteMapping("/delete/file")
     public Result<Void> deleteFile(@RequestParam Long fileId) {
-        try {
-            log.info("文件删除请求 - fileId: {}", fileId);
-            boolean deleted = fileService.deleteFile(fileId);
-            if (deleted) {
-                log.info("文件删除成功 - fileId: {}", fileId);
-                return Result.success("文件删除成功");
-            } else {
-                log.warn("文件删除失败 - fileId: {}", fileId);
-                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在或删除失败");
-            }
-        } catch (Exception e) {
-            log.error("文件删除异常 - fileId: {}", fileId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "文件删除失败：" + e.getMessage());
+        log.info("文件删除请求 - fileId: {}", fileId);
+        boolean deleted = fileService.deleteFile(fileId);
+        if (deleted) {
+            log.info("文件删除成功 - fileId: {}", fileId);
+            return Result.success("文件删除成功");
+        } else {
+            log.warn("文件删除失败 - fileId: {}", fileId);
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在或删除失败");
         }
     }
 
     /**
-     * 下载临时目录中的导出文件
+     * 下载临时目录中的导出文件（仅允许访问配置的导出目录内的文件）
      */
+    @Value("${file.export.base-path:${file.upload.base-path:/data/upload/}/export/}")
+    private String exportBasePath;
+
     @GetMapping("/download/export")
     public void downloadExportFile(
             @RequestParam String filePath,
@@ -589,7 +532,17 @@ public class FileUploadController {
         try {
             log.info("下载导出文件请求 - filePath: {}", filePath);
 
-            File file = new File(filePath);
+            // 安全校验：规范化路径并限制在导出目录内
+            java.nio.file.Path exportDir = java.nio.file.Paths.get(exportBasePath).toRealPath();
+            java.nio.file.Path requestedPath = java.nio.file.Paths.get(filePath).toRealPath();
+            if (!requestedPath.startsWith(exportDir)) {
+                log.warn("路径遍历攻击检测 - 请求路径: {} 不在导出目录: {} 内", filePath, exportBasePath);
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().write("禁止访问");
+                return;
+            }
+
+            File file = requestedPath.toFile();
             if (!file.exists() || !file.isFile()) {
                 log.warn("导出文件不存在 - filePath: {}", filePath);
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);

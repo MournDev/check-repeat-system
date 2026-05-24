@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.detection.service;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.common.utils.IKAnalyzerUtils;
@@ -10,12 +10,12 @@ import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -26,18 +26,16 @@ import java.nio.file.Paths;
  * 论文内容提取服务
  * 负责从各种存储位置提取论文正文内容并进行分词预处理
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class PaperContentExtractor {
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private FileInfoMapper fileInfoMapper;
+    private final FileInfoMapper fileInfoMapper;
 
-    @Resource
-    private PaperContentMinioService paperContentMinioService;
+    private final PaperContentMinioService paperContentMinioService;
 
     @Value("${file.upload.base-path:/data/upload/}")
     private String uploadBasePath;

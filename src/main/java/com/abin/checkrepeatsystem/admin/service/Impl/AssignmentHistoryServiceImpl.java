@@ -17,11 +17,11 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,24 +33,20 @@ import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 /**
  * 分配记录管理服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
 
-    @Resource
-    private TeacherAllocationRecordMapper teacherAllocationRecordMapper;
+    private final TeacherAllocationRecordMapper teacherAllocationRecordMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
     @Override
     public Result<AssignmentHistoryStatsDTO> getAssignmentHistoryStats() {

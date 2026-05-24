@@ -5,6 +5,7 @@ import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.common.utils.HttpIpUtils;
 import com.abin.checkrepeatsystem.common.utils.IpLocationUtils;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
@@ -27,8 +28,8 @@ import com.abin.checkrepeatsystem.user.service.AdminInfoService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.user.vo.RefreshTokenVO;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -50,46 +51,33 @@ import java.util.Map;
 /**
  * 认证服务实现类（核心业务逻辑：注册、登录、令牌刷新）
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
 
     // 依赖注入（数据访问层、认证工具、加密工具）
-    @Resource
-    private AuthenticationManager authenticationManager;
+    private final AuthenticationManager authenticationManager;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private SysRoleMapper sysRoleMapper;
+    private final SysRoleMapper sysRoleMapper;
 
-    @Resource
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
 
-    @Resource
-    private PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
-    @Resource
-    private HttpServletRequest request;
+    private final HttpServletRequest request;
 
-    @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
+    private final SysLoginLogMapper sysLoginLogMapper;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
-    @Resource
-    private AdminInfoService adminInfoService;
+    private final AdminInfoService adminInfoService;
 
-    @Resource
-    SysOperationLogMapper sysOperationLogMapper;
-
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
-
-    @Resource
-    private JavaMailSender mailSender;
+    private final SysOperationLogMapper sysOperationLogMapper;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final JavaMailSender mailSender;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -248,7 +236,7 @@ public class AuthServiceImpl implements AuthService {
         loginVO.setLastLoginTime(sysUser.getLastLoginTime()); // 最后登录时间
         
         // 如果是学生用户，从StudentInfo表获取学生特有信息
-        if ("STUDENT".equals(sysUser.getUserType())) {
+        if (UserTypeEnum.ROLE_STUDENT.equals(sysUser.getUserType())) {
             StudentInfo studentInfo = studentInfoService.getByUserId(sysUser.getId());
             if (studentInfo != null) {
                 loginVO.setMajor(studentInfo.getMajor());
@@ -256,7 +244,7 @@ public class AuthServiceImpl implements AuthService {
                 loginVO.setClassName(studentInfo.getClassName());
                 loginVO.setCollegeName(studentInfo.getCollegeName());
             }
-        } else if ("ADMIN".equals(sysUser.getUserType())) {
+        } else if (UserTypeEnum.ROLE_ADMIN.equals(sysUser.getUserType())) {
             // 如果是管理员用户，从AdminInfo表获取管理员特有信息
             AdminInfo adminInfo = adminInfoService.getByUserId(sysUser.getId());
             if (adminInfo != null) {
@@ -278,7 +266,13 @@ public class AuthServiceImpl implements AuthService {
     public Result<RefreshTokenVO> refreshToken(RefreshTokenReq refreshTokenReq) {
         String oldToken = refreshTokenReq.getOldToken();
 
-        // 1. 校验旧令牌有效性（格式+是否过期）
+        // 1. 校验旧令牌是否已被注销（黑名单检查）
+        if (Boolean.TRUE.equals(redisTemplate.hasKey("token_blacklist:" + oldToken))) {
+            log.warn("令牌刷新失败：旧令牌已被注销，token={}", maskToken(oldToken));
+            return Result.error(ResultCode.PARAM_VALUE_INVALID, "令牌已失效，请重新登录");
+        }
+
+        // 2. 校验旧令牌有效性（格式+是否过期）
         if (!jwtUtils.validateTokenFormat(oldToken)) {
             log.warn("令牌刷新失败：旧令牌格式错误，token={}", maskToken(oldToken));
             return Result.error(ResultCode.PARAM_ERROR, "令牌格式错误，请重新登录");
@@ -288,7 +282,7 @@ public class AuthServiceImpl implements AuthService {
             return Result.error(ResultCode.PARAM_VALUE_INVALID, "旧令牌已过期，请重新登录");
         }
 
-        // 2. 从旧令牌提取用户核心信息（无需查库，减少IO开销）
+        // 3. 从旧令牌提取用户核心信息（无需查库，减少IO开销）
         Long userId = jwtUtils.extractUserId(oldToken);
         String username = jwtUtils.extractUsername(oldToken);
         String roleCode = jwtUtils.extractRoleCode(oldToken);

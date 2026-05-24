@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.user.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.SpringContextUtil;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
@@ -17,8 +17,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,13 +29,13 @@ import java.util.stream.Collectors;
 /**
  * 会话服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Conversation>
         implements ConversationService {
 
-    @Autowired
-    private ConversationMemberMapper conversationMemberMapper;
+    private final ConversationMemberMapper conversationMemberMapper;
 
     @Override
     public IPage<Conversation> getUserConversations(Long userId, Integer pageNum, Integer pageSize) {

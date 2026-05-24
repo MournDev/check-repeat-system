@@ -1,16 +1,18 @@
 package com.abin.checkrepeatsystem.common.service.Impl;
 
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.common.service.FilePreviewService;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.service.PreviewTokenService;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.student.service.CheckReportService;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -19,6 +21,9 @@ import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -30,23 +35,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
 
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class FilePreviewServiceImpl implements FilePreviewService {
 
-    @Autowired
-    private FileService fileService;
+    private final FileService fileService;
+    private final PreviewTokenService previewTokenService;
+    private final CheckTaskService checkTaskService;
+    private final CheckReportService checkReportService;
 
-    @Autowired
-    private CheckTaskService checkTaskService;
-
-    @Autowired
-    private CheckReportService checkReportService;
-
-    @Autowired
-    private PreviewTokenService previewTokenService;
-
-    @Value("${app.host:192.168.30.1}")
+    @Value("${app.host:localhost}")
     private String serverHost;
 
     @Value("${server.port:8080}")
@@ -62,10 +63,6 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     private String uploadBasePath;
 
     private static final RestTemplate restTemplate = createRestTemplate();
-
-    public FilePreviewServiceImpl() {
-    }
-
     @Override
     public ResponseEntity<Resource> directPreview(Long fileId) {
         try {
@@ -84,7 +81,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             
             // 创建字节数组资源
             Resource resource = new org.springframework.core.io.ByteArrayResource(fileContent);
-            String contentType = getContentType(fileInfo);
+            String contentType = FileMimeTypeUtils.getContentType(fileInfo.getOriginalFilename());
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
@@ -95,101 +92,6 @@ public class FilePreviewServiceImpl implements FilePreviewService {
         } catch (Exception e) {
             log.error("直接预览失败 - fileId: {}", fileId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-        }
-    }
-
-    /**
-     * 获取文件内容类型
-     */
-    private String getContentType(FileInfo fileInfo) {
-        try {
-            String fileName = fileInfo.getOriginalFilename();
-            String extension = getFileExtension(fileName).toLowerCase();
-            
-            // 根据文件扩展名返回内容类型
-            switch (extension) {
-                case "jpg":
-                case "jpeg":
-                    return "image/jpeg";
-                case "png":
-                    return "image/png";
-                case "gif":
-                    return "image/gif";
-                case "pdf":
-                    return "application/pdf";
-                case "txt":
-                    return "text/plain";
-                case "html":
-                case "htm":
-                    return "text/html";
-                case "xml":
-                    return "application/xml";
-                case "json":
-                    return "application/json";
-                case "doc":
-                    return "application/msword";
-                case "docx":
-                    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                case "xls":
-                    return "application/vnd.ms-excel";
-                case "xlsx":
-                    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                case "ppt":
-                    return "application/vnd.ms-powerpoint";
-                case "pptx":
-                    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-                default:
-                    return "application/octet-stream";
-            }
-        } catch (Exception e) {
-            return "application/octet-stream";
-        }
-    }
-
-    /**
-     * 获取文件内容类型（基于File对象和文件名）
-     */
-    private String getContentType(File file, String fileName) {
-        try {
-            String extension = getFileExtension(fileName).toLowerCase();
-            
-            // 根据文件扩展名返回内容类型
-            switch (extension) {
-                case "jpg":
-                case "jpeg":
-                    return "image/jpeg";
-                case "png":
-                    return "image/png";
-                case "gif":
-                    return "image/gif";
-                case "pdf":
-                    return "application/pdf";
-                case "txt":
-                    return "text/plain";
-                case "html":
-                case "htm":
-                    return "text/html";
-                case "xml":
-                    return "application/xml";
-                case "json":
-                    return "application/json";
-                case "doc":
-                    return "application/msword";
-                case "docx":
-                    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                case "xls":
-                    return "application/vnd.ms-excel";
-                case "xlsx":
-                    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                case "ppt":
-                    return "application/vnd.ms-powerpoint";
-                case "pptx":
-                    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-                default:
-                    return "application/octet-stream";
-            }
-        } catch (Exception e) {
-            return "application/octet-stream";
         }
     }
 
@@ -209,14 +111,61 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     public ResponseEntity<byte[]> onlinePreviewByUrl(String url) {
         log.info("执行KKFileView代理预览 - url: {}", url);
 
+        if (!isValidPreviewUrl(url)) {
+            log.warn("预览URL验证失败，疑似SSRF攻击 - url: {}", url);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body("预览URL不合法".getBytes());
+        }
+
         try {
-            // 直接代理到KKFileView
             return proxyToKKFileViewForUrl(url);
         } catch (Exception e) {
             log.error("KKFileView代理预览失败 - url: {}", url, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(("代理预览失败: " + e.getMessage()).getBytes());
         }
+    }
+
+    /**
+     * 验证预览URL合法性，防止SSRF攻击
+     */
+    private boolean isValidPreviewUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+                return false;
+            }
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return false;
+            }
+            if (isInternalAddress(host)) {
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isInternalAddress(String host) {
+        if (host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1") || host.equals("0.0.0.0")) {
+            return true;
+        }
+        if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.")) {
+            return true;
+        }
+        if (host.startsWith("169.254.")) {
+            return true;
+        }
+        if (host.contains(":")) {
+            return true;
+        }
+        return false;
     }
     /**
      * 代理请求到KKFileView（基于URL）
@@ -247,8 +196,15 @@ public class FilePreviewServiceImpl implements FilePreviewService {
 
 
     @Override
-    public ResponseEntity<?> smartPreview(Long fileId) {
+    public ResponseEntity<?> smartPreview(Long fileId, String token) {
         try {
+            // 验证预览令牌
+            if (!validatePreviewAccess(fileId, token)) {
+                log.warn("预览令牌验证失败 - fileId: {}", fileId);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body("预览令牌无效或已过期");
+            }
+
             // 1. 获取文件信息
             FileInfo fileInfo = fileService.getById(fileId);
             if (fileInfo == null) {
@@ -258,31 +214,27 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             }
 
             String fileName = fileInfo.getOriginalFilename();
-            String fileExtension = getFileExtension(fileName).toLowerCase();
+            String fileExtension = FileMimeTypeUtils.getFileExtension(fileName).toLowerCase();
 
             log.info("智能预览 - fileId: {}, 文件名: {}, 扩展名: {}",
                     fileId, fileName, fileExtension);
 
             // 2. 根据文件类型选择预览方式
-            // 图片类型：直接返回文件流
             if (isImageFile(fileExtension)) {
                 log.info("图片文件直接预览 - fileId: {}", fileId);
                 return directPreview(fileId);
             }
 
-            // 可直接预览的文档类型：PDF、文本
             if (isDirectPreviewFile(fileExtension)) {
                 log.info("可直接预览的文档 - fileId: {}", fileId);
                 return directPreview(fileId);
             }
 
-            // Office文档类型：使用KKFileView
             if (isOfficeFile(fileExtension)) {
                 log.info("Office文档使用KKFileView预览 - fileId: {}", fileId);
                 return proxyToKKFileView(fileId, fileInfo);
             }
 
-            // 其他类型：尝试直接预览
             log.info("其他类型文件尝试直接预览 - fileId: {}", fileId);
             return directPreview(fileId);
 
@@ -293,9 +245,49 @@ public class FilePreviewServiceImpl implements FilePreviewService {
         }
     }
 
-    @Override
-    public ResponseEntity<?> smartPreviewReport(String paperId) {
+    /**
+     * 验证预览访问权限
+     */
+    private boolean validatePreviewAccess(Long fileId, String token) {
+        if (token != null && !token.isEmpty()) {
+            Long tokenFileId = previewTokenService.validatePreviewToken(token);
+            return tokenFileId != null && tokenFileId.equals(fileId);
+        }
+        // 无 token 时：已认证用户需校验文件所有权
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        // Admin 和 Teacher 可访问（controller 层已做 paper 级鉴权）
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            String role = authority.getAuthority();
+            if (UserTypeEnum.ROLE_ADMIN.equals(role) || UserTypeEnum.ROLE_TEACHER.equals(role)) {
+                return true;
+            }
+        }
+        // Student：校验文件是否为本人上传
         try {
+            FileInfo fileInfo = fileService.getById(fileId);
+            if (fileInfo != null && fileInfo.getUploadUserId() != null) {
+                Long currentUserId = UserContextHolder.getUserId();
+                return fileInfo.getUploadUserId().equals(String.valueOf(currentUserId));
+            }
+        } catch (Exception e) {
+            log.warn("文件所有权校验失败: fileId={}", fileId, e);
+        }
+        return false;
+    }
+
+    @Override
+    public ResponseEntity<?> smartPreviewReport(String paperId, String token) {
+        try {
+            // 验证预览令牌
+            if (token == null || token.isEmpty() || previewTokenService.validatePreviewToken(token) == null) {
+                log.warn("报告预览令牌验证失败 - paperId: {}", paperId);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body("预览令牌无效或已过期");
+            }
+
             // 将paperId转换为Long类型
             Long paperIdLong = Long.parseLong(paperId);
             
@@ -338,7 +330,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             }
 
             String fileName = reportFile.getName();
-            String fileExtension = getFileExtension(fileName).toLowerCase();
+            String fileExtension = FileMimeTypeUtils.getFileExtension(fileName).toLowerCase();
 
             log.info("智能预览查重报告 - paperId: {}, 文件名: {}, 扩展名: {}",
                     paperId, fileName, fileExtension);
@@ -394,7 +386,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
             }
 
             Resource resource = new FileSystemResource(file);
-            String contentType = getContentType(file, fileName);
+            String contentType = FileMimeTypeUtils.getContentType(fileName);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
@@ -500,7 +492,7 @@ public class FilePreviewServiceImpl implements FilePreviewService {
 
     private ResponseEntity<?> fallbackToDownload(FileInfo fileInfo) {
         // 降级方案：返回下载链接
-        String downloadUrl = String.format("/api/file/download/%s/%s",
+        String downloadUrl = String.format("/api/v1/file/download/%s/%s",
                 fileInfo.getId(),
                 URLEncoder.encode(fileInfo.getOriginalFilename(), StandardCharsets.UTF_8));
 
@@ -526,16 +518,6 @@ public class FilePreviewServiceImpl implements FilePreviewService {
         return Arrays.asList("doc", "docx", "xls", "xlsx", "ppt", "pptx").contains(extension);
     }
 
-    /**
-     * 获取文件扩展名
-     */
-    private String getFileExtension(String filename) {
-        if (filename == null) {
-            return "";
-        }
-        int lastDotIndex = filename.lastIndexOf('.');
-        return lastDotIndex > -1 ? filename.substring(lastDotIndex + 1) : "";
-    }
 
     /**
      * 创建配置好的RestTemplate

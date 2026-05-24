@@ -3,9 +3,13 @@ package com.abin.checkrepeatsystem.teacher.service.Impl;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.user.mapper.StudentInfoMapper;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
-import jakarta.annotation.Resource;
+import com.abin.checkrepeatsystem.user.service.SysUserService;
+import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
@@ -20,7 +24,6 @@ import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,68 +38,96 @@ import java.util.stream.Collectors;
 /**
  * 教师学生管理服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class TeacherStudentManagementServiceImpl implements TeacherStudentManagementService {
 
-    @Autowired
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Autowired
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Autowired
-    private MessageService messageService;
+    private final MessageService messageService;
 
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
+
+    private final FileService fileService;
+
+    private final SysUserService sysUserService;
+
+    private final StudentInfoMapper studentInfoMapper;
 
     @Override
     public Result<Object> getStudentList(StudentListRequestDTO requestDTO) {
         try {
-            // 构建查询条件
             LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
             queryWrapper.eq(PaperInfo::getTeacherId, requestDTO.getTeacherId())
                        .eq(PaperInfo::getIsDeleted, 0);
 
-            // 添加搜索条件
+            // 搜索条件：标题搜索 + 跨表搜索（学生姓名/学号/专业/学院）
             if (requestDTO.getSearch() != null && !requestDTO.getSearch().trim().isEmpty()) {
-                // 需要关联查询学生信息
-                String searchValue = "%" + requestDTO.getSearch() + "%";
-                queryWrapper.and(wrapper -> 
-                    wrapper.like(PaperInfo::getPaperTitle, requestDTO.getSearch())
-                           .or()
-                           .apply("EXISTS (SELECT 1 FROM sys_user su WHERE su.id = paper_info.student_id AND (su.username LIKE {0} OR su.real_name LIKE {0}))", searchValue)
-                           .or()
-                           .apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND (si.major LIKE {0} OR si.college_name LIKE {0}))", searchValue)
-                );
+                String keyword = requestDTO.getSearch().trim();
+                String searchValue = "%" + keyword + "%";
+
+                // 先查询 sys_user 中匹配的学生ID
+                Set<Long> matchingStudentIds = sysUserMapper.selectList(
+                    new LambdaQueryWrapper<SysUser>()
+                        .select(SysUser::getId)
+                        .eq(SysUser::getUserType, UserTypeEnum.ROLE_STUDENT)
+                        .and(w -> w.like(SysUser::getUsername, searchValue)
+                                 .or()
+                                 .like(SysUser::getRealName, searchValue))
+                ).stream().map(SysUser::getId).collect(Collectors.toSet());
+
+                // 再查询 student_info 中匹配的学生ID
+                Set<Long> siStudentIds = studentInfoMapper.selectList(
+                    new LambdaQueryWrapper<StudentInfo>()
+                        .select(StudentInfo::getUserId)
+                        .and(w -> w.like(StudentInfo::getMajor, searchValue)
+                                 .or()
+                                 .like(StudentInfo::getCollegeName, searchValue))
+                ).stream().map(StudentInfo::getUserId).collect(Collectors.toSet());
+                matchingStudentIds.addAll(siStudentIds);
+
+                queryWrapper.and(w -> {
+                    w.like(PaperInfo::getPaperTitle, keyword);
+                    if (!matchingStudentIds.isEmpty()) {
+                        w.or().in(PaperInfo::getStudentId, matchingStudentIds);
+                    }
+                });
             }
 
-            // 添加状态筛选
+            // 状态筛选
             if (requestDTO.getStatus() != null && !requestDTO.getStatus().trim().isEmpty()) {
                 queryWrapper.eq(PaperInfo::getPaperStatus, requestDTO.getStatus());
             }
 
-            // 添加学院筛选（优先使用collegeId精确匹配）
-            if (requestDTO.getCollegeId() != null && requestDTO.getCollegeId() > 0) {
-                queryWrapper.apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND si.college_id = {0})", requestDTO.getCollegeId());
-            } else if (requestDTO.getCollege() != null && !requestDTO.getCollege().trim().isEmpty()) {
-                String collegeValue = "%" + requestDTO.getCollege() + "%";
-                queryWrapper.apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND si.college_name LIKE {0})", collegeValue);
+            // 学院筛选
+            Set<Long> collegeStudentIds = queryStudentInfoIds(requestDTO.getCollegeId(), requestDTO.getCollege());
+            if (collegeStudentIds != null) {
+                if (collegeStudentIds.isEmpty()) {
+                    return Result.success("获取学生列表成功", buildEmptyPageResult(requestDTO));
+                }
+                queryWrapper.in(PaperInfo::getStudentId, collegeStudentIds);
             }
 
-            // 添加专业筛选
+            // 专业筛选
             if (requestDTO.getMajorId() != null && requestDTO.getMajorId() > 0) {
-                queryWrapper.apply("EXISTS (SELECT 1 FROM student_info si WHERE si.user_id = paper_info.student_id AND si.major_id = {0})", requestDTO.getMajorId());
+                Set<Long> majorStudentIds = studentInfoMapper.selectList(
+                    new LambdaQueryWrapper<StudentInfo>()
+                        .select(StudentInfo::getUserId)
+                        .eq(StudentInfo::getMajorId, requestDTO.getMajorId())
+                ).stream().map(StudentInfo::getUserId).collect(Collectors.toSet());
+
+                if (majorStudentIds.isEmpty()) {
+                    return Result.success("获取学生列表成功", buildEmptyPageResult(requestDTO));
+                }
+                queryWrapper.in(PaperInfo::getStudentId, majorStudentIds);
             }
 
-            // 创建分页对象
             Page<PaperInfo> page = new Page<>(requestDTO.getPage(), requestDTO.getPageSize());
-
-            // 执行分页查询
             Page<PaperInfo> paperPage = paperInfoMapper.selectPage(page, queryWrapper);
 
-            // 转换为学生列表DTO并去重（根据学生ID）
             List<StudentListDTO> studentList = paperPage.getRecords().stream()
                     .map(this::convertToStudentListDTO)
                     .filter(Objects::nonNull)
@@ -104,7 +135,6 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
                     .values().stream()
                     .collect(Collectors.toList());
 
-            // 构建响应数据
             Map<String, Object> responseData = new HashMap<>();
             responseData.put("list", studentList);
             responseData.put("totalCount", paperPage.getTotal());
@@ -118,8 +148,35 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
         }
     }
 
+    private Set<Long> queryStudentInfoIds(Long collegeId, String collegeName) {
+        if (collegeId != null && collegeId > 0) {
+            return studentInfoMapper.selectList(
+                new LambdaQueryWrapper<StudentInfo>()
+                    .select(StudentInfo::getUserId)
+                    .eq(StudentInfo::getCollegeId, collegeId)
+            ).stream().map(StudentInfo::getUserId).collect(Collectors.toSet());
+        }
+        if (collegeName != null && !collegeName.trim().isEmpty()) {
+            return studentInfoMapper.selectList(
+                new LambdaQueryWrapper<StudentInfo>()
+                    .select(StudentInfo::getUserId)
+                    .like(StudentInfo::getCollegeName, collegeName.trim())
+            ).stream().map(StudentInfo::getUserId).collect(Collectors.toSet());
+        }
+        return null;
+    }
+
+    private Map<String, Object> buildEmptyPageResult(StudentListRequestDTO requestDTO) {
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("list", Collections.emptyList());
+        responseData.put("totalCount", 0L);
+        responseData.put("currentPage", requestDTO.getPage());
+        responseData.put("totalPages", 0);
+        return responseData;
+    }
+
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteStudent(Long studentId) {
         try {
             // 检查学生是否存在且未被删除
@@ -201,7 +258,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean assignAdvisor(Long studentId, AssignAdvisorDTO assignAdvisorDTO) {
         try {
             // 更新论文信息中的导师信息
@@ -273,7 +330,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public BatchOperationResultDTO batchAssignAdvisor(BatchAssignAdvisorDTO batchAssignDTO) {
         BatchOperationResultDTO result = new BatchOperationResultDTO();
         List<BatchOperationResultDTO.FailureDetail> failures = new ArrayList<>();
@@ -348,7 +405,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public BatchOperationResultDTO batchDeleteStudents(BatchDeleteDTO batchDeleteDTO) {
         BatchOperationResultDTO result = new BatchOperationResultDTO();
         List<BatchOperationResultDTO.FailureDetail> failures = new ArrayList<>();
@@ -431,7 +488,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Result<Object> addStudent(AddStudentDTO addStudentDTO) {
         try {
             // 参数校验
@@ -473,7 +530,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             newUser.setRealName(addStudentDTO.getStudentName().trim());
             newUser.setEmail(addStudentDTO.getEmail() != null ? addStudentDTO.getEmail().trim() : null);
             newUser.setPhone(addStudentDTO.getPhone() != null ? addStudentDTO.getPhone().trim() : null);
-            newUser.setUserType("STUDENT");
+            newUser.setUserType(UserTypeEnum.ROLE_STUDENT);
             newUser.setIsDeleted(0);
             newUser.setCreateTime(LocalDateTime.now());
             newUser.setUpdateTime(LocalDateTime.now());
@@ -520,7 +577,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     }
     
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public ImportResultDTO importStudents(MultipartFile file) {
         ImportResultDTO result = new ImportResultDTO();
         List<ImportResultDTO.ImportFailure> failures = new ArrayList<>();
@@ -564,7 +621,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
                     SysUser newUser = new SysUser();
                     newUser.setUsername(username);
                     newUser.setRealName(studentName);
-                    newUser.setUserType("STUDENT");
+                    newUser.setUserType(UserTypeEnum.ROLE_STUDENT);
                     newUser.setIsDeleted(0);
                     newUser.setCreateTime(LocalDateTime.now());
                     newUser.setUpdateTime(LocalDateTime.now());
@@ -772,5 +829,94 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             log.error("解析Excel失败", e);
             throw new RuntimeException("解析Excel失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    public Result<StudentPaperInfoDTO> getStudentPaperInfo(Long teacherId, Long studentId) {
+        // 1. 验证学生是否存在
+        SysUser student = sysUserMapper.selectById(studentId);
+        if (student == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "学生不存在");
+        }
+
+        // 2. 验证教师权限
+        LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperInfo::getStudentId, studentId)
+                   .eq(PaperInfo::getTeacherId, teacherId)
+                   .eq(PaperInfo::getIsDeleted, 0);
+        Long count = paperInfoMapper.selectCount(queryWrapper);
+        if (count == 0 && !sysUserService.isAdmin(teacherId)) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
+        }
+
+        // 3. 获取最新论文
+        PaperInfo latestPaper = paperInfoMapper.selectLatestPaper(studentId);
+        if (latestPaper == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "该学生暂无论文");
+        }
+
+        // 4. 构造返回数据
+        StudentPaperInfoDTO dto = buildStudentPaperInfoDTO(latestPaper);
+        return Result.success("获取成功", dto);
+    }
+
+    @Override
+    public Result<List<StudentPaperInfoDTO>> getStudentAllPapers(Long teacherId, Long studentId) {
+        // 1. 验证学生是否存在
+        SysUser student = sysUserMapper.selectById(studentId);
+        if (student == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "学生不存在");
+        }
+
+        // 2. 验证教师权限
+        LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(PaperInfo::getStudentId, studentId)
+                   .eq(PaperInfo::getTeacherId, teacherId)
+                   .eq(PaperInfo::getIsDeleted, 0);
+        Long count = paperInfoMapper.selectCount(queryWrapper);
+        if (count == 0 && !sysUserService.isAdmin(teacherId)) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
+        }
+
+        // 3. 获取所有论文
+        LambdaQueryWrapper<PaperInfo> allPapersQuery = new LambdaQueryWrapper<>();
+        allPapersQuery.eq(PaperInfo::getStudentId, studentId)
+                    .eq(PaperInfo::getIsDeleted, 0)
+                    .orderByDesc(PaperInfo::getCreateTime);
+        List<PaperInfo> allPapers = paperInfoMapper.selectList(allPapersQuery);
+        if (allPapers.isEmpty()) {
+            return Result.error(ResultCode.PARAM_ERROR, "该学生暂无论文");
+        }
+
+        // 4. 构造返回数据
+        List<StudentPaperInfoDTO> dtoList = new ArrayList<>();
+        for (PaperInfo paper : allPapers) {
+            dtoList.add(buildStudentPaperInfoDTO(paper));
+        }
+        return Result.success("获取成功", dtoList);
+    }
+
+    private StudentPaperInfoDTO buildStudentPaperInfoDTO(PaperInfo paper) {
+        StudentPaperInfoDTO dto = new StudentPaperInfoDTO();
+        dto.setPaperId(paper.getId());
+        dto.setPaperTitle(paper.getPaperTitle());
+        dto.setFileId(paper.getFileId());
+        dto.setPaperStatus(paper.getPaperStatus());
+        dto.setSubmitTime(paper.getSubmitTime() != null ? paper.getSubmitTime().toString() : null);
+        dto.setSimilarity(paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
+
+        if (paper.getFileId() != null) {
+            try {
+                com.abin.checkrepeatsystem.pojo.entity.FileInfo fileInfo =
+                        fileService.getById(paper.getFileId());
+                if (fileInfo != null) {
+                    dto.setFileName(fileInfo.getOriginalFilename());
+                    dto.setFileSize(fileInfo.getFileSizeDesc());
+                }
+            } catch (Exception e) {
+                log.warn("获取文件详细信息失败: {}", e.getMessage());
+            }
+        }
+        return dto;
     }
 }

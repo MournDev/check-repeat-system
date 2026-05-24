@@ -14,15 +14,16 @@ import com.abin.checkrepeatsystem.admin.mapper.AutoAssignmentConfigMapper;
 import com.abin.checkrepeatsystem.pojo.entity.AutoAssignmentHistory;
 import com.abin.checkrepeatsystem.pojo.entity.AutoAssignmentConfig;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
+import com.abin.checkrepeatsystem.user.mapper.TeacherInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import org.springframework.core.task.TaskExecutor;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -32,27 +33,24 @@ import java.util.stream.Collectors;
 /**
  * 自动论文分配服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class AutoAssignmentServiceImpl implements AutoAssignmentService {
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private AutoAssignmentHistoryMapper autoAssignmentHistoryMapper;
+    private final AutoAssignmentHistoryMapper autoAssignmentHistoryMapper;
 
-    @Resource
-    private AutoAssignmentConfigMapper autoAssignmentConfigMapper;
+    private final AutoAssignmentConfigMapper autoAssignmentConfigMapper;
 
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
 
-    @Resource
-    private TaskExecutor taskExecutor;
+    private final TeacherInfoMapper teacherInfoMapper;
+
+    private final TaskExecutor taskExecutor;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -431,13 +429,9 @@ public class AutoAssignmentServiceImpl implements AutoAssignmentService {
                     if (bestTeacher != null) {
                         // 执行分配
                         assignStudentToTeacher(student, bestTeacher);
-                        
-                        // 更新教师负载
-                        TeacherInfo teacherInfo = teacherInfoService.getByUserId(bestTeacher.getId());
-                        if (teacherInfo != null) {
-                            teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
-                            teacherInfoService.saveOrUpdate(teacherInfo);
-                        }
+
+                        // 原子更新教师负载，避免并发竞态
+                        teacherInfoMapper.incrementAdvisorCount(bestTeacher.getId());
                         
                         successCount++;
                         

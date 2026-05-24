@@ -16,11 +16,11 @@ import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -29,24 +29,20 @@ import java.util.stream.Collectors;
 /**
  * 管理员论文分配服务实现类
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class AdminAssignmentServiceImpl implements AdminAssignmentService {
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
     
-    @Resource
-    private SysDictDataMapper sysDictDataMapper;
+    private final SysDictDataMapper sysDictDataMapper;
     
-    @Resource
-    private TeacherInfoDataService teacherInfoService;
+    private final TeacherInfoDataService teacherInfoService;
     
-    @Resource
-    private StudentInfoService studentInfoService;
+    private final StudentInfoService studentInfoService;
 
     @Override
     public Result<Map<String, Object>> getAssignmentStats() {
@@ -129,6 +125,16 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             
             Page<PaperInfo> resultPage = paperInfoMapper.selectPage(paperPage, wrapper);
             
+            // 批量获取学生用户信息和StudentInfo，避免N+1查询
+            List<Long> studentIds = resultPage.getRecords().stream()
+                    .map(PaperInfo::getStudentId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            Map<Long, SysUser> userMap = sysUserMapper.selectBatchIds(studentIds).stream()
+                    .collect(Collectors.toMap(SysUser::getId, u -> u, (a, b) -> a));
+            Map<Long, StudentInfo> studentInfoMap = studentInfoService.listByUserIds(studentIds).stream()
+                    .collect(Collectors.toMap(StudentInfo::getUserId, s -> s, (a, b) -> a));
+
             // 转换为前端需要的格式
             Page<Map<String, Object>> resultMap = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());
             List<Map<String, Object>> records = resultPage.getRecords().stream().map(paper -> {
@@ -136,21 +142,19 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 record.put("id", paper.getId());
                 record.put("title", paper.getPaperTitle());
                 record.put("studentId", paper.getStudentId());
-                
-                // 获取学生信息
-                SysUser student = sysUserMapper.selectById(paper.getStudentId());
+
+                SysUser student = userMap.get(paper.getStudentId());
                 if (student != null) {
                     record.put("name", student.getRealName());
                     record.put("collegeId", student.getCollegeId());
-                    
-                    // 从StudentInfo表获取学生详情
-                    StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+
+                    StudentInfo studentInfo = studentInfoMap.get(student.getId());
                     if (studentInfo != null) {
                         record.put("major", studentInfo.getMajorId());
                         record.put("grade", studentInfo.getGrade());
                     }
                 }
-                
+
                 return record;
             }).collect(Collectors.toList());
             
@@ -178,23 +182,28 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             }
             
             List<SysUser> allTeachers = sysUserMapper.selectList(userWrapper);
-            
+
+            // 批量获取TeacherInfo，避免N+1查询
+            List<Long> teacherIds = allTeachers.stream()
+                    .map(SysUser::getId)
+                    .collect(Collectors.toList());
+            Map<Long, TeacherInfo> teacherInfoMap = teacherInfoService.listByUserIds(teacherIds).stream()
+                    .collect(Collectors.toMap(TeacherInfo::getUserId, t -> t, (a, b) -> a));
+
             // 转换为带详细信息的记录
             List<Map<String, Object>> allRecords = allTeachers.stream().map(teacher -> {
                 Map<String, Object> record = new HashMap<>();
                 record.put("id", teacher.getId());
                 record.put("name", teacher.getRealName());
                 record.put("collegeId", teacher.getCollegeId());
-                
-                // 从TeacherInfo表获取教师详情
-                TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+
+                TeacherInfo teacherInfo = teacherInfoMap.get(teacher.getId());
                 if (teacherInfo != null) {
                     record.put("title", teacherInfo.getProfessionalTitle());
                     record.put("department", teacherInfo.getOffice());
                     record.put("currentLoad", teacherInfo.getCurrentAdvisorCount());
                     record.put("maxLoad", teacherInfo.getMaxReviewCount());
-                    
-                    // 获取专长领域
+
                     List<String> expertise = Arrays.asList(Optional.ofNullable(teacherInfo.getResearchDirection())
                         .orElse("").split(","))
                         .stream()
@@ -202,14 +211,13 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                         .collect(Collectors.toList());
                     record.put("expertise", expertise);
                 } else {
-                    // 确保即使TeacherInfo不存在也能正常返回
                     record.put("title", "");
                     record.put("department", "");
                     record.put("currentLoad", 0);
-                    record.put("maxLoad", 15); // 默认值
+                    record.put("maxLoad", 15);
                     record.put("expertise", new ArrayList<>());
                 }
-                
+
                 return record;
             }).collect(Collectors.toList());
             

@@ -1,12 +1,13 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.mapper.PaperSubmitMapper;
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.constant.PaperNoticeConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.service.FileService;
+import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
 import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.PaperAttachmentMapper;
@@ -24,13 +25,11 @@ import com.abin.checkrepeatsystem.user.service.Impl.InternalMessageNotificationS
 import com.abin.checkrepeatsystem.user.service.Impl.NotificationFacadeService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.abin.checkrepeatsystem.user.service.PaperStatusLogService;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +42,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -54,60 +54,50 @@ import java.nio.file.Paths;
 /**
  * 论文信息服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo> implements PaperInfoService {
 
-    @Resource
-    private FileService fileService;
+    private final FileService fileService;
     
     @Value("${file.upload.base-path}")
     private String uploadBasePath;
 
-    @Resource
-    private AdvisorAssignService advisorAssignService;
+    private final AdvisorAssignService advisorAssignService;
 
-    @Resource
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private FileInfoMapper fileInfoMapper;
+    private final FileInfoMapper fileInfoMapper;
 
-    @Resource
-    private PaperSubmitMapper paperSubmitMapper;
+    private final PaperSubmitMapper paperSubmitMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private InternalMessageNotificationService internalMessageNotificationService;
+    private final InternalMessageNotificationService internalMessageNotificationService;
     
-    @Resource
-    private NotificationFacadeService notificationFacadeService;
+    private final NotificationFacadeService notificationFacadeService;
     
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
     
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
 
-    @Resource
-    private PaperAttachmentMapper paperAttachmentMapper;
+    private final PaperAttachmentMapper paperAttachmentMapper;
 
-    @Resource
-    private MessageService messageService;
+    private final MessageService messageService;
 
-    @Resource
-    private PaperStatusLogService paperStatusLogService;
+    private final PaperStatusLogService paperStatusLogService;
 
-    @Resource
-    private com.abin.checkrepeatsystem.student.mapper.MajorMapper majorMapper;
-    
-    @Resource
-    private com.abin.checkrepeatsystem.detection.service.PaperContentExtractor paperContentExtractor;
+    private final com.abin.checkrepeatsystem.student.mapper.MajorMapper majorMapper;
+
+    private final com.abin.checkrepeatsystem.detection.service.PaperContentExtractor paperContentExtractor;
+
+    private final Executor asyncExecutor;
+    private final PaperVersionServiceImpl paperVersionService;
+    private final PaperCheckHistoryServiceImpl paperCheckHistoryService;
+    private final PaperAttachmentServiceImpl paperAttachmentService;
 
 
 
@@ -373,6 +363,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             CompletableFuture<Void> allocateTask = CompletableFuture.runAsync(() -> {
                 try {
                     if (student != null) {
+
                         UserContextHolder.setUser(student);
                     }
 
@@ -392,7 +383,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 } finally {
                     UserContextHolder.removeUser();
                 }
-            });
+            }, asyncExecutor);
 
             CompletableFuture<Void> extractContentTask = CompletableFuture.runAsync(() -> {
                 try {
@@ -409,7 +400,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 } finally {
                     UserContextHolder.removeUser();
                 }
-            });
+            }, asyncExecutor);
 
             // 等待两个任务完成（查重将在教师确认分配后触发）
             CompletableFuture.allOf(allocateTask, extractContentTask).join();
@@ -1057,318 +1048,27 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      */
     @Override
     public List<PaperSubmitDTO> getPaperVersions(Long paperId, Long studentId) {
-        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-        if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("论文不存在或无权限访问");
-        }
-        List<PaperSubmit> submits = paperSubmitMapper.selectList(
-            new LambdaQueryWrapper<PaperSubmit>()
-                .eq(PaperSubmit::getPaperId, paperId)
-                .eq(PaperSubmit::getIsDeleted, 0)
-                .orderByAsc(PaperSubmit::getSubmitVersion)
-        );
-        return submits.stream().map(s -> {
-            PaperSubmitDTO dto = new PaperSubmitDTO();
-            dto.setId(s.getId());
-            dto.setSubmitVersion(s.getSubmitVersion());
-            dto.setFileId(s.getFileId());
-            dto.setSubmitTime(s.getSubmitTime());
-            dto.setRemark(s.getRemark());
-            return dto;
-        }).collect(Collectors.toList());
+        return paperVersionService.getPaperVersions(paperId, studentId);
     }
 
-    /**
-     * 获取论文版本详情接口实现
-     */
     @Override
     public PaperVersionDTO getPaperVersion(Long paperId, Long versionId, Long studentId) {
-        try {
-            log.info("获取论文版本详情 - 论文ID: {}, 版本ID: {}, 学生ID: {}", paperId, versionId, studentId);
-            
-            // 1. 验证论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new RuntimeException("论文不存在或无权限访问");
-            }
-            
-            // 2. 查询版本信息（按版本号查询，兼容前端传入版本序号而非主键ID）
-            PaperSubmit paperSubmit = paperSubmitMapper.selectOne(
-                new LambdaQueryWrapper<PaperSubmit>()
-                    .eq(PaperSubmit::getPaperId, paperId)
-                    .eq(PaperSubmit::getSubmitVersion, versionId.intValue())
-                    .last("LIMIT 1")
-            );
-            if (paperSubmit == null) {
-                throw new RuntimeException("版本" + versionId + "不存在");
-            }
-
-            // 3. 构造返回DTO
-            PaperVersionDTO versionDTO = new PaperVersionDTO();
-            versionDTO.setId(paperSubmit.getId());
-            versionDTO.setPaperId(paperSubmit.getPaperId());
-            versionDTO.setVersion(paperSubmit.getSubmitVersion());
-            versionDTO.setSubmitTime(paperSubmit.getSubmitTime());
-            versionDTO.setFileId(paperSubmit.getFileId());
-
-            // 4. 判断是否为当前版本
-            PaperSubmit latestSubmit = paperSubmitMapper.selectOne(
-                new LambdaQueryWrapper<PaperSubmit>()
-                    .eq(PaperSubmit::getPaperId, paperId)
-                    .orderByDesc(PaperSubmit::getSubmitVersion)
-                    .last("LIMIT 1")
-            );
-            versionDTO.setIsCurrent(latestSubmit != null && latestSubmit.getSubmitVersion().equals(versionId.intValue()));
-            
-            // 5. 获取查重信息（如果有）- 从查重任务表查询最新完成的查重记录
-            CheckTask latestCheckTask = checkTaskMapper.selectOne(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .orderByDesc(CheckTask::getEndTime)
-                    .last("LIMIT 1")
-            );
-            if (latestCheckTask != null && latestCheckTask.getCheckRate() != null) {
-                versionDTO.setSimilarityRate(latestCheckTask.getCheckRate());
-            } else {
-                versionDTO.setSimilarityRate(paperInfo.getSimilarityRate());
-            }
-            
-            // 6. 获取字数信息
-            FileInfo fileInfo = fileInfoMapper.selectById(paperSubmit.getFileId());
-            versionDTO.setWordCount(fileInfo != null ? fileInfo.getWordCount() : 0);
-            
-            return versionDTO;
-            
-        } catch (Exception e) {
-            log.error("获取论文版本详情失败 - 论文ID: {}, 版本ID: {}", paperId, versionId, e);
-            throw new RuntimeException("获取版本详情失败: " + e.getMessage());
-        }
+        return paperVersionService.getPaperVersion(paperId, versionId, studentId);
     }
-    
-    /**
-     * 版本对比接口实现
-     */
+
     @Override
     public VersionCompareResult comparePaperVersions(Long paperId, List<Long> versionIds, Long studentId) {
-        try {
-            log.info("开始版本对比 - 论文ID: {}, 版本数量: {}, 学生ID: {}", paperId, versionIds.size(), studentId);
-            
-            if (versionIds.size() != 2) {
-                throw new RuntimeException("必须选择两个版本进行对比");
-            }
-            
-            // 1. 验证论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new RuntimeException("论文不存在或无权限访问");
-            }
-            
-            // 2. 获取两个版本信息（按submit_version查询，回退为按序号位置查询）
-            PaperSubmit versionA = findSubmitByVersion(paperId, versionIds.get(0).intValue());
-            PaperSubmit versionB = findSubmitByVersion(paperId, versionIds.get(1).intValue());
-
-            if (versionA == null || versionB == null) {
-                throw new RuntimeException("版本信息不正确: 版本" + versionIds.get(0) + "或" + versionIds.get(1) + "不存在");
-            }
-            
-            // 3. 构造对比结果
-            VersionCompareResult result = new VersionCompareResult();
-                        
-            // 版本 A 信息 - 从该版本提交时间之前的查重记录获取相似度
-            VersionCompareResult.VersionInfo infoA = new VersionCompareResult.VersionInfo();
-            infoA.setId(versionA.getId());
-            infoA.setVersion(versionA.getSubmitVersion());
-            // 查询该版本对应的查重记录（根据提交时间匹配）
-            CheckTask checkTaskA = checkTaskMapper.selectOne(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .le(CheckTask::getEndTime, versionA.getSubmitTime())
-                    .orderByDesc(CheckTask::getEndTime)
-                    .last("LIMIT 1")
-            );
-            if (checkTaskA != null && checkTaskA.getCheckRate() != null) {
-                infoA.setSimilarityRate(checkTaskA.getCheckRate());
-            } else {
-                infoA.setSimilarityRate(paperInfo.getSimilarityRate());
-            }
-            FileInfo fileInfoA = fileInfoMapper.selectById(versionA.getFileId());
-            infoA.setWordCount(fileInfoA != null ? fileInfoA.getWordCount() : 0);
-            result.setVersionA(infoA);
-                        
-            // 版本 B 信息 - 同理从历史查重记录获取
-            VersionCompareResult.VersionInfo infoB = new VersionCompareResult.VersionInfo();
-            infoB.setId(versionB.getId());
-            infoB.setVersion(versionB.getSubmitVersion());
-            CheckTask checkTaskB = checkTaskMapper.selectOne(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .le(CheckTask::getEndTime, versionB.getSubmitTime())
-                    .orderByDesc(CheckTask::getEndTime)
-                    .last("LIMIT 1")
-            );
-            if (checkTaskB != null && checkTaskB.getCheckRate() != null) {
-                infoB.setSimilarityRate(checkTaskB.getCheckRate());
-            } else {
-                infoB.setSimilarityRate(paperInfo.getSimilarityRate());
-            }
-            FileInfo fileInfoB = fileInfoMapper.selectById(versionB.getFileId());
-            infoB.setWordCount(fileInfoB != null ? fileInfoB.getWordCount() : 0);
-            result.setVersionB(infoB);
-            
-            // 4. 计算差异
-            List<VersionCompareResult.DiffItem> diffItems = new ArrayList<>();
-            
-            // 相似度差异
-            VersionCompareResult.DiffItem similarityDiff = new VersionCompareResult.DiffItem();
-            similarityDiff.setField("相似度");
-            similarityDiff.setBefore(infoA.getSimilarityRate());
-            similarityDiff.setAfter(infoB.getSimilarityRate());
-            if (infoA.getSimilarityRate() != null && infoB.getSimilarityRate() != null) {
-                similarityDiff.setChange(infoB.getSimilarityRate().subtract(infoA.getSimilarityRate()));
-            }
-            diffItems.add(similarityDiff);
-            
-            // 字数差异
-            VersionCompareResult.DiffItem wordCountDiff = new VersionCompareResult.DiffItem();
-            wordCountDiff.setField("字数");
-            wordCountDiff.setBefore(infoA.getWordCount());
-            wordCountDiff.setAfter(infoB.getWordCount());
-            wordCountDiff.setChange(infoB.getWordCount() - infoA.getWordCount());
-            diffItems.add(wordCountDiff);
-            
-            result.setDiffData(diffItems);
-            
-            log.info("版本对比完成 - 论文ID: {}", paperId);
-            return result;
-            
-        } catch (Exception e) {
-            log.error("版本对比失败 - 论文ID: {}", paperId, e);
-            throw new RuntimeException("版本对比失败: " + e.getMessage());
-        }
+        return paperVersionService.comparePaperVersions(paperId, versionIds, studentId);
     }
 
-    /**
-     * 按版本号查找提交记录
-     * 优先按 submit_version 精确匹配，找不到则按序号位置（第N条记录）回退查找
-     */
-    private PaperSubmit findSubmitByVersion(Long paperId, int versionNumber) {
-        // 优先：按 submit_version 精确匹配
-        PaperSubmit submit = paperSubmitMapper.selectOne(
-            new LambdaQueryWrapper<PaperSubmit>()
-                .eq(PaperSubmit::getPaperId, paperId)
-                .eq(PaperSubmit::getSubmitVersion, versionNumber)
-                .last("LIMIT 1")
-        );
-        if (submit != null) {
-            return submit;
-        }
-
-        // 回退：按 submit_version 升序排列，取第 N 条（兼容展示序号与submit_version不一致的场景）
-        List<PaperSubmit> allSubmits = paperSubmitMapper.selectList(
-            new LambdaQueryWrapper<PaperSubmit>()
-                .eq(PaperSubmit::getPaperId, paperId)
-                .eq(PaperSubmit::getIsDeleted, 0)
-                .orderByAsc(PaperSubmit::getSubmitVersion)
-        );
-        int index = versionNumber - 1; // 版本号从1开始，列表索引从0开始
-        if (index >= 0 && index < allSubmits.size()) {
-            return allSubmits.get(index);
-        }
-
-        return null;
-    }
-
-    /**
-     * 下载版本对比报告接口实现
-     */
     @Override
     public void downloadVersionCompareReport(Long paperId, List<Long> versionIds, Long studentId, HttpServletResponse response) {
-        try {
-            log.info("开始下载版本对比报告 - 论文ID: {}, 学生ID: {}", paperId, studentId);
-            
-            // 1. 执行版本对比
-            VersionCompareResult compareResult = comparePaperVersions(paperId, versionIds, studentId);
-            
-            // 2. 生成对比报告（这里简单返回JSON格式，实际应该生成PDF）
-            response.setContentType("application/json");
-            response.setHeader("Content-Disposition", "attachment; filename=compare_report_" + 
-                System.currentTimeMillis() + ".json");
-            
-            String jsonReport = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(compareResult);
-            response.getWriter().write(jsonReport);
-            response.getWriter().flush();
-            
-            log.info("版本对比报告下载完成 - 论文ID: {}", paperId);
-            
-        } catch (Exception e) {
-            log.error("下载版本对比报告失败 - 论文ID: {}", paperId, e);
-            throw new RuntimeException("下载对比报告失败: " + e.getMessage());
-        }
+        paperVersionService.downloadVersionCompareReport(paperId, versionIds, studentId, response);
     }
-    
-    /**
-     * 下载论文版本接口实现
-     */
+
     @Override
     public void downloadPaperVersion(Long versionId, Long studentId, HttpServletResponse response) {
-        try {
-            log.info("开始下载论文版本 - 版本ID: {}, 学生ID: {}", versionId, studentId);
-            
-            // 1. 查询版本信息
-            PaperSubmit paperSubmit = paperSubmitMapper.selectById(versionId);
-            if (paperSubmit == null) {
-                throw new RuntimeException("版本不存在");
-            }
-            
-            // 2. 验证论文归属
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperSubmit.getPaperId());
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new RuntimeException("无权限下载此版本");
-            }
-            
-            // 3. 下载文件 - 直接操作response
-            FileInfo fileInfo = fileService.getById(paperSubmit.getFileId());
-            if (fileInfo != null && StringUtils.hasText(fileInfo.getStoragePath())) {
-                String fullPath = Paths.get(uploadBasePath, fileInfo.getStoragePath()).toString();
-                File file = new File(fullPath);
-                
-                if (file.exists()) {
-                    // 设置响应头
-                    String fileName = fileInfo.getOriginalFilename() != null ? 
-                        fileInfo.getOriginalFilename() : "paper_version_" + versionId + ".pdf";
-                    response.setContentType(getContentType(fileName));
-                    response.setHeader("Content-Disposition", 
-                        "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-                    response.setContentLength((int) file.length());
-                    
-                    // 写入文件内容
-                    try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
-                        byte[] buffer = new byte[1024];
-                        int len;
-                        while ((len = fis.read(buffer)) > 0) {
-                            response.getOutputStream().write(buffer, 0, len);
-                        }
-                        response.getOutputStream().flush();
-                    }
-                } else {
-                    throw new RuntimeException("文件不存在");
-                }
-            } else {
-                throw new RuntimeException("文件信息不存在");
-            }
-            
-            log.info("论文版本下载完成 - 版本ID: {}", versionId);
-            
-        } catch (Exception e) {
-            log.error("下载论文版本失败 - 版本ID: {}", versionId, e);
-            throw new RuntimeException("下载版本失败: " + e.getMessage());
-        }
+        paperVersionService.downloadPaperVersion(versionId, studentId, response);
     }
     
     /**
@@ -1399,7 +1099,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             // 设置响应头
             String fileName = attachment.getOriginalFilename() != null ? 
                 attachment.getOriginalFilename() : "attachment_" + attachmentId;
-            response.setContentType(getContentType(fileName));
+            response.setContentType(FileMimeTypeUtils.getContentType(fileName));
             response.setHeader("Content-Disposition", 
                 "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
             response.setContentLength((int) file.length());
@@ -1456,7 +1156,7 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                     // 设置响应头
                     String fileName = fileInfo.getOriginalFilename() != null ? 
                         fileInfo.getOriginalFilename() : "paper_" + paperId + ".pdf";
-                    response.setContentType(getContentType(fileName));
+                    response.setContentType(FileMimeTypeUtils.getContentType(fileName));
                     response.setHeader("Content-Disposition", 
                         "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
                     response.setContentLength((int) file.length());
@@ -1484,42 +1184,19 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             throw new RuntimeException("下载论文失败: " + e.getMessage());
         }
     }
-    
-    /**
-     * 根据文件名获取内容类型
-     */
-    private String getContentType(String fileName) {
-        if (fileName == null) return "application/octet-stream";
         
-        String lowerName = fileName.toLowerCase();
-        if (lowerName.endsWith(".pdf")) {
-            return "application/pdf";
-        } else if (lowerName.endsWith(".docx")) {
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        } else if (lowerName.endsWith(".doc")) {
-            return "application/msword";
-        } else if (lowerName.endsWith(".txt")) {
-            return "text/plain";
-        } else {
-            return "application/octet-stream";
-        }
-    }
-    
     /**
      * 验证并过滤论文列表
      */
     private List<PaperInfo> validateAndFilterPapers(List<Long> paperIds, Long studentId) {
-        List<PaperInfo> validPapers = new ArrayList<>();
-        
-        for (Long paperId : paperIds) {
-            PaperInfo paper = paperInfoMapper.selectById(paperId);
-            if (paper != null && paper.getStudentId().equals(studentId) && 
-                paper.getIsDeleted() == 0) {
-                validPapers.add(paper);
-            }
+        if (paperIds == null || paperIds.isEmpty()) {
+            return java.util.Collections.emptyList();
         }
-        
-        return validPapers;
+        // 批量查询避免 N+1
+        List<PaperInfo> papers = paperInfoMapper.selectBatchIds(paperIds);
+        return papers.stream()
+                .filter(p -> p != null && p.getStudentId().equals(studentId) && p.getIsDeleted() == 0)
+                .collect(java.util.stream.Collectors.toList());
     }
     
     /**
@@ -1570,633 +1247,22 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
     
     @Override
     public CheckHistoryResponseDTO getCheckHistory(Long paperId, Long studentId) {
-        try {
-            log.info("获取论文查重历史记录 - 论文ID: {}, 学生ID: {}", paperId, studentId);
-            
-            // 1. 验证论文权限
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
-            }
-            
-            // 2. 查询所有查重任务历史
-            List<CheckTask> checkTasks = checkTaskMapper.selectList(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .orderByDesc(CheckTask::getCreateTime)
-            );
-            
-            // 3. 构建历史记录
-            List<CheckHistoryDTO> history = new ArrayList<>();
-            BigDecimal lowestSimilarity = null;
-            BigDecimal currentSimilarity = null;
-            
-            for (int i = 0; i < checkTasks.size(); i++) {
-                CheckTask task = checkTasks.get(i);
-                CheckHistoryDTO historyDTO = new CheckHistoryDTO();
-                
-                // 版本号（按时间倒序）
-                historyDTO.setVersion(checkTasks.size() - i);
-
-                // 获取真实的提交版本号（从 PaperSubmit 表获取）
-                PaperSubmit matchingSubmit = paperSubmitMapper.selectOne(
-                    new LambdaQueryWrapper<PaperSubmit>()
-                        .eq(PaperSubmit::getPaperId, paperId)
-                        .eq(PaperSubmit::getFileId, task.getFileId())
-                        .eq(PaperSubmit::getIsDeleted, 0)
-                        .last("LIMIT 1")
-                );
-                historyDTO.setSubmitVersion(matchingSubmit != null ? matchingSubmit.getSubmitVersion() : checkTasks.size() - i);
-                
-                // 报告信息
-                if (task.getReportId() != null) {
-                    CheckReport report = checkReportMapper.selectById(task.getReportId());
-                    if (report != null) {
-                        historyDTO.setReportId(String.valueOf(report.getId()));
-                    }
-                }
-                
-                // 查重时间和相似度
-                historyDTO.setCheckTime(task.getCreateTime());
-                historyDTO.setSimilarity(task.getCheckRate());
-                
-                // 评级
-                historyDTO.setRating(calculateRating(task.getCheckRate()));
-                
-                // 是否为当前版本
-                historyDTO.setIsCurrent(i == 0);
-                if (i == 0) {
-                    currentSimilarity = task.getCheckRate();
-                }
-                
-                // 改进说明（模拟数据）
-                historyDTO.setChanges(generateChangesDescription(i, task.getCheckRate()));
-                
-                // 相比上一版本的改进
-                if (i < checkTasks.size() - 1) {
-                    CheckTask previousTask = checkTasks.get(i + 1);
-                    if (previousTask.getCheckRate() != null && task.getCheckRate() != null) {
-                        BigDecimal improvement = previousTask.getCheckRate().subtract(task.getCheckRate());
-                        historyDTO.setImprovementFromPrevious(improvement);
-                    }
-                }
-                
-                // 章节变化 - 从查重报告中提取真实数据
-                historyDTO.setSectionChanges(extractSectionChangesFromReport(task));
-                
-                history.add(historyDTO);
-                
-                // 更新最低相似度
-                if (task.getCheckRate() != null && (lowestSimilarity == null || task.getCheckRate().compareTo(lowestSimilarity) < 0)) {
-                    lowestSimilarity = task.getCheckRate();
-                }
-            }
-            
-            // 4. 构建趋势分析
-            CheckHistoryResponseDTO.TrendAnalysisDTO trendAnalysis = buildTrendAnalysis(checkTasks);
-            
-            // 5. 构建论文信息
-            CheckHistoryResponseDTO.PaperInfoDTO paperInfoDTO = new CheckHistoryResponseDTO.PaperInfoDTO();
-            paperInfoDTO.setTitle(paperInfo.getPaperTitle());
-            paperInfoDTO.setCurrentSimilarity(currentSimilarity);
-            paperInfoDTO.setLowestSimilarity(lowestSimilarity);
-            paperInfoDTO.setVersionCount(checkTasks.size());
-            
-            // 6. 构建最终响应
-            CheckHistoryResponseDTO response = new CheckHistoryResponseDTO();
-            response.setHistory(history);
-            response.setTrendAnalysis(trendAnalysis);
-            response.setPaperInfo(paperInfoDTO);
-            
-            log.info("查重历史记录获取成功 - 论文ID: {}, 记录数: {}", paperId, history.size());
-            return response;
-            
-        } catch (Exception e) {
-            log.error("获取查重历史记录失败 - 论文ID: {}", paperId, e);
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "获取查重历史记录失败");
-        }
+        return paperCheckHistoryService.getCheckHistory(paperId, studentId);
     }
-    
+
     @Override
     public SimilarityTrendDTO getSimilarityTrend(Long paperId, Long studentId, Integer period) {
-        try {
-            log.info("获取相似度趋势数据 - 论文ID: {}, 学生ID: {}, 周期: {}天", paperId, studentId, period);
-            
-            // 1. 验证权限
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
-            }
-            
-            // 2. 计算时间范围
-            LocalDateTime endDate = LocalDateTime.now();
-            LocalDateTime startDate = endDate.minusDays(period);
-            
-            // 3. 查询指定时间范围内的查重任务
-            List<CheckTask> checkTasks = checkTaskMapper.selectList(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .ge(CheckTask::getCreateTime, startDate)
-                    .le(CheckTask::getCreateTime, endDate)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .orderByAsc(CheckTask::getCreateTime)
-            );
-            
-            // 4. 构建趋势数据
-            List<String> dates = new ArrayList<>();
-            List<BigDecimal> similarities = new ArrayList<>();
-            
-            for (CheckTask task : checkTasks) {
-                dates.add(task.getCreateTime().toLocalDate().toString());
-                similarities.add(task.getCheckRate());
-            }
-            
-            // 5. 如果没有数据，添加默认数据
-            if (dates.isEmpty()) {
-                dates.add(endDate.toLocalDate().toString());
-                similarities.add(BigDecimal.ZERO);
-            }
-            
-            SimilarityTrendDTO trendDTO = new SimilarityTrendDTO();
-            trendDTO.setDates(dates);
-            trendDTO.setSimilarities(similarities);
-            
-            log.info("相似度趋势数据获取成功 - 论文ID: {}, 数据点数: {}", paperId, dates.size());
-            return trendDTO;
-            
-        } catch (Exception e) {
-            log.error("获取相似度趋势数据失败 - 论文ID: {}", paperId, e);
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "获取相似度趋势数据失败");
-        }
+        return paperCheckHistoryService.getSimilarityTrend(paperId, studentId, period);
     }
-    
+
     @Override
     public VersionCompareResponseDTO compareVersions(Long paperId, Long studentId, VersionCompareRequestDTO request) {
-        try {
-            log.info("版本对比分析 - 论文ID: {}, 学生ID: {}, 从版本: {}, 到版本: {}", 
-                paperId, studentId, request.getFromVersion(), request.getToVersion());
-            
-            // 1. 验证权限
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
-            }
-            
-            // 2. 查询所有查重任务
-            List<CheckTask> checkTasks = checkTaskMapper.selectList(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .orderByDesc(CheckTask::getCreateTime)
-            );
-            
-            // 3. 验证版本号
-            if (request.getFromVersion() < 1 || request.getToVersion() < 1 ||
-                request.getFromVersion() > checkTasks.size() || request.getToVersion() > checkTasks.size()) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "版本号超出范围");
-            }
-            
-            // 4. 获取指定版本的任务
-            int fromIndex = checkTasks.size() - request.getFromVersion();
-            int toIndex = checkTasks.size() - request.getToVersion();
-            
-            CheckTask fromTask = checkTasks.get(fromIndex);
-            CheckTask toTask = checkTasks.get(toIndex);
-            
-            // 5. 计算总体变化
-            BigDecimal overallChange = fromTask.getCheckRate().subtract(toTask.getCheckRate());
-            
-            // 6. 构建章节对比 - 从查重报告中提取章节信息（如果有）
-            List<VersionCompareResponseDTO.SectionComparisonDTO> sectionComparisons = new ArrayList<>();
-            
-            // 尝试从两个版本的查重报告中提取章节对比数据
-            CheckReport reportFrom = checkReportMapper.selectOne(
-                new LambdaQueryWrapper<CheckReport>()
-                    .eq(CheckReport::getTaskId, fromTask.getId())
-                    .eq(CheckReport::getIsDeleted, 0)
-                    .last("LIMIT 1")
-            );
-            
-            CheckReport reportTo = checkReportMapper.selectOne(
-                new LambdaQueryWrapper<CheckReport>()
-                    .eq(CheckReport::getTaskId, toTask.getId())
-                    .eq(CheckReport::getIsDeleted, 0)
-                    .last("LIMIT 1")
-            );
-            
-            // 如果报告中有 repeatDetails，尝试解析章节信息
-            if (reportFrom != null && reportTo != null && 
-                StringUtils.hasText(reportFrom.getRepeatDetails()) && 
-                StringUtils.hasText(reportTo.getRepeatDetails())) {
-                try {
-                    // 解析 JSON 格式的重复详情
-                    List<Map<String, Object>> detailsFrom = JSON.parseObject(
-                        reportFrom.getRepeatDetails(), 
-                        new TypeReference<List<Map<String, Object>>>() {}
-                    );
-                    List<Map<String, Object>> detailsTo = JSON.parseObject(
-                        reportTo.getRepeatDetails(), 
-                        new TypeReference<List<Map<String, Object>>>() {}
-                    );
-                    
-                    // 从详情中提取章节信息（如果有的话）
-                    // 这里简化处理，实际应该根据具体的章节结构解析
-                    sectionComparisons = buildSectionComparisons(detailsFrom, detailsTo);
-                } catch (Exception e) {
-                    log.warn("解析章节对比数据失败，使用默认章节列表");
-                }
-            }
-            
-            // 如果无法从报告中获取章节数据，使用默认章节列表
-            if (sectionComparisons.isEmpty()) {
-                sectionComparisons = buildDefaultSectionComparisons(fromTask, toTask);
-            }
-            
-            // 7. 构建响应
-            VersionCompareResponseDTO response = new VersionCompareResponseDTO();
-            response.setFromVersion(request.getFromVersion());
-            response.setToVersion(request.getToVersion());
-            response.setOverallChange(overallChange);
-            response.setSectionComparison(sectionComparisons);
-            
-            log.info("版本对比分析完成 - 论文ID: {}, 总体变化: {}", paperId, overallChange);
-            return response;
-            
-        } catch (Exception e) {
-            log.error("版本对比分析失败 - 论文ID: {}", paperId, e);
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "版本对比分析失败");
-        }
+        return paperCheckHistoryService.compareVersions(paperId, studentId, request);
     }
-    
+
     @Override
     public StatisticsDTO getPaperStatistics(Long paperId, Long studentId) {
-        try {
-            log.info("获取论文统计分析数据 - 论文ID: {}, 学生ID: {}", paperId, studentId);
-            
-            // 1. 验证权限
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
-            }
-            
-            // 2. 查询所有查重任务
-            List<CheckTask> checkTasks = checkTaskMapper.selectList(
-                new LambdaQueryWrapper<CheckTask>()
-                    .eq(CheckTask::getPaperId, paperId)
-                    .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.COMPLETED)
-                    .eq(CheckTask::getIsDeleted, 0)
-                    .orderByAsc(CheckTask::getCreateTime)
-            );
-            
-            if (checkTasks.isEmpty()) {
-                throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "暂无查重记录");
-            }
-            
-            // 3. 计算统计数据
-            BigDecimal firstSimilarity = checkTasks.get(0).getCheckRate();
-            BigDecimal latestSimilarity = checkTasks.get(checkTasks.size() - 1).getCheckRate();
-            
-            // 总改进率
-            BigDecimal improvement = firstSimilarity.subtract(latestSimilarity);
-            int improvementRate = firstSimilarity.compareTo(BigDecimal.ZERO) > 0 ?
-                improvement.multiply(BigDecimal.valueOf(100))
-                          .divide(firstSimilarity, 0, BigDecimal.ROUND_HALF_UP)
-                          .intValue() :
-                0;
-            
-            // 平均相似度
-            BigDecimal sum = BigDecimal.ZERO;
-            for (CheckTask task : checkTasks) {
-                sum = sum.add(task.getCheckRate());
-            }
-            BigDecimal averageSimilarity = sum.divide(BigDecimal.valueOf(checkTasks.size()), 2, BigDecimal.ROUND_HALF_UP);
-            
-            // 改进速度评估
-            String improvementSpeed = evaluateImprovementSpeed(checkTasks);
-            
-            // 4. 构建响应
-            StatisticsDTO statistics = new StatisticsDTO();
-            statistics.setImprovementRate(improvementRate);
-            statistics.setAverageSimilarity(averageSimilarity);
-            statistics.setImprovementSpeed(improvementSpeed);
-            statistics.setTotalChecks(checkTasks.size());
-            statistics.setFirstCheckSimilarity(firstSimilarity);
-            statistics.setLatestCheckSimilarity(latestSimilarity);
-            
-            log.info("论文统计分析完成 - 论文ID: {}, 总查重次数: {}", paperId, checkTasks.size());
-            return statistics;
-            
-        } catch (Exception e) {
-            log.error("获取论文统计分析数据失败 - 论文ID: {}", paperId, e);
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "获取统计分析数据失败");
-        }
-    }
-    
-    // ==================== 辅助方法 ====================
-    
-    /**
-     * 计算评级
-     */
-    private String calculateRating(BigDecimal similarity) {
-        if (similarity == null) return "unknown";
-        
-        double rate = similarity.doubleValue();
-        if (rate <= 10) return "excellent";
-        if (rate <= 20) return "good";
-        if (rate <= 30) return "fair";
-        return "poor";
-    }
-    
-    /**
-     * 构建章节对比数据（从查重报告详情中提取）
-     */
-    private List<VersionCompareResponseDTO.SectionComparisonDTO> buildSectionComparisons(
-            List<Map<String, Object>> detailsFrom, 
-            List<Map<String, Object>> detailsTo) {
-        
-        List<VersionCompareResponseDTO.SectionComparisonDTO> comparisons = new ArrayList<>();
-        
-        try {
-            // 尝试从详情中提取章节信息
-            // 这里假设 detail 中包含 section 字段
-            for (Map<String, Object> detail : detailsFrom) {
-                if (detail.containsKey("section")) {
-                    String sectionName = detail.get("section").toString();
-                    BigDecimal fromRate = detail.containsKey("similarity") ? 
-                        new BigDecimal(detail.get("similarity").toString()) : BigDecimal.ZERO;
-                    
-                    // 查找对应章节在 toVersion 中的数据
-                    BigDecimal toRate = BigDecimal.ZERO;
-                    for (Map<String, Object> toDetail : detailsTo) {
-                        if (sectionName.equals(toDetail.get("section"))) {
-                            toRate = toDetail.containsKey("similarity") ? 
-                                new BigDecimal(toDetail.get("similarity").toString()) : BigDecimal.ZERO;
-                            break;
-                        }
-                    }
-                    
-                    VersionCompareResponseDTO.SectionComparisonDTO dto = 
-                        new VersionCompareResponseDTO.SectionComparisonDTO();
-                    dto.setName(sectionName);
-                    dto.setFrom(fromRate);
-                    dto.setTo(toRate);
-                    dto.setChange(fromRate.subtract(toRate));
-                    
-                    comparisons.add(dto);
-                }
-            }
-        } catch (Exception e) {
-            log.error("构建章节对比数据失败", e);
-        }
-        
-        return comparisons;
-    }
-    
-    /**
-     * 构建默认章节对比数据（当无法从报告中提取时使用）
-     */
-    private List<VersionCompareResponseDTO.SectionComparisonDTO> buildDefaultSectionComparisons(
-            CheckTask fromTask, CheckTask toTask) {
-        
-        List<VersionCompareResponseDTO.SectionComparisonDTO> comparisons = new ArrayList<>();
-        String[] sections = {"引言", "文献综述", "研究方法", "实验结果", "结论"};
-        Random random = new Random();
-        
-        // 根据总体变化率计算各章节的变化（简化处理）
-        BigDecimal overallChange = fromTask.getCheckRate().subtract(toTask.getCheckRate());
-        
-        for (String section : sections) {
-            VersionCompareResponseDTO.SectionComparisonDTO sectionDTO = 
-                new VersionCompareResponseDTO.SectionComparisonDTO();
-            sectionDTO.setName(section);
-            
-            // 基于总体变化生成章节数据
-            BigDecimal fromRate = BigDecimal.valueOf(
-                fromTask.getCheckRate().doubleValue() * (0.8 + random.nextDouble() * 0.4)
-            ).setScale(1, BigDecimal.ROUND_HALF_UP);
-            
-            BigDecimal toRate = fromRate.subtract(
-                overallChange.multiply(BigDecimal.valueOf(0.5 + random.nextDouble() * 1.0))
-            ).setScale(1, BigDecimal.ROUND_HALF_UP);
-            
-            sectionDTO.setFrom(fromRate);
-            sectionDTO.setTo(toRate);
-            sectionDTO.setChange(fromRate.subtract(toRate));
-            
-            comparisons.add(sectionDTO);
-        }
-        
-        return comparisons;
-    }
-    
-    /**
-     * 生成修改说明
-     */
-    private String generateChangesDescription(int versionIndex, BigDecimal similarity) {
-        if (versionIndex == 0) return "初次提交查重";
-        
-        String[] changes = {
-            "优化引用格式，调整段落结构",
-            "完善参考文献，修正语法错误",
-            "重新组织论证逻辑，增强论述严谨性",
-            "细化实验数据分析，补充图表说明",
-            "强化理论支撑，增加文献引用"
-        };
-        
-        return changes[Math.min(versionIndex - 1, changes.length - 1)];
-    }
-    
-    /**
-     * 从查重报告中提取章节变化数据
-     */
-    private Map<String, CheckHistoryDTO.SectionChangeDTO> extractSectionChangesFromReport(CheckTask task) {
-        Map<String, CheckHistoryDTO.SectionChangeDTO> sectionChanges = new HashMap<>();
-        
-        try {
-            // 1. 查询查重报告
-            if (task.getReportId() == null) {
-                return sectionChanges; // 没有报告，返回空数据
-            }
-            
-            CheckReport report = checkReportMapper.selectById(task.getReportId());
-            if (report == null || !StringUtils.hasText(report.getRepeatDetails())) {
-                return sectionChanges; // 报告不存在或没有重复详情，返回空数据
-            }
-            
-            // 2. 解析 JSON 格式的重复详情
-            List<Map<String, Object>> details = JSON.parseObject(
-                report.getRepeatDetails(), 
-                new TypeReference<List<Map<String, Object>>>() {}
-            );
-            
-            if (details == null || details.isEmpty()) {
-                return sectionChanges;
-            }
-            
-            // 3. 尝试从详情中提取章节信息
-            // 假设 detail 中可能包含 section、chapter 等字段
-            for (Map<String, Object> detail : details) {
-                String sectionName = null;
-                BigDecimal similarity = null;
-                
-                // 尝试不同的字段名获取章节名称
-                if (detail.containsKey("section")) {
-                    sectionName = detail.get("section").toString();
-                } else if (detail.containsKey("chapter")) {
-                    sectionName = detail.get("chapter").toString();
-                } else if (detail.containsKey("source")) {
-                    // 如果没有明确的章节名，使用来源作为标识
-                    sectionName = detail.get("source").toString();
-                }
-                
-                // 获取相似度
-                if (detail.containsKey("similarity")) {
-                    Object simValue = detail.get("similarity");
-                    if (simValue instanceof Number) {
-                        similarity = new BigDecimal(simValue.toString());
-                    } else if (simValue instanceof String) {
-                        try {
-                            similarity = new BigDecimal((String) simValue);
-                        } catch (NumberFormatException e) {
-                            log.warn("无法解析相似度值：{}", simValue);
-                        }
-                    }
-                }
-                
-                // 如果提取到有效数据，构建 SectionChangeDTO
-                if (sectionName != null && similarity != null) {
-                    CheckHistoryDTO.SectionChangeDTO sectionChange = new CheckHistoryDTO.SectionChangeDTO();
-                    sectionChange.setFrom(similarity); // 当前版本的相似度
-                    sectionChange.setTo(similarity);   // 单篇论文比对，from 和 to 相同
-                    sectionChange.setChange(BigDecimal.ZERO); // 单版本内无变化
-                    
-                    sectionChanges.put(sectionName, sectionChange);
-                }
-            }
-            
-            // 4. 如果报告中没有章节信息，使用默认章节结构
-            if (sectionChanges.isEmpty()) {
-                sectionChanges = buildDefaultSectionChanges(task);
-            }
-            
-        } catch (Exception e) {
-            log.error("从查重报告提取章节变化失败 - taskId: {}", task.getId(), e);
-            // 提取失败时返回默认数据
-            sectionChanges = buildDefaultSectionChanges(task);
-        }
-        
-        return sectionChanges;
-    }
-    
-    /**
-     * 构建默认章节变化数据（当报告中没有明确章节信息时使用）
-     */
-    private Map<String, CheckHistoryDTO.SectionChangeDTO> buildDefaultSectionChanges(CheckTask task) {
-        Map<String, CheckHistoryDTO.SectionChangeDTO> sectionChanges = new HashMap<>();
-        
-        // 定义标准论文章节
-        String[][] sections = {
-            {"introduction", "引言"},
-            {"literature_review", "文献综述"},
-            {"methodology", "研究方法"},
-            {"results", "实验结果"},
-            {"discussion", "讨论"},
-            {"conclusion", "结论"}
-        };
-        
-        BigDecimal overallSimilarity = task.getCheckRate();
-        Random random = new Random();
-        
-        for (String[] section : sections) {
-            String key = section[0]; // 英文 key
-            String displayName = section[1]; // 中文显示名
-            
-            CheckHistoryDTO.SectionChangeDTO sectionChange = new CheckHistoryDTO.SectionChangeDTO();
-            
-            // 基于总体相似度生成各章节的相似度（有一定波动）
-            double fluctuation = 0.7 + random.nextDouble() * 0.6; // 0.7-1.3 倍波动
-            BigDecimal sectionSimilarity = overallSimilarity.multiply(
-                new BigDecimal(String.valueOf(fluctuation))
-            ).setScale(1, java.math.BigDecimal.ROUND_HALF_UP);
-            
-            sectionChange.setFrom(sectionSimilarity);
-            sectionChange.setTo(sectionSimilarity);
-            sectionChange.setChange(BigDecimal.ZERO);
-            
-            sectionChanges.put(key, sectionChange);
-        }
-        
-        return sectionChanges;
-    }
-    
-    /**
-     * 构建趋势分析
-     */
-    private CheckHistoryResponseDTO.TrendAnalysisDTO buildTrendAnalysis(List<CheckTask> checkTasks) {
-        CheckHistoryResponseDTO.TrendAnalysisDTO trend = new CheckHistoryResponseDTO.TrendAnalysisDTO();
-        
-        if (checkTasks.size() < 2) {
-            trend.setDirection("stable");
-            trend.setTotalImprovement(BigDecimal.ZERO);
-            trend.setAverageImprovementPerVersion(BigDecimal.ZERO);
-            trend.setBestVersion(1);
-            return trend;
-        }
-        
-        // 计算总改进值（空值安全）
-        BigDecimal firstRate = checkTasks.get(checkTasks.size() - 1).getCheckRate();
-        BigDecimal lastRate = checkTasks.get(0).getCheckRate();
-        if (firstRate == null) firstRate = BigDecimal.ZERO;
-        if (lastRate == null) lastRate = BigDecimal.ZERO;
-        BigDecimal totalImprovement = firstRate.subtract(lastRate);
-
-        // 判断趋势方向
-        String direction = totalImprovement.compareTo(BigDecimal.ZERO) < 0 ? "decreasing" :
-                          totalImprovement.compareTo(BigDecimal.ZERO) > 0 ? "increasing" : "stable";
-
-        // 计算平均改进值
-        BigDecimal averageImprovement = totalImprovement.divide(
-            BigDecimal.valueOf(checkTasks.size() - 1), 2, BigDecimal.ROUND_HALF_UP);
-
-        // 找到最佳版本
-        int bestVersion = 1;
-        BigDecimal lowestRate = firstRate;
-        for (int i = 0; i < checkTasks.size(); i++) {
-            BigDecimal rate = checkTasks.get(i).getCheckRate();
-            if (rate == null) continue;
-            if (rate.compareTo(lowestRate) < 0) {
-                lowestRate = rate;
-                bestVersion = checkTasks.size() - i;
-            }
-        }
-        
-        trend.setDirection(direction);
-        trend.setTotalImprovement(totalImprovement.abs());
-        trend.setAverageImprovementPerVersion(averageImprovement.abs());
-        trend.setBestVersion(bestVersion);
-        
-        return trend;
-    }
-    
-    /**
-     * 评估改进速度
-     */
-    private String evaluateImprovementSpeed(List<CheckTask> checkTasks) {
-        if (checkTasks.size() < 2) return "暂无数据";
-        
-        BigDecimal totalImprovement = checkTasks.get(0).getCheckRate()
-            .subtract(checkTasks.get(checkTasks.size() - 1).getCheckRate());
-        
-        double avgImprovement = Math.abs(totalImprovement.doubleValue() / (checkTasks.size() - 1));
-        
-        if (avgImprovement >= 10) return "很快";
-        if (avgImprovement >= 5) return "较快";
-        if (avgImprovement >= 2) return "一般";
-        return "较慢";
+        return paperCheckHistoryService.getPaperStatistics(paperId, studentId);
     }
     
     /**
@@ -2205,119 +1271,18 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperAttachment uploadAttachment(Long paperId, MultipartFile file, String attachmentType, Long studentId) {
-        try {
-            log.info("开始上传附件 - 论文ID: {}, 附件类型: {}", paperId, attachmentType);
-            
-            // 1. 验证论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new RuntimeException("论文不存在或无权限访问");
-            }
-            
-            // 2. 上传文件
-            Long fileId = fileService.uploadFile(file, studentId);
-            FileInfo fileInfo = fileInfoMapper.selectById(fileId);
-            if (fileInfo == null) {
-                throw new RuntimeException("文件上传失败");
-            }
-            
-            // 3. 创建附件记录
-            PaperAttachment attachment = new PaperAttachment();
-            attachment.setPaperId(paperId);
-            attachment.setStudentId(studentId);
-            attachment.setAdvisorId(paperInfo.getTeacherId());
-            attachment.setOriginalFilename(file.getOriginalFilename());
-            attachment.setStoragePath(fileInfo.getStoragePath());
-            attachment.setFileType(fileInfo.getFileType());
-            attachment.setFileSize(fileInfo.getFileSize());
-            attachment.setFileMd5(fileInfo.getMd5());
-            attachment.setAttachmentType(attachmentType);
-            attachment.setCreateBy(studentId);
-            attachment.setCreateTime(LocalDateTime.now());
-            
-            int result = paperAttachmentMapper.insert(attachment);
-            if (result <= 0) {
-                throw new RuntimeException("附件记录创建失败");
-            }
-            
-            log.info("附件上传成功 - 附件ID: {}, 论文ID: {}", attachment.getId(), paperId);
-            return attachment;
-            
-        } catch (Exception e) {
-            log.error("上传附件失败 - 论文ID: {}", paperId, e);
-            throw new RuntimeException("附件上传失败: " + e.getMessage());
-        }
+        return paperAttachmentService.uploadAttachment(paperId, file, attachmentType, studentId);
     }
-    
-    /**
-     * 获取论文附件列表实现
-     */
+
     @Override
     public List<PaperAttachment> getPaperAttachments(Long paperId, Long studentId) {
-        try {
-            log.info("获取论文附件列表 - 论文ID: {}, 学生ID: {}", paperId, studentId);
-            
-            // 1. 验证论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-                throw new RuntimeException("论文不存在或无权限访问");
-            }
-            
-            // 2. 查询附件列表
-            List<PaperAttachment> attachments = paperAttachmentMapper.selectList(
-                new LambdaQueryWrapper<PaperAttachment>()
-                    .eq(PaperAttachment::getPaperId, paperId)
-                    .eq(PaperAttachment::getIsDeleted, 0)
-                    .orderByDesc(PaperAttachment::getCreateTime)
-            );
-            
-            // 3. 计算文件大小描述
-            for (PaperAttachment attachment : attachments) {
-                attachment.setFileSizeDesc(formatFileSize(attachment.getFileSize()));
-            }
-            
-            return attachments;
-            
-        } catch (Exception e) {
-            log.error("获取附件列表失败 - 论文ID: {}", paperId, e);
-            throw new RuntimeException("获取附件列表失败: " + e.getMessage());
-        }
+        return paperAttachmentService.getPaperAttachments(paperId, studentId);
     }
-    
-    /**
-     * 删除附件接口实现
-     */
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteAttachment(Long attachmentId, Long studentId) {
-        try {
-            log.info("开始删除附件 - 附件ID: {}, 学生ID: {}", attachmentId, studentId);
-            
-            // 1. 查询附件信息
-            PaperAttachment attachment = paperAttachmentMapper.selectById(attachmentId);
-            if (attachment == null || attachment.getIsDeleted() == 1) {
-                throw new RuntimeException("附件不存在");
-            }
-            
-            // 2. 验证权限
-            if (!attachment.getStudentId().equals(studentId)) {
-                throw new RuntimeException("无权限删除此附件");
-            }
-            
-            // 3. 删除附件记录（软删除）
-            int result = paperAttachmentMapper.deleteById(attachmentId);
-            boolean success = result > 0;
-            
-            if (success) {
-                log.info("附件删除成功 - 附件ID: {}", attachmentId);
-            }
-            
-            return success;
-            
-        } catch (Exception e) {
-            log.error("删除附件失败 - 附件ID: {}", attachmentId, e);
-            throw new RuntimeException("附件删除失败: " + e.getMessage());
-        }
+        return paperAttachmentService.deleteAttachment(attachmentId, studentId);
     }
 
     /**
@@ -2426,22 +1391,5 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         createPaperSubmitRecord(paperInfo, request.getFileId(), request.getFileMd5(), studentId);
 
         return paperInfo;
-    }
-    /**
-     * 格式化文件大小
-     */
-    private String formatFileSize(Long fileSize) {
-        if (fileSize == null) {
-            return "0 B";
-        }
-        if (fileSize < 1024) {
-            return fileSize + " B";
-        } else if (fileSize < 1024 * 1024) {
-            return String.format("%.2f KB", fileSize / 1024.0);
-        } else if (fileSize < 1024 * 1024 * 1024) {
-            return String.format("%.2f MB", fileSize / (1024.0 * 1024.0));
-        } else {
-            return String.format("%.2f GB", fileSize / (1024.0 * 1024.0 * 1024.0));
-        }
     }
 }

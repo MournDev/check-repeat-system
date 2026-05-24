@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.engine.CheckEngineManager;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
@@ -17,11 +17,11 @@ import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.EnhancedCheckTaskService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
-import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
@@ -44,25 +44,21 @@ import java.util.stream.Collectors;
  * 增强版查重任务服务实现
  * 提供完整的任务生命周期管理
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask> 
         implements EnhancedCheckTaskService {
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
     
-    @Resource
-    private CheckReportMapper checkReportMapper;
+    private final CheckReportMapper checkReportMapper;
     
-    @Resource
-    private CheckEngineManager checkEngineManager;
+    private final CheckEngineManager checkEngineManager;
     
-    @Resource
-    private PdfReportGenerator pdfReportGenerator;
+    private final PdfReportGenerator pdfReportGenerator;
     
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
     
     @Value("${file.upload.base-path}")
     private String basePath;

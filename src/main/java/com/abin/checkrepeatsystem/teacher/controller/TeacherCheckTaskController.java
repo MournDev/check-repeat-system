@@ -3,22 +3,23 @@ package com.abin.checkrepeatsystem.teacher.controller;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.service.CheckTaskService;
-import jakarta.annotation.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 教师端查重任务控制器：仅教师角色可访问
  */
 @RestController
-@RequestMapping("/api/teacher/check-tasks")
+@RequestMapping("/api/v1/teacher/check-tasks")
 @PreAuthorize("hasAuthority('TEACHER')") // 权限控制：仅教师可访问
+@RequiredArgsConstructor
 public class TeacherCheckTaskController {
 
-    @Resource
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
     /**
      * 1. 教师查询自己指导学生的查重任务列表

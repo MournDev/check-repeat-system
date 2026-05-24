@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.common.websocket.handler;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -12,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 查重进度 WebSocket 处理器
  * 处理查重进度的 WebSocket 连接，支持实时进度推送
  */
+@Slf4j
 public class CheckProgressWebSocketHandler extends TextWebSocketHandler {
 
     // 存储任务ID与会话的映射
@@ -25,15 +27,14 @@ public class CheckProgressWebSocketHandler extends TextWebSocketHandler {
         
         if (taskId != null) {
             taskSessions.put(taskId, session);
-            // System.out.println("查重进度 WebSocket 连接建立: 任务 " + taskId); // 移除调试输出
+            log.debug("查重进度 WebSocket 连接建立: 任务 {}", taskId);
         }
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         // 处理客户端发送的消息
-        // System.out.println("收到查重进度消息: " + message.getPayload()); // 移除调试输出
-        // 可以根据需要处理消息
+        log.debug("收到查重进度消息: {}", message.getPayload());
     }
 
     @Override
@@ -44,13 +45,13 @@ public class CheckProgressWebSocketHandler extends TextWebSocketHandler {
         
         if (taskId != null) {
             taskSessions.remove(taskId);
-            // System.out.println("查重进度 WebSocket 连接关闭: 任务 " + taskId); // 移除调试输出
+            log.debug("查重进度 WebSocket 连接关闭: 任务 {}", taskId);
         }
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        // System.err.println("查重进度 WebSocket 传输错误: " + exception.getMessage()); // 移除调试输出
+        log.error("查重进度 WebSocket 传输错误: {}", exception.getMessage());
     }
 
     /**
@@ -83,7 +84,7 @@ public class CheckProgressWebSocketHandler extends TextWebSocketHandler {
             try {
                 session.sendMessage(new TextMessage(message));
             } catch (Exception e) {
-                // System.err.println("发送查重进度消息失败: " + e.getMessage()); // 移除调试输出
+                log.warn("发送查重进度消息失败 - taskId: {}, error: {}", taskId, e.getMessage());
             }
         }
     }

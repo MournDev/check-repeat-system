@@ -6,7 +6,7 @@ import com.abin.checkrepeatsystem.user.service.AutoAllocationHistoryService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -14,12 +14,12 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AutoAllocationHistoryServiceImpl extends ServiceImpl<AutoAllocationHistoryMapper, AutoAllocationHistory> implements AutoAllocationHistoryService {
 
-    @Resource
-    private AutoAllocationHistoryMapper autoAllocationHistoryMapper;
+    private final AutoAllocationHistoryMapper autoAllocationHistoryMapper;
 
     @Override
     public boolean createHistory(AutoAllocationHistory history) {

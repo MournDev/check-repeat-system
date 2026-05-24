@@ -4,7 +4,7 @@ import com.abin.checkrepeatsystem.pojo.entity.MessageTemplate;
 import com.abin.checkrepeatsystem.user.mapper.MessageTemplateMapper;
 import com.abin.checkrepeatsystem.user.service.MessageTemplateService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -15,12 +15,12 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class MessageTemplateServiceImpl extends ServiceImpl<MessageTemplateMapper, MessageTemplate> implements MessageTemplateService {
 
-    @Resource
-    private MessageTemplateMapper messageTemplateMapper;
+    private final MessageTemplateMapper messageTemplateMapper;
 
     @Override
     public MessageTemplate getByCode(String templateCode) {

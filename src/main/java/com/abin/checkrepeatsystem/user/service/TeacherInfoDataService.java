@@ -22,5 +22,12 @@ public interface TeacherInfoDataService extends IService<TeacherInfo> {
      * @return 是否成功
      */
     boolean saveOrUpdateByUserId(TeacherInfo teacherInfo);
+
+    /**
+     * 批量根据用户ID列表获取教师信息
+     * @param userIds 用户ID列表
+     * @return 教师信息列表
+     */
+    java.util.List<TeacherInfo> listByUserIds(java.util.List<Long> userIds);
 }
 

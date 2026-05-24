@@ -8,6 +8,7 @@ import com.abin.checkrepeatsystem.admin.vo.MajorPaperStatsVO;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.monitor.service.DatabaseMonitorService;
 import com.abin.checkrepeatsystem.monitor.service.SystemMonitorService;
 import com.abin.checkrepeatsystem.pojo.entity.CheckResult;
@@ -23,11 +24,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.distribution.HistogramSnapshot;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -38,36 +39,28 @@ import java.util.stream.Collectors;
 /**
  * 管理员仪表板服务实现类
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AdminDashboardServiceImpl implements AdminDashboardService {
 
-    @Resource
-    private SysUserService sysUserService;
+    private final SysUserService sysUserService;
     
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
     
-    @Resource
-    private CheckResultMapper checkResultMapper;
+    private final CheckResultMapper checkResultMapper;
     
-    @Resource
-    private SysLoginLogMapper sysLoginLogMapper;
+    private final SysLoginLogMapper sysLoginLogMapper;
 
-    @Resource
-    private SysOperationLogMapper sysOperationLogMapper;
+    private final SysOperationLogMapper sysOperationLogMapper;
 
-    @Resource
-    private SystemMonitorService systemMonitorService;
+    private final SystemMonitorService systemMonitorService;
 
-    @Resource
-    private DatabaseMonitorService databaseMonitorService;
+    private final DatabaseMonitorService databaseMonitorService;
 
-    @Resource
-    private MeterRegistry meterRegistry;
+    private final MeterRegistry meterRegistry;
 
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
 
     @Override
     public Result<Map<String, Object>> getSystemStats() {
@@ -81,13 +74,13 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             
             // 各类型用户统计
             Long adminCount = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                    .eq(SysUser::getUserType, "ADMIN")
+                    .eq(SysUser::getUserType, UserTypeEnum.ROLE_ADMIN)
                     .eq(SysUser::getIsDeleted, 0));
             Long studentCount = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                    .eq(SysUser::getUserType, "STUDENT")
+                    .eq(SysUser::getUserType, UserTypeEnum.ROLE_STUDENT)
                     .eq(SysUser::getIsDeleted, 0));
             Long teacherCount = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                    .eq(SysUser::getUserType, "TEACHER")
+                    .eq(SysUser::getUserType, UserTypeEnum.ROLE_TEACHER)
                     .eq(SysUser::getIsDeleted, 0));
             
             stats.put("admins", adminCount);

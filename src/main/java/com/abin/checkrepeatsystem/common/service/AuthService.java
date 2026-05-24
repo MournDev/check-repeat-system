@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.common.service;
 
-import com.abin.checkrepeatsystem.common.Exception.PermissionDeniedException;
+import com.abin.checkrepeatsystem.common.exception.PermissionDeniedException;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;

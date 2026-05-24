@@ -5,20 +5,21 @@ import com.abin.checkrepeatsystem.teacher.dto.StudentGroupDTO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentGroupService;
 import com.abin.checkrepeatsystem.teacher.vo.StudentGroupVO;
 import com.abin.checkrepeatsystem.teacher.vo.StudentVO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 学生分组管理控制器
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/teacher/student-groups")
+@RequestMapping("/api/v1/teacher/student-groups")
 public class TeacherStudentGroupController {
 
-    @Autowired
-    private TeacherStudentGroupService studentGroupService;
+    private final TeacherStudentGroupService studentGroupService;
 
     /**
      * 获取分组列表

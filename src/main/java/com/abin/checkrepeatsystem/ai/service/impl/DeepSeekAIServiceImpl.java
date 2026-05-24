@@ -2,12 +2,12 @@ package com.abin.checkrepeatsystem.ai.service.impl;
 
 import com.abin.checkrepeatsystem.ai.config.AIConfigProperties;
 import com.abin.checkrepeatsystem.ai.service.AIService;
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
-import jakarta.annotation.Resource;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
@@ -16,12 +16,14 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
-public class DeepSeekAIServiceImpl implements AIService {
+public class
 
-    @Resource
-    private AIConfigProperties config;
+DeepSeekAIServiceImpl implements AIService {
+
+    private final AIConfigProperties config;
 
     private volatile OkHttpClient client;
     private volatile String lastBaseUrl;

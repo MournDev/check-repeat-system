@@ -3,11 +3,12 @@ package com.abin.checkrepeatsystem.schedule;
 import com.abin.checkrepeatsystem.admin.service.AlertRuleService;
 import com.abin.checkrepeatsystem.admin.service.AlertService;
 import com.abin.checkrepeatsystem.monitor.service.SystemMonitorService;
+import com.abin.checkrepeatsystem.notification.service.IntelligentNotificationService;
 import com.abin.checkrepeatsystem.pojo.entity.AlertRecord;
 import com.abin.checkrepeatsystem.pojo.entity.AlertRule;
 import io.micrometer.core.instrument.MeterRegistry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -15,24 +16,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class AlertEvaluationScheduler {
 
-    @Autowired
-    private AlertRuleService alertRuleService;
-
-    @Autowired
-    private AlertService alertService;
-
-    @Autowired
-    private SystemMonitorService systemMonitorService;
-
-    @Autowired
-    private com.abin.checkrepeatsystem.notification.service.IntelligentNotificationService notificationService;
-
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
+    private final AlertRuleService alertRuleService;
+    private final AlertService alertService;
+    private final SystemMonitorService systemMonitorService;
+    private final IntelligentNotificationService notificationService;
+    private final MeterRegistry meterRegistry;
 
     private double lastCpuValue = 0;
     private double lastMemoryValue = 0;
@@ -116,7 +109,7 @@ public class AlertEvaluationScheduler {
     private void evaluateLoginFailRule(AlertRule rule) {
         if (meterRegistry == null) return;
         var counter = meterRegistry.get("http.error.count")
-            .tag("uri", "/api/auth/login").counter();
+            .tag("uri", "/api/v1/auth/login").counter();
         if (counter == null) return;
         double current = counter.count();
         if (lastLoginFailCount < 0) {

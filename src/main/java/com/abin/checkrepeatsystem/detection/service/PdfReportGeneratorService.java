@@ -20,7 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -41,18 +40,18 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 @Slf4j
 public class PdfReportGeneratorService {
 
-    @Resource
-    private CheckResultMapper checkResultMapper;
+    private final CheckResultMapper checkResultMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
     @Value("${report.output.base-path:/data/reports/}")
     private String reportBasePath;
 
     private PdfFont chineseFont;
 
-    public PdfReportGeneratorService() {
+    public PdfReportGeneratorService(CheckResultMapper checkResultMapper, PaperInfoMapper paperInfoMapper) {
+        this.checkResultMapper = checkResultMapper;
+        this.paperInfoMapper = paperInfoMapper;
         try {
             // 加载中文字体
             // 使用iText7内置的中文字体

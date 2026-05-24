@@ -10,9 +10,9 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherReviewTemplateService;
 import com.abin.checkrepeatsystem.teacher.vo.ReviewTemplateVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -22,12 +22,12 @@ import java.util.List;
 /**
  * 审核意见模板服务实现
  */
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class TeacherReviewTemplateServiceImpl implements TeacherReviewTemplateService {
 
-    @Autowired
-    private ReviewTemplateMapper reviewTemplateMapper;
+    private final ReviewTemplateMapper reviewTemplateMapper;
 
     /**
      * 获取模板列表

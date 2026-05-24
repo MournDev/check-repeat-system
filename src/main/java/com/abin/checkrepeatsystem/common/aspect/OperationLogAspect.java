@@ -5,38 +5,41 @@ import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
-import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
 import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
-import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson2.JSON;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * 操作日志切面
  * 自动记录带有@OperationLog注解的方法执行情况
  */
+@RequiredArgsConstructor
 @Aspect
 @Component
 @Slf4j
 public class OperationLogAspect {
 
-    @Resource
-    private JwtUtils jwtUtils;
-    
-    @Resource
-    private SysOperationLogMapper sysOperationLogMapper;
+    private final JwtUtils jwtUtils;
+
+    private final SysOperationLogMapper sysOperationLogMapper;
+
+    private final Executor asyncExecutor;
 
     @Around("@annotation(operationLog)")
     public Object recordOperationLog(ProceedingJoinPoint joinPoint, OperationLog operationLog) throws Throwable {
@@ -52,12 +55,16 @@ public class OperationLogAspect {
             errorMsg = e.getMessage();
             throw e;
         } finally {
-            // 异步记录日志（避免影响主业务性能）
-            try {
-                recordLog(joinPoint, operationLog, result, errorMsg, System.currentTimeMillis() - startTime);
-            } catch (Exception e) {
-                log.error("记录操作日志失败: {}", e.getMessage(), e);
-            }
+            final long finalStartTime = startTime;
+            final Object finalResult = result;
+            final String finalErrorMsg = errorMsg;
+            CompletableFuture.runAsync(() -> {
+                try {
+                    recordLog(joinPoint, operationLog, finalResult, finalErrorMsg, System.currentTimeMillis() - finalStartTime);
+                } catch (Exception e) {
+                    log.error("记录操作日志失败: {}", e.getMessage(), e);
+                }
+            }, asyncExecutor);
         }
     }
 

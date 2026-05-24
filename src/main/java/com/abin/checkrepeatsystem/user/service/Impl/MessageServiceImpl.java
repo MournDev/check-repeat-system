@@ -12,7 +12,7 @@ import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,15 +21,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class MessageServiceImpl implements MessageService {
 
-    @Resource
-    private SystemMessageMapper systemMessageMapper;
+    private final SystemMessageMapper systemMessageMapper;
 
-    @Resource
-    private MessageTemplateMapper messageTemplateMapper;
+    private final MessageTemplateMapper messageTemplateMapper;
 
     @Override
     public Result<PageResultVO<SystemMessage>> getMessageList(Long userId, String messageType,

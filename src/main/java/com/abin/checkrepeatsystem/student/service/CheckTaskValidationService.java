@@ -6,12 +6,12 @@ import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.Resource;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -20,15 +20,14 @@ import java.util.List;
  * 查重任务前置校验服务
  * 负责所有查重请求的合法性验证
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class CheckTaskValidationService {
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
     @Value("${admin.check-rule.default-max-count}")
     private int defaultMaxCount;
@@ -66,7 +65,15 @@ public class CheckTaskValidationService {
             return result;
         }
         
-        // 3. 校验历史查重次数
+        // 3. 校验是否已有进行中的任务（防止重复创建）
+        long activeCount = getActiveTaskCount(paperId);
+        if (activeCount > 0) {
+            result.setSuccess(false);
+            result.setMessage("该论文已有查重任务正在进行中，请等待完成后再试");
+            return result;
+        }
+
+        // 4. 校验历史查重次数
         List<CheckTask> historyTasks = getHistoryCheckTasks(paperId);
         if (historyTasks.size() >= defaultMaxCount) {
             result.setSuccess(false);
@@ -74,7 +81,7 @@ public class CheckTaskValidationService {
             return result;
         }
         
-        // 4. 校验二次查重间隔
+        // 5. 校验二次查重间隔
         if (!historyTasks.isEmpty()) {
             CheckTask lastTask = historyTasks.get(0);
             long interval = Duration.between(lastTask.getCreateTime(), LocalDateTime.now()).getSeconds();
@@ -88,7 +95,7 @@ public class CheckTaskValidationService {
             }
         }
         
-        // 5. 校验系统并发负载
+        // 6. 校验系统并发负载
         long runningCount = getRunningTaskCount();
         if (runningCount >= maxConcurrentTasks) {
             int waitMinutes = estimateWaitTime(runningCount);
@@ -150,6 +157,20 @@ public class CheckTaskValidationService {
         );
     }
     
+    /**
+     * 获取指定论文的活跃任务数（PENDING + CHECKING）
+     */
+    private long getActiveTaskCount(Long paperId) {
+        return checkTaskMapper.selectCount(
+            new LambdaQueryWrapper<CheckTask>()
+                .eq(CheckTask::getPaperId, paperId)
+                .eq(CheckTask::getIsDeleted, 0)
+                .in(CheckTask::getCheckStatus,
+                    DictConstants.CheckStatus.PENDING,
+                    DictConstants.CheckStatus.CHECKING)
+        );
+    }
+
     /**
      * 获取运行中的任务数
      */

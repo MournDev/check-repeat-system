@@ -5,19 +5,19 @@ import com.abin.checkrepeatsystem.admin.service.AlertRuleService;
 import com.abin.checkrepeatsystem.pojo.entity.AlertRule;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Resource;
 import java.util.List;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class AlertRuleServiceImpl implements AlertRuleService {
 
-    @Resource
-    private AlertRuleMapper alertRuleMapper;
+    private final AlertRuleMapper alertRuleMapper;
 
     @Override
     public List<AlertRule> listAll() {
@@ -48,7 +48,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AlertRule create(AlertRule rule) {
         alertRuleMapper.insert(rule);
         log.info("创建告警规则: {}", rule.getRuleName());
@@ -56,7 +56,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AlertRule update(Long id, AlertRule rule) {
         rule.setId(id);
         alertRuleMapper.updateById(rule);
@@ -65,7 +65,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean delete(Long id) {
         int result = alertRuleMapper.deleteById(id);
         log.info("删除告警规则: id={}, result={}", id, result);
@@ -88,7 +88,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean toggleEnabled(Long id, boolean enabled) {
         AlertRule rule = alertRuleMapper.selectById(id);
         if (rule == null) return false;

@@ -3,28 +3,18 @@ package com.abin.checkrepeatsystem.teacher.controller;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
-import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
-import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
-import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
-import com.abin.checkrepeatsystem.pojo.entity.SysUser;
-import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.dto.*;
 import com.abin.checkrepeatsystem.teacher.service.TeacherStudentManagementService;
-import com.abin.checkrepeatsystem.user.service.SysUserService;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
-import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -47,23 +37,14 @@ import java.util.Map;
  * - 学生论文信息：GET /api/teacher/students/{studentId}/paper (新增)
  */
 @RestController
-@RequestMapping("/api/teacher/students")
+@RequestMapping("/api/v1/teacher/students")
 @PreAuthorize("hasAuthority('TEACHER')")
+@RequiredArgsConstructor
 @Tag(name = "教师学生管理", description = "教师对学生进行管理的相关接口")
 @Slf4j
 public class TeacherStudentManagementController {
 
-    @Resource
-    private TeacherStudentManagementService studentManagementService;
-    
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
-    
-    @Resource
-    private FileService fileService;
-    
-    @Resource
-    private SysUserService sysUserService;
+    private final TeacherStudentManagementService studentManagementService;
 
     /**
      * 1. 获取学生列表接口
@@ -79,28 +60,23 @@ public class TeacherStudentManagementController {
             @Parameter(description = "论文状态筛选") @RequestParam(required = false) String status,
             @Parameter(description = "学院筛选") @RequestParam(required = false) String college) {
         
-        try {
-            // 如果没有传入teacherId，则使用当前登录用户的ID
-            if (teacherId == null) {
-                teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            }
-            
-            log.info("获取学生列表: teacherId={}, page={}, pageSize={}, search={}, status={}, college={}", 
-                    teacherId, page, pageSize, search, status, college);
-            
-            StudentListRequestDTO requestDTO = new StudentListRequestDTO();
-            requestDTO.setTeacherId(teacherId);
-            requestDTO.setPage(page);
-            requestDTO.setPageSize(pageSize);
-            requestDTO.setSearch(search);
-            requestDTO.setStatus(status);
-            requestDTO.setCollege(college);
-            
-            return studentManagementService.getStudentList(requestDTO);
-        } catch (Exception e) {
-            log.error("获取学生列表失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取学生列表失败: " + e.getMessage());
+        // 如果没有传入teacherId，则使用当前登录用户的ID
+        if (teacherId == null) {
+            teacherId = UserBusinessInfoUtils.getCurrentUserId();
         }
+
+        log.info("获取学生列表: teacherId={}, page={}, pageSize={}, search={}, status={}, college={}", 
+                teacherId, page, pageSize, search, status, college);
+
+        StudentListRequestDTO requestDTO = new StudentListRequestDTO();
+        requestDTO.setTeacherId(teacherId);
+        requestDTO.setPage(page);
+        requestDTO.setPageSize(pageSize);
+        requestDTO.setSearch(search);
+        requestDTO.setStatus(status);
+        requestDTO.setCollege(college);
+
+        return studentManagementService.getStudentList(requestDTO);
     }
 
     /**
@@ -113,17 +89,12 @@ public class TeacherStudentManagementController {
     public Result<String> deleteStudent(
             @Parameter(description = "学生ID") @PathVariable Long studentId) {
         
-        try {
-            log.info("删除学生: studentId={}", studentId);
-            boolean result = studentManagementService.deleteStudent(studentId);
-            if (result) {
-                return Result.success("删除成功");
-            } else {
-                return Result.error(ResultCode.SYSTEM_ERROR, "删除失败");
-            }
-        } catch (Exception e) {
-            log.error("删除学生失败: studentId={}", studentId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "删除失败: " + e.getMessage());
+        log.info("删除学生: studentId={}", studentId);
+        boolean result = studentManagementService.deleteStudent(studentId);
+        if (result) {
+            return Result.success("删除成功");
+        } else {
+            return Result.error(ResultCode.SYSTEM_ERROR, "删除失败");
         }
     }
 
@@ -136,17 +107,12 @@ public class TeacherStudentManagementController {
     public Result<Object> getStudentStats(
             @Parameter(description = "教师ID") @RequestParam(required = false) Long teacherId) {
         
-        try {
-            if (teacherId == null) {
-                teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            }
-            
-            log.info("获取学生统计信息: teacherId={}", teacherId);
-            return studentManagementService.getStudentStats(teacherId);
-        } catch (Exception e) {
-            log.error("获取学生统计信息失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取统计信息失败: " + e.getMessage());
+        if (teacherId == null) {
+            teacherId = UserBusinessInfoUtils.getCurrentUserId();
         }
+
+        log.info("获取学生统计信息: teacherId={}", teacherId);
+        return studentManagementService.getStudentStats(teacherId);
     }
 
     /**
@@ -160,17 +126,12 @@ public class TeacherStudentManagementController {
             @Parameter(description = "学生ID") @PathVariable Long studentId,
             @RequestBody AssignAdvisorDTO assignAdvisorDTO) {
         
-        try {
-            log.info("分配导师: studentId={}, advisorId={}", studentId, assignAdvisorDTO.getAdvisorId());
-            boolean result = studentManagementService.assignAdvisor(studentId, assignAdvisorDTO);
-            if (result) {
-                return Result.success("导师分配成功");
-            } else {
-                return Result.error(ResultCode.SYSTEM_ERROR, "导师分配失败");
-            }
-        } catch (Exception e) {
-            log.error("分配导师失败: studentId={}, advisorId={}", studentId, assignAdvisorDTO.getAdvisorId(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "导师分配失败: " + e.getMessage());
+        log.info("分配导师: studentId={}, advisorId={}", studentId, assignAdvisorDTO.getAdvisorId());
+        boolean result = studentManagementService.assignAdvisor(studentId, assignAdvisorDTO);
+        if (result) {
+            return Result.success("导师分配成功");
+        } else {
+            return Result.error(ResultCode.SYSTEM_ERROR, "导师分配失败");
         }
     }
 
@@ -183,17 +144,12 @@ public class TeacherStudentManagementController {
     @OperationLog(type = "send_message", description = "发送消息给学生")
     public Result<String> sendMessage(@RequestBody SendMessageDTO sendMessageDTO) {
         
-        try {
-            log.info("发送消息: receiverId={}, title={}", sendMessageDTO.getReceiverId(), sendMessageDTO.getTitle());
-            boolean result = studentManagementService.sendMessage(sendMessageDTO);
-            if (result) {
-                return Result.success("消息发送成功");
-            } else {
-                return Result.error(ResultCode.SYSTEM_ERROR, "消息发送失败");
-            }
-        } catch (Exception e) {
-            log.error("发送消息失败: receiverId={}", sendMessageDTO.getReceiverId(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "消息发送失败: " + e.getMessage());
+        log.info("发送消息: receiverId={}, title={}", sendMessageDTO.getReceiverId(), sendMessageDTO.getTitle());
+        boolean result = studentManagementService.sendMessage(sendMessageDTO);
+        if (result) {
+            return Result.success("消息发送成功");
+        } else {
+            return Result.error(ResultCode.SYSTEM_ERROR, "消息发送失败");
         }
     }
 
@@ -206,15 +162,10 @@ public class TeacherStudentManagementController {
     @OperationLog(type = "batch_assign_advisor", description = "批量分配导师")
     public Result<Object> batchAssignAdvisor(@RequestBody BatchAssignAdvisorDTO batchAssignDTO) {
         
-        try {
-            log.info("批量分配导师: studentIds={}, advisorId={}", 
-                    batchAssignDTO.getStudentIds(), batchAssignDTO.getAdvisorId());
-            BatchOperationResultDTO result = studentManagementService.batchAssignAdvisor(batchAssignDTO);
-            return Result.<Object>success("批量分配完成", result);
-        } catch (Exception e) {
-            log.error("批量分配导师失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量分配失败: " + e.getMessage());
-        }
+        log.info("批量分配导师: studentIds={}, advisorId={}", 
+                batchAssignDTO.getStudentIds(), batchAssignDTO.getAdvisorId());
+        BatchOperationResultDTO result = studentManagementService.batchAssignAdvisor(batchAssignDTO);
+        return Result.<Object>success("批量分配完成", result);
     }
 
     /**
@@ -226,15 +177,10 @@ public class TeacherStudentManagementController {
     @OperationLog(type = "batch_send_message", description = "批量发送消息")
     public Result<Object> batchSendMessage(@RequestBody BatchSendMessageDTO batchSendDTO) {
         
-        try {
-            log.info("批量发送消息: receiverIds={}, title={}", 
-                    batchSendDTO.getReceiverIds(), batchSendDTO.getTitle());
-            BatchOperationResultDTO result = studentManagementService.batchSendMessage(batchSendDTO);
-            return Result.<Object>success("批量发送完成", result);
-        } catch (Exception e) {
-            log.error("批量发送消息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量发送失败: " + e.getMessage());
-        }
+        log.info("批量发送消息: receiverIds={}, title={}", 
+                batchSendDTO.getReceiverIds(), batchSendDTO.getTitle());
+        BatchOperationResultDTO result = studentManagementService.batchSendMessage(batchSendDTO);
+        return Result.<Object>success("批量发送完成", result);
     }
 
     /**
@@ -246,14 +192,9 @@ public class TeacherStudentManagementController {
     @OperationLog(type = "batch_delete_student", description = "批量删除学生")
     public Result<Object> batchDeleteStudents(@RequestBody BatchDeleteDTO batchDeleteDTO) {
         
-        try {
-            log.info("批量删除学生: studentIds={}", batchDeleteDTO.getStudentIds());
-            BatchOperationResultDTO result = studentManagementService.batchDeleteStudents(batchDeleteDTO);
-            return Result.<Object>success("批量删除完成", result);
-        } catch (Exception e) {
-            log.error("批量删除学生失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量删除失败: " + e.getMessage());
-        }
+        log.info("批量删除学生: studentIds={}", batchDeleteDTO.getStudentIds());
+        BatchOperationResultDTO result = studentManagementService.batchDeleteStudents(batchDeleteDTO);
+        return Result.<Object>success("批量删除完成", result);
     }
 
     /**
@@ -270,26 +211,21 @@ public class TeacherStudentManagementController {
             @Parameter(description = "状态筛选") @RequestParam(required = false) String status,
             @Parameter(description = "学院筛选") @RequestParam(required = false) String college) {
         
-        try {
-            if (teacherId == null) {
-                teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            }
-            
-            log.info("导出学生数据: teacherId={}, format={}", teacherId, format);
-            
-            ExportRequestDTO exportRequest = new ExportRequestDTO();
-            exportRequest.setTeacherId(teacherId);
-            exportRequest.setFormat(format);
-            exportRequest.setSearch(search);
-            exportRequest.setStatus(status);
-            exportRequest.setCollege(college);
-            
-            String filePath = studentManagementService.exportStudents(exportRequest);
-            return Result.success("导出成功", filePath);
-        } catch (Exception e) {
-            log.error("导出学生数据失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "导出失败: " + e.getMessage());
+        if (teacherId == null) {
+            teacherId = UserBusinessInfoUtils.getCurrentUserId();
         }
+
+        log.info("导出学生数据: teacherId={}, format={}", teacherId, format);
+
+        ExportRequestDTO exportRequest = new ExportRequestDTO();
+        exportRequest.setTeacherId(teacherId);
+        exportRequest.setFormat(format);
+        exportRequest.setSearch(search);
+        exportRequest.setStatus(status);
+        exportRequest.setCollege(college);
+
+        String filePath = studentManagementService.exportStudents(exportRequest);
+        return Result.success("导出成功", filePath);
     }
 
     /**
@@ -301,14 +237,9 @@ public class TeacherStudentManagementController {
     @OperationLog(type = "add_student", description = "添加学生")
     public Result<Object> addStudent(@RequestBody AddStudentDTO addStudentDTO) {
         
-        try {
-            log.info("添加学生: username={}, studentName={}", 
-                    addStudentDTO.getUsername(), addStudentDTO.getStudentName());
-            return studentManagementService.addStudent(addStudentDTO);
-        } catch (Exception e) {
-            log.error("添加学生失败: username={}", addStudentDTO.getUsername(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "添加学生失败: " + e.getMessage());
-        }
+        log.info("添加学生: username={}, studentName={}", 
+                addStudentDTO.getUsername(), addStudentDTO.getStudentName());
+        return studentManagementService.addStudent(addStudentDTO);
     }
     
     /**
@@ -320,14 +251,9 @@ public class TeacherStudentManagementController {
     @OperationLog(type = "import_students", description = "导入学生数据")
     public Result<Object> importStudents(@RequestParam("file") MultipartFile file) {
         
-        try {
-            log.info("导入学生数据: fileName={}", file.getOriginalFilename());
-            ImportResultDTO result = studentManagementService.importStudents(file);
-            return Result.success("导入完成", result);
-        } catch (Exception e) {
-            log.error("导入学生数据失败: fileName={}", file.getOriginalFilename(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "导入失败: " + e.getMessage());
-        }
+        log.info("导入学生数据: fileName={}", file.getOriginalFilename());
+        ImportResultDTO result = studentManagementService.importStudents(file);
+        return Result.success("导入完成", result);
     }
     
     /**
@@ -338,72 +264,9 @@ public class TeacherStudentManagementController {
     @Operation(summary = "获取学生论文信息", description = "获取指定学生的最新论文信息")
     public Result<StudentPaperInfoDTO> getStudentPaperInfo(
             @Parameter(description = "学生ID") @PathVariable Long studentId) {
-        
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("获取学生论文信息: teacherId={}, studentId={}", teacherId, studentId);
-            
-            // 1. 验证学生是否存在
-            SysUser student = sysUserService.getById(studentId);
-            if (student == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "学生不存在");
-            }
-            
-            // 2. 验证学生是否属于当前教师指导（检查是否有任何论文属于该教师）
-            LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(PaperInfo::getStudentId, studentId)
-                       .eq(PaperInfo::getTeacherId, teacherId)
-                       .eq(PaperInfo::getIsDeleted, 0);
-            
-            Long count = paperInfoMapper.selectCount(queryWrapper);
-            if (count == 0 && !sysUserService.isAdmin(teacherId)) {
-                log.warn("权限验证失败 - 教师无权查看学生论文: 当前教师ID={}, 学生ID={}", 
-                        teacherId, studentId);
-                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
-            }
-            
-            // 3. 获取学生最新论文
-            PaperInfo latestPaper = paperInfoMapper.selectLatestPaper(studentId);
-            if (latestPaper == null) {
-                log.warn("学生暂无论文信息: studentId={}", studentId);
-                return Result.error(ResultCode.PARAM_ERROR, "该学生暂无论文");
-            }
-            
-            log.info("获取学生论文信息 - 当前教师ID: {}, 学生ID: {}, 论文ID: {}", 
-                    teacherId, studentId, latestPaper.getId());
-            
-            // 3. 构造返回数据
-            StudentPaperInfoDTO paperInfoDTO = new StudentPaperInfoDTO();
-            paperInfoDTO.setPaperId(latestPaper.getId());
-            paperInfoDTO.setPaperTitle(latestPaper.getPaperTitle());
-            paperInfoDTO.setFileId(latestPaper.getFileId());
-            paperInfoDTO.setPaperStatus(latestPaper.getPaperStatus());
-            paperInfoDTO.setSubmitTime(latestPaper.getSubmitTime() != null ? 
-                latestPaper.getSubmitTime().toString() : null);
-            paperInfoDTO.setSimilarity(latestPaper.getSimilarityRate() != null ? 
-                latestPaper.getSimilarityRate().doubleValue() : 0.0);
-            
-            // 4. 获取文件详细信息
-            if (latestPaper.getFileId() != null) {
-                try {
-                    FileInfo fileInfo = fileService.getById(latestPaper.getFileId());
-                    if (fileInfo != null) {
-                        paperInfoDTO.setFileName(fileInfo.getOriginalFilename());
-                        paperInfoDTO.setFileSize(fileInfo.getFileSizeDesc());
-                    }
-                } catch (Exception e) {
-                    log.warn("获取文件详细信息失败: {}", e.getMessage());
-                }
-            }
-            
-            log.info("获取学生论文信息成功: teacherId={}, studentId={}, paperId={}", 
-                    teacherId, studentId, latestPaper.getId());
-            return Result.success("获取成功", paperInfoDTO);
-            
-        } catch (Exception e) {
-            log.error("获取学生论文信息失败: studentId={}", studentId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文信息失败: " + e.getMessage());
-        }
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("获取学生论文信息: teacherId={}, studentId={}", teacherId, studentId);
+        return studentManagementService.getStudentPaperInfo(teacherId, studentId);
     }
     
     /**
@@ -414,95 +277,8 @@ public class TeacherStudentManagementController {
     @Operation(summary = "获取学生所有论文", description = "获取指定学生的所有论文信息")
     public Result<List<StudentPaperInfoDTO>> getStudentAllPapers(
             @Parameter(description = "学生ID") @PathVariable Long studentId) {
-        
-        try {
-            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("获取学生所有论文: teacherId={}, studentId={}", teacherId, studentId);
-            
-            // 1. 验证学生是否存在
-            SysUser student = sysUserService.getById(studentId);
-            if (student == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "学生不存在");
-            }
-            
-            // 2. 验证学生是否属于当前教师指导（检查是否有任何论文属于该教师）
-            LambdaQueryWrapper<PaperInfo> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(PaperInfo::getStudentId, studentId)
-                       .eq(PaperInfo::getTeacherId, teacherId)
-                       .eq(PaperInfo::getIsDeleted, 0);
-            
-            Long count = paperInfoMapper.selectCount(queryWrapper);
-            if (count == 0 && !sysUserService.isAdmin(teacherId)) {
-                log.warn("权限验证失败 - 教师无权查看学生论文: 当前教师ID={}, 学生ID={}", 
-                        teacherId, studentId);
-                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看此学生的论文信息");
-            }
-            
-            // 3. 获取学生所有论文
-            LambdaQueryWrapper<PaperInfo> allPapersQuery = new LambdaQueryWrapper<>();
-            allPapersQuery.eq(PaperInfo::getStudentId, studentId)
-                        .eq(PaperInfo::getIsDeleted, 0)
-                        .orderByDesc(PaperInfo::getCreateTime);
-            
-            List<PaperInfo> allPapers = paperInfoMapper.selectList(allPapersQuery);
-            if (allPapers.isEmpty()) {
-                log.warn("学生暂无论文信息: studentId={}", studentId);
-                return Result.error(ResultCode.PARAM_ERROR, "该学生暂无论文");
-            }
-            
-            // 4. 构造返回数据
-            List<StudentPaperInfoDTO> paperInfoDTOList = new ArrayList<>();
-            for (PaperInfo paper : allPapers) {
-                StudentPaperInfoDTO paperInfoDTO = new StudentPaperInfoDTO();
-                paperInfoDTO.setPaperId(paper.getId());
-                paperInfoDTO.setPaperTitle(paper.getPaperTitle());
-                paperInfoDTO.setFileId(paper.getFileId());
-                paperInfoDTO.setPaperStatus(paper.getPaperStatus());
-                paperInfoDTO.setSubmitTime(paper.getSubmitTime() != null ? 
-                    paper.getSubmitTime().toString() : null);
-                paperInfoDTO.setSimilarity(paper.getSimilarityRate() != null ? 
-                    paper.getSimilarityRate().doubleValue() : 0.0);
-                
-                // 获取文件详细信息
-                if (paper.getFileId() != null) {
-                    try {
-                        FileInfo fileInfo = fileService.getById(paper.getFileId());
-                        if (fileInfo != null) {
-                            paperInfoDTO.setFileName(fileInfo.getOriginalFilename());
-                            paperInfoDTO.setFileSize(fileInfo.getFileSizeDesc());
-                        }
-                    } catch (Exception e) {
-                        log.warn("获取文件详细信息失败: {}", e.getMessage());
-                    }
-                }
-                
-                paperInfoDTOList.add(paperInfoDTO);
-            }
-            
-            log.info("获取学生所有论文成功: teacherId={}, studentId={}, paperCount={}", 
-                    teacherId, studentId, paperInfoDTOList.size());
-            return Result.success("获取成功", paperInfoDTOList);
-            
-        } catch (Exception e) {
-            log.error("获取学生所有论文失败: studentId={}", studentId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文信息失败: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * 学生论文信息DTO
-     */
-    @Data
-    public static class StudentPaperInfoDTO {
-        private Long paperId;
-        private String paperTitle;
-        @JsonFormat(shape = JsonFormat.Shape.STRING)
-        private Long fileId;
-        private String fileName;
-        private String fileSize;
-        private String submitTime;
-        private String paperStatus;
-        private Double similarity;
-
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("获取学生所有论文: teacherId={}, studentId={}", teacherId, studentId);
+        return studentManagementService.getStudentAllPapers(teacherId, studentId);
     }
 }

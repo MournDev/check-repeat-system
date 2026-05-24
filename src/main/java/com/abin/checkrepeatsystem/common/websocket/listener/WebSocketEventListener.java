@@ -1,8 +1,8 @@
 package com.abin.checkrepeatsystem.common.websocket.listener;
 
 import com.abin.checkrepeatsystem.common.websocket.manager.WebSocketConnectionManager;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
@@ -12,12 +12,12 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 /**
  * WebSocket连接事件监听器
  */
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class WebSocketEventListener {
 
-    @Autowired
-    private WebSocketConnectionManager connectionManager;
+    private final WebSocketConnectionManager connectionManager;
 
     /**
      * 监听WebSocket连接事件

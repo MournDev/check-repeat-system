@@ -6,8 +6,8 @@ import com.abin.checkrepeatsystem.common.service.PreviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,14 +17,14 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 预览控制器
  */
+@RequiredArgsConstructor
 @Slf4j
 @RestController
-@RequestMapping("/api/preview")
+@RequestMapping("/api/v1/preview")
 @Tag(name = "预览服务", description = "文件在线预览功能")
 public class PreviewController {
 
-    @Autowired
-    private PreviewService previewService;
+    private final PreviewService previewService;
 
     /**
      * 获取文件预览URL（兼容旧接口）

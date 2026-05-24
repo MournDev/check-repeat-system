@@ -6,7 +6,7 @@ import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherAssignmentService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -14,18 +14,16 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@RequiredArgsConstructor
 @Component
 @Slf4j
 public class AssignmentTimeoutTask {
 
-    @Resource
-    private TeacherAssignmentService teacherAssignmentService;
+    private final TeacherAssignmentService teacherAssignmentService;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private com.abin.checkrepeatsystem.user.service.AdvisorAssignService advisorAssignService;
+    private final com.abin.checkrepeatsystem.user.service.AdvisorAssignService advisorAssignService;
 
     /**
      * 每天凌晨2点处理超时未确认的分配

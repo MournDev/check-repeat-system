@@ -1,7 +1,7 @@
 package com.abin.checkrepeatsystem.student.controller;
 
 
-import com.abin.checkrepeatsystem.common.Exception.BusinessException;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
@@ -10,7 +10,6 @@ import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperAttachment;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
-import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import com.abin.checkrepeatsystem.student.service.StudentReviewService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
@@ -19,8 +18,8 @@ import com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest;
 import com.abin.checkrepeatsystem.student.vo.PaperReSubmitReq;
 import com.abin.checkrepeatsystem.student.dto.*;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
@@ -45,21 +44,16 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/papers")
+@RequestMapping("/api/v1/papers")
 @PreAuthorize("hasAnyAuthority('STUDENT', 'TEACHER', 'ADMIN')")
+@RequiredArgsConstructor
 public class StudentPaperController {
 
-    @Resource
-    private PaperInfoService paperInfoService;
+    private final PaperInfoService paperInfoService;
 
-    @Resource
-    private StudentReviewService studentReviewService;
+    private final StudentReviewService studentReviewService;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
-
-    @Resource
-    private FileService fileService;
+    private final FileService fileService;
 
     /**
      * 1. 论文提交接口（推荐方式）- 只接收文件ID，不处理文件上传
@@ -70,46 +64,41 @@ public class StudentPaperController {
     @PostMapping("/submit")
     @OperationLog(type = "student_paper_submit", description = "学生提交论文", recordResult = true)
     public Result<PaperInfo> submitPaper(@RequestBody @Valid PaperSubmitRequest request) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("论文提交请求 - 学生ID: {}, 请求参数: {}", studentId, request);
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("论文提交请求 - 学生ID: {}, 请求参数: {}", studentId, request);
 
-            // 参数校验
-            if (!validatePaperRequest(request)) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文信息不完整");
-            }
-
-            // 验证文件是否存在
-            FileInfo fileInfo = fileService.getById(request.getFileId());
-            if (fileInfo == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "文件不存在或已被删除");
-            }
-
-            // 验证MD5（如果提供了MD5）
-            if (StringUtils.hasText(request.getFileMd5()) &&
-                    StringUtils.hasText(fileInfo.getMd5()) &&
-                    !request.getFileMd5().equals(fileInfo.getMd5())) {
-                return Result.error(ResultCode.PARAM_ERROR, "文件校验失败，MD5不匹配");
-            }
-
-            // 调用文件ID提交逻辑
-            PaperInfo paperInfo = paperInfoService.submitPaperByFileId(
-                    request.getSubjectCode(),
-                    request.getPaperTitle(),
-                    request.getPaperAbstract(),
-                    request.getCollegeId(),
-                    request.getMajorId(),
-                    request.getPaperType(),
-                    request.getFileId(),
-                    request.getFileMd5(),
-                    studentId
-            );
-            return Result.success("论文提交成功", paperInfo);
-
-        } catch (Exception e) {
-            log.error("论文提交失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文提交失败: " + e.getMessage());
+        // 参数校验
+        if (!validatePaperRequest(request)) {
+            return Result.error(ResultCode.PARAM_ERROR, "论文信息不完整");
         }
+
+        // 验证文件是否存在
+        FileInfo fileInfo = fileService.getById(request.getFileId());
+        if (fileInfo == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "文件不存在或已被删除");
+        }
+
+        // 验证MD5（如果提供了MD5）
+        if (StringUtils.hasText(request.getFileMd5()) &&
+                StringUtils.hasText(fileInfo.getMd5()) &&
+                !request.getFileMd5().equals(fileInfo.getMd5())) {
+            return Result.error(ResultCode.PARAM_ERROR, "文件校验失败，MD5不匹配");
+        }
+
+        // 调用文件ID提交逻辑
+        PaperInfo paperInfo = paperInfoService.submitPaperByFileId(
+                request.getSubjectCode(),
+                request.getPaperTitle(),
+                request.getPaperAbstract(),
+                request.getCollegeId(),
+                request.getMajorId(),
+                request.getPaperType(),
+                request.getFileId(),
+                request.getFileMd5(),
+                studentId
+        );
+        return Result.success("论文提交成功", paperInfo);
+
     }
     /**
      * 验证论文请求参数
@@ -127,7 +116,7 @@ public class StudentPaperController {
      * 分页查询学生论文列表
      */
     @PostMapping("/page")
-    public Result<Page<PaperInfo>> getStudentPaperPage(@RequestBody PaperQueryRequest request) {
+    public Result<Page<PaperInfo>> getStudentPaperPage(@RequestBody @Valid PaperQueryRequest request) {
         try {
             Page<PaperInfo> result = paperInfoService.getStudentPaperPage(request);
             return Result.success(result);
@@ -160,13 +149,8 @@ public class StudentPaperController {
      */
     @GetMapping("/major/list")
     public Result<List<com.abin.checkrepeatsystem.pojo.entity.Major>> getMajorList() {
-        try {
-            List<com.abin.checkrepeatsystem.pojo.entity.Major> majorList = paperInfoService.getMajorList();
-            return Result.success(majorList);
-        } catch (Exception e) {
-            log.error("获取专业列表失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取专业列表失败: " + e.getMessage());
-        }
+        List<com.abin.checkrepeatsystem.pojo.entity.Major> majorList = paperInfoService.getMajorList();
+        return Result.success(majorList);
     }
 
     /**
@@ -178,46 +162,41 @@ public class StudentPaperController {
      */
     @PostMapping("/delete")
     public Result<String> deletePaper(@RequestParam Long paperId) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("删除论文请求 - 学生ID: {}, 论文ID: {}", studentId, paperId);
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("删除论文请求 - 学生ID: {}, 论文ID: {}", studentId, paperId);
 
-            // 1. 权限与状态校验
-            PaperInfo paperInfo = paperInfoService.getById(paperId);
-            if (paperInfo == null) {
-                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
-            }
-
-            // 验证论文归属
-            if (!paperInfo.getStudentId().equals(studentId)) {
-                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限删除他人论文");
-            }
-
-            // 验证论文状态：只有待处理状态和已撤回状态的论文可以删除
-            String paperStatus = paperInfo.getPaperStatus();
-            if (!DictConstants.PaperStatus.PENDING.equals(paperStatus) && !DictConstants.PaperStatus.WITHDRAWN.equals(paperStatus)) {
-                String statusLabel = paperInfoService.getPaperStatusLabel(paperStatus);
-                return Result.error(ResultCode.PERMISSION_NOT_STATUS,
-                        "当前论文状态为【" + statusLabel + "】，不允许删除");
-            }
-            // 先删除附件
-            Long fileId = paperInfo.getFileId();
-            if (fileId != null) {
-                fileService.deleteFile(fileId);
-            }
-            // 2. 调用服务层执行删除
-            boolean deleteSuccess = paperInfoService.deletePaper(paperId, studentId);
-            if (!deleteSuccess) {
-                return Result.error(ResultCode.BUSINESS_NO_SAFE, "论文删除失败，请重试");
-            }
-
-            log.info("论文删除成功 - 论文ID: {}, 学生ID: {}", paperId, studentId);
-            return Result.success("论文删除成功");
-
-        } catch (Exception e) {
-            log.error("论文删除失败 - 论文ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文删除失败: " + e.getMessage());
+        // 1. 权限与状态校验
+        PaperInfo paperInfo = paperInfoService.getById(paperId);
+        if (paperInfo == null) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        // 验证论文归属
+        if (!paperInfo.getStudentId().equals(studentId)) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限删除他人论文");
+        }
+
+        // 验证论文状态：只有待处理状态和已撤回状态的论文可以删除
+        String paperStatus = paperInfo.getPaperStatus();
+        if (!DictConstants.PaperStatus.PENDING.equals(paperStatus) && !DictConstants.PaperStatus.WITHDRAWN.equals(paperStatus)) {
+            String statusLabel = paperInfoService.getPaperStatusLabel(paperStatus);
+            return Result.error(ResultCode.PERMISSION_NOT_STATUS,
+                    "当前论文状态为【" + statusLabel + "】，不允许删除");
+        }
+        // 先删除附件
+        Long fileId = paperInfo.getFileId();
+        if (fileId != null) {
+            fileService.deleteFile(fileId);
+        }
+        // 2. 调用服务层执行删除
+        boolean deleteSuccess = paperInfoService.deletePaper(paperId, studentId);
+        if (!deleteSuccess) {
+            return Result.error(ResultCode.BUSINESS_NO_SAFE, "论文删除失败，请重试");
+        }
+
+        log.info("论文删除成功 - 论文ID: {}, 学生ID: {}", paperId, studentId);
+        return Result.success("论文删除成功");
+
     }
 
     /**
@@ -229,48 +208,43 @@ public class StudentPaperController {
      */
     @PutMapping("/{paperId}/update")
     @OperationLog(type = "student_paper_update", description = "学生更新论文信息", recordResult = true)
-    public Result<PaperInfo> updatePaper(@PathVariable Long paperId, @RequestBody PaperSubmitRequest request) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("更新论文请求 - 学生ID: {}, 论文ID: {}, 请求参数: {}", studentId, paperId, request);
+    public Result<PaperInfo> updatePaper(@PathVariable Long paperId, @RequestBody @Valid PaperSubmitRequest request) {
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("更新论文请求 - 学生ID: {}, 论文ID: {}, 请求参数: {}", studentId, paperId, request);
 
-            // 1. 权限与状态校验
-            PaperInfo paperInfo = paperInfoService.getById(paperId);
-            if (paperInfo == null) {
-                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
-            }
-
-            // 验证论文归属
-            if (!paperInfo.getStudentId().equals(studentId)) {
-                return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限更新他人论文");
-            }
-
-            // 验证论文状态：只有待处理状态的论文可以更新
-            if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
-                String statusLabel = paperInfoService.getPaperStatusLabel(paperInfo.getPaperStatus());
-                return Result.error(ResultCode.PERMISSION_NOT_STATUS,
-                        "当前论文状态为【" + statusLabel + "】，不允许更新");
-            }
-
-            // 2. 验证请求参数
-            if (!validatePaperRequest(request)) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文信息不完整");
-            }
-
-            // 3. 验证文件是否存在
-            FileInfo fileInfo = fileService.getById(request.getFileId());
-            if (fileInfo == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "文件不存在或已被删除");
-            }
-
-            // 4. 调用服务层执行更新
-            PaperInfo updatedPaper = paperInfoService.updatePaper(paperId, request, studentId);
-            return Result.success("论文更新成功", updatedPaper);
-
-        } catch (Exception e) {
-            log.error("论文更新失败 - 论文ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文更新失败: " + e.getMessage());
+        // 1. 权限与状态校验
+        PaperInfo paperInfo = paperInfoService.getById(paperId);
+        if (paperInfo == null) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        // 验证论文归属
+        if (!paperInfo.getStudentId().equals(studentId)) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限更新他人论文");
+        }
+
+        // 验证论文状态：只有待处理状态的论文可以更新
+        if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
+            String statusLabel = paperInfoService.getPaperStatusLabel(paperInfo.getPaperStatus());
+            return Result.error(ResultCode.PERMISSION_NOT_STATUS,
+                    "当前论文状态为【" + statusLabel + "】，不允许更新");
+        }
+
+        // 2. 验证请求参数
+        if (!validatePaperRequest(request)) {
+            return Result.error(ResultCode.PARAM_ERROR, "论文信息不完整");
+        }
+
+        // 3. 验证文件是否存在
+        FileInfo fileInfo = fileService.getById(request.getFileId());
+        if (fileInfo == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "文件不存在或已被删除");
+        }
+
+        // 4. 调用服务层执行更新
+        PaperInfo updatedPaper = paperInfoService.updatePaper(paperId, request, studentId);
+        return Result.success("论文更新成功", updatedPaper);
+
     }
     @DeleteMapping("/delete/file")
     public Result<String> deleteFile(@RequestParam Long fileId) {
@@ -292,13 +266,8 @@ public class StudentPaperController {
      */
     @PostMapping("/resubmit")
     @OperationLog(type = "student_paper_resubmit", description = "学生重新提交论文", recordResult = true)
-    public Result<Map<String, Object>> reSubmitPaper(@RequestBody PaperReSubmitReq reSubmitReq) {
-        try {
-            return studentReviewService.reSubmitPaper(reSubmitReq);
-        } catch (Exception e) {
-            log.error("论文重新提交失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文重新提交失败: " + e.getMessage());
-        }
+    public Result<Map<String, Object>> reSubmitPaper(@RequestBody @Valid PaperReSubmitReq reSubmitReq) {
+        return studentReviewService.reSubmitPaper(reSubmitReq);
     }
     
     /**
@@ -314,21 +283,16 @@ public class StudentPaperController {
         @PathVariable Long paperId, 
         @RequestBody @Valid PaperWithdrawRequest request
     ) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("撤回论文请求 - 学生 ID: {}, 论文 ID: {}, 原因类型：{}, 详细描述：{}", 
-                studentId, paperId, request.getWithdrawReasonType(), request.getReasonDetail());
-                
-            boolean success = paperInfoService.withdrawPaper(paperId, studentId, 
-                String.format("[%s] %s", request.getWithdrawReasonType(), request.getReasonDetail() != null ? request.getReasonDetail() : ""));
-            if (success) {
-                return Result.success("论文撤回成功");
-            } else {
-                return Result.error(ResultCode.BUSINESS_NO_SAFE, "论文撤回失败");
-            }
-        } catch (Exception e) {
-            log.error("论文撤回失败 - 论文 ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文撤回失败：" + e.getMessage());
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("撤回论文请求 - 学生 ID: {}, 论文 ID: {}, 原因类型：{}, 详细描述：{}", 
+            studentId, paperId, request.getWithdrawReasonType(), request.getReasonDetail());
+
+        boolean success = paperInfoService.withdrawPaper(paperId, studentId, 
+            String.format("[%s] %s", request.getWithdrawReasonType(), request.getReasonDetail() != null ? request.getReasonDetail() : ""));
+        if (success) {
+            return Result.success("论文撤回成功");
+        } else {
+            return Result.error(ResultCode.BUSINESS_NO_SAFE, "论文撤回失败");
         }
     }
     
@@ -341,35 +305,27 @@ public class StudentPaperController {
         @PathVariable Long paperId,
         @RequestBody @Valid PaperReSubmitAfterWithdrawRequest request
     ) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("撤回后重新提交请求 - 学生 ID: {}, 论文 ID: {}", studentId, paperId);
-            
-            // 验证论文状态必须是 WITHDRAWN
-            PaperInfo paper = paperInfoMapper.selectById(paperId);
-            if (paper == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            if (!DictConstants.PaperStatus.WITHDRAWN.equals(paper.getPaperStatus())) {
-                return Result.error(ResultCode.PARAM_ERROR, "只有已撤回的论文才能重新提交，当前状态：" + paper.getPaperStatus());
-            }
-            
-            // 验证论文归属
-            if (!paper.getStudentId().equals(studentId)) {
-                return Result.error(ResultCode.RESOURCE_NO_PERMISSION, "无权操作他人论文");
-            }
-            
-            // 调用服务层重新提交
-            PaperInfo updatedPaper = paperInfoService.resubmitAfterWithdraw(paperId, request, studentId);
-            return Result.success("重新提交成功", updatedPaper);
-        } catch (BusinessException e) {
-            log.error("撤回后重新提交失败 - 论文 ID: {}", paperId, e);
-            return Result.error(ResultCode.BUSINESS_NO_SAFE, e.getMessage());
-        } catch (Exception e) {
-            log.error("撤回后重新提交失败 - 论文 ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "重新提交失败：" + e.getMessage());
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("撤回后重新提交请求 - 学生 ID: {}, 论文 ID: {}", studentId, paperId);
+
+        // 验证论文状态必须是 WITHDRAWN
+        PaperInfo paper = paperInfoService.getById(paperId);
+        if (paper == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
         }
+
+        if (!DictConstants.PaperStatus.WITHDRAWN.equals(paper.getPaperStatus())) {
+            return Result.error(ResultCode.PARAM_ERROR, "只有已撤回的论文才能重新提交，当前状态：" + paper.getPaperStatus());
+        }
+
+        // 验证论文归属
+        if (!paper.getStudentId().equals(studentId)) {
+            return Result.error(ResultCode.RESOURCE_NO_PERMISSION, "无权操作他人论文");
+        }
+
+        // 调用服务层重新提交
+        PaperInfo updatedPaper = paperInfoService.resubmitAfterWithdraw(paperId, request, studentId);
+        return Result.success("重新提交成功", updatedPaper);
     }
     
     /**
@@ -382,20 +338,15 @@ public class StudentPaperController {
      */
     @PostMapping("/{paperId}/modify-request")
     @OperationLog(type = "student_paper_modify_request", description = "学生申请修改论文", recordResult = true)
-    public Result<String> requestModification(@PathVariable Long paperId, @RequestBody PaperModifyRequest request) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("申请修改论文请求 - 学生ID: {}, 论文ID: {}, 原因: {}", studentId, paperId, request.getReason());
-            
-            boolean success = paperInfoService.requestPaperModification(paperId, studentId, request.getReason());
-            if (success) {
-                return Result.success("申请已提交，等待导师审核");
-            } else {
-                return Result.error(ResultCode.BUSINESS_NO_SAFE, "申请提交失败");
-            }
-        } catch (Exception e) {
-            log.error("申请修改论文失败 - 论文ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "申请提交失败: " + e.getMessage());
+    public Result<String> requestModification(@PathVariable Long paperId, @RequestBody @Valid PaperModifyRequest request) {
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("申请修改论文请求 - 学生ID: {}, 论文ID: {}, 原因: {}", studentId, paperId, request.getReason());
+
+        boolean success = paperInfoService.requestPaperModification(paperId, studentId, request.getReason());
+        if (success) {
+            return Result.success("申请已提交，等待导师审核");
+        } else {
+            return Result.error(ResultCode.BUSINESS_NO_SAFE, "申请提交失败");
         }
     }
     
@@ -430,16 +381,11 @@ public class StudentPaperController {
     @DeleteMapping("/batch-delete")
     @OperationLog(type = "student_paper_batch_delete", description = "学生批量删除论文", recordResult = true)
     public Result<Map<String, Object>> batchDeletePapers(@RequestBody BatchOperationRequest request) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("批量删除论文请求 - 学生ID: {}, 论文数量: {}", studentId, request.getPaperIds().size());
-            
-            Map<String, Object> result = paperInfoService.batchDeletePapers(request.getPaperIds(), studentId);
-            return Result.success("批量删除成功", result);
-        } catch (Exception e) {
-            log.error("批量删除论文失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量删除失败: " + e.getMessage());
-        }
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("批量删除论文请求 - 学生ID: {}, 论文数量: {}", studentId, request.getPaperIds().size());
+
+        Map<String, Object> result = paperInfoService.batchDeletePapers(request.getPaperIds(), studentId);
+        return Result.success("批量删除成功", result);
     }
     
     /**
@@ -447,14 +393,9 @@ public class StudentPaperController {
      */
     @GetMapping("/{paperId}/versions")
     public Result<List<PaperSubmitDTO>> getPaperVersions(@PathVariable Long paperId) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            List<PaperSubmitDTO> versions = paperInfoService.getPaperVersions(paperId, studentId);
-            return Result.success(versions);
-        } catch (Exception e) {
-            log.error("获取论文版本列表失败 - 论文ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取版本列表失败: " + e.getMessage());
-        }
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        List<PaperSubmitDTO> versions = paperInfoService.getPaperVersions(paperId, studentId);
+        return Result.success(versions);
     }
 
     /**
@@ -467,14 +408,9 @@ public class StudentPaperController {
      */
     @GetMapping("/{paperId}/versions/{versionId}")
     public Result<PaperVersionDTO> getPaperVersion(@PathVariable Long paperId, @PathVariable Long versionId) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            PaperVersionDTO version = paperInfoService.getPaperVersion(paperId, versionId, studentId);
-            return Result.success(version);
-        } catch (Exception e) {
-            log.error("获取论文版本详情失败 - 论文ID: {}, 版本ID: {}", paperId, versionId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取版本详情失败: " + e.getMessage());
-        }
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        PaperVersionDTO version = paperInfoService.getPaperVersion(paperId, versionId, studentId);
+        return Result.success(version);
     }
     
     /**
@@ -486,15 +422,10 @@ public class StudentPaperController {
      */
     @PostMapping("/compare-versions")
     public Result<VersionCompareResult> comparePaperVersions(@RequestBody VersionCompareRequest request) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            VersionCompareResult result = paperInfoService.comparePaperVersions(request.getPaperId(), 
-                request.getVersionIds(), studentId);
-            return Result.success(result);
-        } catch (Exception e) {
-            log.error("论文版本对比失败 - 论文ID: {}", request.getPaperId(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "版本对比失败: " + e.getMessage());
-        }
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        VersionCompareResult result = paperInfoService.comparePaperVersions(request.getPaperId(), 
+            request.getVersionIds(), studentId);
+        return Result.success(result);
     }
     
     /**
@@ -585,14 +516,9 @@ public class StudentPaperController {
     public Result<PaperAttachment> uploadAttachment(@RequestParam Long paperId, 
                                                   @RequestParam MultipartFile file, 
                                                   @RequestParam String attachmentType) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            PaperAttachment attachment = paperInfoService.uploadAttachment(paperId, file, attachmentType, studentId);
-            return Result.success("附件上传成功", attachment);
-        } catch (Exception e) {
-            log.error("上传附件失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "附件上传失败: " + e.getMessage());
-        }
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        PaperAttachment attachment = paperInfoService.uploadAttachment(paperId, file, attachmentType, studentId);
+        return Result.success("附件上传成功", attachment);
     }
     
     /**
@@ -600,14 +526,9 @@ public class StudentPaperController {
      */
     @GetMapping("/attachments/list")
     public Result<List<PaperAttachment>> getPaperAttachments(@RequestParam Long paperId) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            List<PaperAttachment> attachments = paperInfoService.getPaperAttachments(paperId, studentId);
-            return Result.success(attachments);
-        } catch (Exception e) {
-            log.error("获取附件列表失败 - 论文ID: {}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取附件列表失败: " + e.getMessage());
-        }
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        List<PaperAttachment> attachments = paperInfoService.getPaperAttachments(paperId, studentId);
+        return Result.success(attachments);
     }
     
     /**
@@ -616,17 +537,12 @@ public class StudentPaperController {
     @DeleteMapping("/attachments/delete")
     @OperationLog(type = "student_attachment_delete", description = "学生删除论文附件", recordResult = true)
     public Result<String> deleteAttachment(@RequestParam Long attachmentId) {
-        try {
-            Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-            boolean success = paperInfoService.deleteAttachment(attachmentId, studentId);
-            if (success) {
-                return Result.success("附件删除成功");
-            } else {
-                return Result.error(ResultCode.BUSINESS_NO_SAFE, "附件删除失败");
-            }
-        } catch (Exception e) {
-            log.error("删除附件失败 - 附件ID: {}", attachmentId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "附件删除失败: " + e.getMessage());
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        boolean success = paperInfoService.deleteAttachment(attachmentId, studentId);
+        if (success) {
+            return Result.success("附件删除成功");
+        } else {
+            return Result.error(ResultCode.BUSINESS_NO_SAFE, "附件删除失败");
         }
     }
 }

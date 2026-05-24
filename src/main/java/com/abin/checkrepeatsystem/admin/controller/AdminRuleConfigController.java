@@ -14,35 +14,34 @@ import com.abin.checkrepeatsystem.pojo.entity.CompareLib;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.abin.checkrepeatsystem.pojo.entity.SystemParam;
 import com.abin.checkrepeatsystem.student.dto.DeadlinesDTO;
-import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+
 
 /**
  * 管理员规则配置控制器：仅管理员角色可访问，统一用@RequestParam传参
  */
 @RestController
-@RequestMapping("/api/admin/config")
+@RequestMapping("/api/v1/admin/config")
 @PreAuthorize("hasAuthority('ADMIN')") // 权限控制：仅管理员可访问
+@RequiredArgsConstructor
 public class AdminRuleConfigController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminRuleConfigController.class);
 
-    @Resource
-    private AdminRuleConfigService adminRuleConfigService;
+    private final AdminRuleConfigService adminRuleConfigService;
     
-    @Autowired
-    private SystemConfigService systemConfigService;
+    private final SystemConfigService systemConfigService;
     
     @Value("${spring.mail.host:localhost}")
     private String mailHost;
@@ -143,48 +142,43 @@ public class AdminRuleConfigController {
     public Result<Map<String, Object>> getAllConfig() {
         log.info("接收获取所有系统配置请求（真实数据）");
         
-        try {
-            Map<String, Object> allConfig = new HashMap<>();
-            
-            // 1. 获取基础配置（来自数据库）
-            Map<String, Object> basicConfig = getBasicConfigFromDB();
-            allConfig.put("basicConfig", basicConfig);
-            
-            // 2. 获取查重配置（来自数据库）
-            Map<String, Object> plagiarismConfig = getPlagiarismConfigFromDB();
-            allConfig.put("plagiarismConfig", plagiarismConfig);
-            
-            // 3. 获取安全配置（来自数据库）
-            Map<String, Object> securityConfig = getSecurityConfigFromDB();
-            allConfig.put("securityConfig", securityConfig);
-            
-            // 4. 获取邮件配置（来自数据库，不再是配置文件）
-            Map<String, Object> emailConfig = getEmailConfigFromDB();
-            allConfig.put("emailConfig", emailConfig);
-            
-            // 5. 获取性能配置（来自数据库）
-            Map<String, Object> performanceConfig = getPerformanceConfigFromDB();
-            allConfig.put("performanceConfig", performanceConfig);
-            
-            // 6. 获取查重规则配置（来自数据库）
-            Result<Page<CheckRule>> ruleResult = adminRuleConfigService.getCheckRuleList(null, null, 1, 10);
-            allConfig.put("checkRules", ruleResult.getData());
-            
-            // 7. 获取比对库配置（来自数据库）
-            Result<Page<CompareLib>> libResult = adminRuleConfigService.getCompareLibList(null, null, null, 1, 10);
-            allConfig.put("compareLibs", libResult.getData());
-            
-            // 8. 获取系统参数（来自数据库）
-            Result<SystemParam> paramResult = adminRuleConfigService.getCurrentSystemParam();
-            allConfig.put("systemParams", paramResult.getData());
-            
-            log.info("获取所有系统配置成功，共{}个配置项", allConfig.size());
-            return Result.success("系统配置获取成功", allConfig);
-            
-        } catch (Exception e) {
-            log.error("获取系统配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取系统配置失败: " + e.getMessage());
-        }
+        Map<String, Object> allConfig = new HashMap<>();
+
+        // 1. 获取基础配置（来自数据库）
+        Map<String, Object> basicConfig = getBasicConfigFromDB();
+        allConfig.put("basicConfig", basicConfig);
+
+        // 2. 获取查重配置（来自数据库）
+        Map<String, Object> plagiarismConfig = getPlagiarismConfigFromDB();
+        allConfig.put("plagiarismConfig", plagiarismConfig);
+
+        // 3. 获取安全配置（来自数据库）
+        Map<String, Object> securityConfig = getSecurityConfigFromDB();
+        allConfig.put("securityConfig", securityConfig);
+
+        // 4. 获取邮件配置（来自数据库，不再是配置文件）
+        Map<String, Object> emailConfig = getEmailConfigFromDB();
+        allConfig.put("emailConfig", emailConfig);
+
+        // 5. 获取性能配置（来自数据库）
+        Map<String, Object> performanceConfig = getPerformanceConfigFromDB();
+        allConfig.put("performanceConfig", performanceConfig);
+
+        // 6. 获取查重规则配置（来自数据库）
+        Result<Page<CheckRule>> ruleResult = adminRuleConfigService.getCheckRuleList(null, null, 1, 10);
+        allConfig.put("checkRules", ruleResult.getData());
+
+        // 7. 获取比对库配置（来自数据库）
+        Result<Page<CompareLib>> libResult = adminRuleConfigService.getCompareLibList(null, null, null, 1, 10);
+        allConfig.put("compareLibs", libResult.getData());
+
+        // 8. 获取系统参数（来自数据库）
+        Result<SystemParam> paramResult = adminRuleConfigService.getCurrentSystemParam();
+        allConfig.put("systemParams", paramResult.getData());
+
+        log.info("获取所有系统配置成功，共{}个配置项", allConfig.size());
+        return Result.success("系统配置获取成功", allConfig);
+
     }
 
     /**
@@ -308,14 +302,9 @@ public class AdminRuleConfigController {
     @PutMapping("/basic")
     public Result<String> updateBasicConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新基础配置请求: {}", config);
-        try {
-            saveConfig("system_basic", config, "系统基础配置");
-            log.info("基础配置更新成功");
-            return Result.success("基础配置更新成功");
-        } catch (Exception e) {
-            log.error("更新基础配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新基础配置失败: " + e.getMessage());
-        }
+        saveConfig("system_basic", config, "系统基础配置");
+        log.info("基础配置更新成功");
+        return Result.success("基础配置更新成功");
     }
 
     /**
@@ -324,14 +313,9 @@ public class AdminRuleConfigController {
     @PutMapping("/plagiarism")
     public Result<String> updatePlagiarismConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新查重配置请求: {}", config);
-        try {
-            saveConfig("plagiarism_config", config, "查重配置");
-            log.info("查重配置更新成功");
-            return Result.success("查重配置更新成功");
-        } catch (Exception e) {
-            log.error("更新查重配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新查重配置失败: " + e.getMessage());
-        }
+        saveConfig("plagiarism_config", config, "查重配置");
+        log.info("查重配置更新成功");
+        return Result.success("查重配置更新成功");
     }
 
     /**
@@ -340,14 +324,9 @@ public class AdminRuleConfigController {
     @PutMapping("/security")
     public Result<String> updateSecurityConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新安全配置请求: {}", config);
-        try {
-            saveConfig("security_config", config, "安全配置");
-            log.info("安全配置更新成功");
-            return Result.success("安全配置更新成功");
-        } catch (Exception e) {
-            log.error("更新安全配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新安全配置失败: " + e.getMessage());
-        }
+        saveConfig("security_config", config, "安全配置");
+        log.info("安全配置更新成功");
+        return Result.success("安全配置更新成功");
     }
 
     /**
@@ -356,14 +335,9 @@ public class AdminRuleConfigController {
     @PutMapping("/email")
     public Result<String> updateEmailConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新邮件配置请求: {}", config);
-        try {
-            saveConfig("email_config", config, "邮件配置");
-            log.info("邮件配置更新成功");
-            return Result.success("邮件配置更新成功");
-        } catch (Exception e) {
-            log.error("更新邮件配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新邮件配置失败: " + e.getMessage());
-        }
+        saveConfig("email_config", config, "邮件配置");
+        log.info("邮件配置更新成功");
+        return Result.success("邮件配置更新成功");
     }
 
     /**
@@ -387,15 +361,10 @@ public class AdminRuleConfigController {
         
         log.info("开始测试邮件发送至: {}", testEmail);
         
-        try {
-            // 实际的邮件发送逻辑
-            // 这里应该调用邮件服务进行测试
-            log.info("邮件测试发送成功");
-            return Result.success("测试邮件发送成功，请检查邮箱: " + testEmail);
-        } catch (Exception e) {
-            log.error("邮件测试发送失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "邮件测试发送失败: " + e.getMessage());
-        }
+        // 实际的邮件发送逻辑
+        // 这里应该调用邮件服务进行测试
+        log.info("邮件测试发送成功");
+        return Result.success("测试邮件发送成功，请检查邮箱: " + testEmail);
     }
 
     /**
@@ -413,45 +382,40 @@ public class AdminRuleConfigController {
         
         log.info("接收到的配置数据: {}", allConfig.keySet());
         
-        try {
-            // 保存各个配置项
-            if (allConfig.containsKey("basicConfig")) {
-                log.info("保存基础配置");
-                Map<String, Object> basicConfig = (Map<String, Object>) allConfig.get("basicConfig");
-                saveConfig("system_basic", basicConfig, "系统基础配置");
-            }
-            
-            if (allConfig.containsKey("plagiarismConfig")) {
-                log.info("保存查重配置");
-                Map<String, Object> plagiarismConfig = (Map<String, Object>) allConfig.get("plagiarismConfig");
-                saveConfig("plagiarism_config", plagiarismConfig, "查重配置");
-            }
-            
-            if (allConfig.containsKey("securityConfig")) {
-                log.info("保存安全配置");
-                Map<String, Object> securityConfig = (Map<String, Object>) allConfig.get("securityConfig");
-                saveConfig("security_config", securityConfig, "安全配置");
-            }
-            
-            if (allConfig.containsKey("emailConfig")) {
-                log.info("保存邮件配置");
-                Map<String, Object> emailConfig = (Map<String, Object>) allConfig.get("emailConfig");
-                saveConfig("email_config", emailConfig, "邮件配置");
-            }
-            
-            if (allConfig.containsKey("performanceConfig")) {
-                log.info("保存性能配置");
-                Map<String, Object> performanceConfig = (Map<String, Object>) allConfig.get("performanceConfig");
-                saveConfig("performance", performanceConfig, "性能配置");
-            }
-            
-            log.info("所有配置保存成功");
-            return Result.success("所有配置保存成功");
-            
-        } catch (Exception e) {
-            log.error("保存配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "保存配置失败: " + e.getMessage());
+        // 保存各个配置项
+        if (allConfig.containsKey("basicConfig")) {
+            log.info("保存基础配置");
+            Map<String, Object> basicConfig = (Map<String, Object>) allConfig.get("basicConfig");
+            saveConfig("system_basic", basicConfig, "系统基础配置");
         }
+
+        if (allConfig.containsKey("plagiarismConfig")) {
+            log.info("保存查重配置");
+            Map<String, Object> plagiarismConfig = (Map<String, Object>) allConfig.get("plagiarismConfig");
+            saveConfig("plagiarism_config", plagiarismConfig, "查重配置");
+        }
+
+        if (allConfig.containsKey("securityConfig")) {
+            log.info("保存安全配置");
+            Map<String, Object> securityConfig = (Map<String, Object>) allConfig.get("securityConfig");
+            saveConfig("security_config", securityConfig, "安全配置");
+        }
+
+        if (allConfig.containsKey("emailConfig")) {
+            log.info("保存邮件配置");
+            Map<String, Object> emailConfig = (Map<String, Object>) allConfig.get("emailConfig");
+            saveConfig("email_config", emailConfig, "邮件配置");
+        }
+
+        if (allConfig.containsKey("performanceConfig")) {
+            log.info("保存性能配置");
+            Map<String, Object> performanceConfig = (Map<String, Object>) allConfig.get("performanceConfig");
+            saveConfig("performance", performanceConfig, "性能配置");
+        }
+
+        log.info("所有配置保存成功");
+        return Result.success("所有配置保存成功");
+
     }
 
     /**
@@ -460,19 +424,14 @@ public class AdminRuleConfigController {
     @PostMapping("/reset-default")
     public Result<String> resetDefaultConfig() {
         log.info("接收恢复默认配置请求");
-        try {
-            // 删除现有配置
-            systemConfigService.deleteAllConfigs();
-            
-            // 插入默认配置
-            insertDefaultConfigs();
-            
-            log.info("默认配置恢复成功");
-            return Result.success("默认配置恢复成功");
-        } catch (Exception e) {
-            log.error("恢复默认配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "恢复默认配置失败: " + e.getMessage());
-        }
+        // 删除现有配置
+        systemConfigService.deleteAllConfigs();
+
+        // 插入默认配置
+        insertDefaultConfigs();
+
+        log.info("默认配置恢复成功");
+        return Result.success("默认配置恢复成功");
     }
     
     /**
@@ -558,71 +517,41 @@ public class AdminRuleConfigController {
                 performanceConfig.getMaxConcurrent(),
                 performanceConfig.getQueueSize(),
                 performanceConfig.getCacheStrategy());
-        try {
-            return systemConfigService.updatePerformanceConfig(performanceConfig);
-        } catch (Exception e) {
-            log.error("更新性能配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新性能配置失败: " + e.getMessage());
-        }
+        return systemConfigService.updatePerformanceConfig(performanceConfig);
     }
 
     @GetMapping("/performance")
     public Result<PerformanceConfigDTO> getPerformanceConfig() {
         log.info("接收获取性能配置请求");
-        try {
-            return systemConfigService.getPerformanceConfig();
-        } catch (Exception e) {
-            log.error("获取性能配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取性能配置失败: " + e.getMessage());
-        }
+        return systemConfigService.getPerformanceConfig();
     }
 
     @PostMapping("/performance/reset")
     public Result<Void> resetPerformanceConfig() {
         log.info("接收重置性能配置请求");
-        try {
-            PerformanceConfigDTO defaultConfig = systemConfigService.getDefaultPerformanceConfig();
-            return systemConfigService.updatePerformanceConfig(defaultConfig);
-        } catch (Exception e) {
-            log.error("重置性能配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "重置性能配置失败: " + e.getMessage());
-        }
+        PerformanceConfigDTO defaultConfig = systemConfigService.getDefaultPerformanceConfig();
+        return systemConfigService.updatePerformanceConfig(defaultConfig);
     }
 
     @PostMapping("/performance/test")
     public Result<Void> testPerformanceConfig(@Valid @RequestBody PerformanceConfigDTO performanceConfig) {
         log.info("接收测试性能配置请求: {}", performanceConfig);
-        try {
-            systemConfigService.applyPerformanceConfig(performanceConfig);
-            return Result.success("性能配置测试应用成功");
-        } catch (Exception e) {
-            log.error("测试性能配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "测试性能配置失败: " + e.getMessage());
-        }
+        systemConfigService.applyPerformanceConfig(performanceConfig);
+        return Result.success("性能配置测试应用成功");
     }
 
     // ========================== 时间节点配置（合并自 DeadlinesConfigController） ==========================
 
     @GetMapping("/deadlines")
     public Result<DeadlinesDTO> getDeadlinesConfig() {
-        try {
-            DeadlinesDTO deadlines = systemConfigService.getDeadlines();
-            return Result.success(deadlines);
-        } catch (Exception e) {
-            log.error("获取时间节点配置失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取时间节点配置失败：");
-        }
+        DeadlinesDTO deadlines = systemConfigService.getDeadlines();
+        return Result.success(deadlines);
     }
 
     @PutMapping("/deadlines")
     public Result<Void> updateDeadlinesConfig(@RequestBody DeadlinesDTO deadlines) {
-        try {
-            log.info("更新时间节点配置：{}", deadlines);
-            systemConfigService.updateDeadlines(deadlines);
-            return Result.success("时间节点配置更新成功");
-        } catch (Exception e) {
-            log.error("更新时间节点配置失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新时间节点配置失败：");
-        }
+        log.info("更新时间节点配置：{}", deadlines);
+        systemConfigService.updateDeadlines(deadlines);
+        return Result.success("时间节点配置更新成功");
     }
 }

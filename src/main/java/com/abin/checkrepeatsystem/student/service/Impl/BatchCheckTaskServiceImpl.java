@@ -14,7 +14,7 @@ import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -26,26 +26,22 @@ import java.util.List;
 /**
  * 批量查重服务实现
  */
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class
 
 BatchCheckTaskServiceImpl {
 
-    @Resource
-    private CheckTaskValidationService validationService;
+    private final CheckTaskValidationService validationService;
 
-    @Resource
-    private PaperInfoMapper paperInfoMapper;
+    private final PaperInfoMapper paperInfoMapper;
 
-    @Resource
-    private CheckTaskMapper checkTaskMapper;
+    private final CheckTaskMapper checkTaskMapper;
 
-    @Resource
-    private ApplicationEventPublisher eventPublisher;
+    private final ApplicationEventPublisher eventPublisher;
 
-    @Resource
-    private CheckTaskService checkTaskService;
+    private final CheckTaskService checkTaskService;
 
     /**
      * 批量创建查重任务
@@ -182,7 +178,7 @@ BatchCheckTaskServiceImpl {
      */
     private int getQueuePosition() {
         // 查询 PENDING 状态的任务数 +1
-        long pendingCount = ((CheckTaskServiceImpl)checkTaskService).count(
+        long pendingCount = checkTaskService.count(
             new LambdaQueryWrapper<CheckTask>()
                 .eq(CheckTask::getCheckStatus, "PENDING")
                 .eq(CheckTask::getIsDeleted, 0)
@@ -257,7 +253,7 @@ BatchCheckTaskServiceImpl {
         // 基于当前并发任务数计算负载系数
         try {
             // 获取正在执行的任务数
-            long runningCount = ((CheckTaskServiceImpl)checkTaskService).count(
+            long runningCount = checkTaskService.count(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.abin.checkrepeatsystem.pojo.entity.CheckTask>()
                     .eq(com.abin.checkrepeatsystem.pojo.entity.CheckTask::getCheckStatus, "CHECKING")
                     .eq(com.abin.checkrepeatsystem.pojo.entity.CheckTask::getIsDeleted, 0)

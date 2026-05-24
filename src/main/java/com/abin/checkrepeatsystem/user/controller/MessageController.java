@@ -14,8 +14,8 @@ import com.abin.checkrepeatsystem.user.vo.PageResultVO;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,16 +23,15 @@ import java.util.List;
 /**
  * 消息通信控制器
  */
+@RequiredArgsConstructor
 @RestController
-@RequestMapping("/api/message")
+@RequestMapping("/api/v1/message")
 @Slf4j
 public class MessageController {
 
-    @Autowired
-    private MessageService messageService;
+    private final MessageService messageService;
 
-    @Autowired
-    private ConversationService conversationService;
+    private final ConversationService conversationService;
 
     /**
      * 获取消息列表（通用接口）
@@ -46,18 +45,13 @@ public class MessageController {
             @RequestParam(defaultValue = "20") Integer pageSize,
             @RequestParam(required = false) String sortBy,
             @RequestParam(required = false) String sortOrder) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            log.info("获取消息列表请求 - 用户ID: {}, 类型: {}, 已读: {}, 页码: {}, 大小: {}", 
-                    userId, messageType, isRead, pageNum, pageSize);
-            
-            Result<PageResultVO<SystemMessage>> result = messageService.getMessageList(
-                    userId, messageType, isRead, pageNum, pageSize, sortBy, sortOrder);
-            return result;
-        } catch (Exception e) {
-            log.error("获取消息列表失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取消息列表失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("获取消息列表请求 - 用户ID: {}, 类型: {}, 已读: {}, 页码: {}, 大小: {}", 
+                userId, messageType, isRead, pageNum, pageSize);
+
+        Result<PageResultVO<SystemMessage>> result = messageService.getMessageList(
+                userId, messageType, isRead, pageNum, pageSize, sortBy, sortOrder);
+        return result;
     }
 
     /**
@@ -65,19 +59,14 @@ public class MessageController {
      */
     @PostMapping("/send")
     public Result<Boolean> sendMessage(@RequestBody SystemMessage message) {
-        try {
-            Long senderId = UserBusinessInfoUtils.getCurrentUserId();
-            message.setSenderId(senderId);
-            log.info("发送消息请求 - 发送者ID: {}, 接收者ID: {}, 消息类型: {}", 
-                    senderId, message.getReceiverId(), message.getMessageType());
+        Long senderId = UserBusinessInfoUtils.getCurrentUserId();
+        message.setSenderId(senderId);
+        log.info("发送消息请求 - 发送者ID: {}, 接收者ID: {}, 消息类型: {}", 
+                senderId, message.getReceiverId(), message.getMessageType());
 
-            // 发送消息
-            Result<Boolean> result = messageService.sendMessage(message);
-            return result;
-        } catch (Exception e) {
-            log.error("发送消息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "消息发送失败: " + e.getMessage());
-        }
+        // 发送消息
+        Result<Boolean> result = messageService.sendMessage(message);
+        return result;
     }
 
     /**
@@ -88,14 +77,9 @@ public class MessageController {
             @RequestParam(required = false) String messageType,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<Page<SystemMessage>> result = messageService.getUserMessages(userId, messageType, pageNum, pageSize);
-            return result;
-        } catch (Exception e) {
-            log.error("获取用户消息列表失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取用户消息列表失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Page<SystemMessage>> result = messageService.getUserMessages(userId, messageType, pageNum, pageSize);
+        return result;
     }
 
     /**
@@ -105,14 +89,9 @@ public class MessageController {
     public Result<Page<SystemMessage>> getUnreadMessages(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<Page<SystemMessage>> result = messageService.getUnreadMessages(userId, pageNum, pageSize);
-            return result;
-        } catch (Exception e) {
-            log.error("获取未读消息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取未读消息失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Page<SystemMessage>> result = messageService.getUnreadMessages(userId, pageNum, pageSize);
+        return result;
     }
 
     /**
@@ -120,14 +99,9 @@ public class MessageController {
      */
     @GetMapping("/unread-count")
     public Result<Integer> getUnreadCount() {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<Integer> result = messageService.getUnreadCount(userId);
-            return result;
-        } catch (Exception e) {
-            log.error("获取未读消息数失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取未读消息数失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Integer> result = messageService.getUnreadCount(userId);
+        return result;
     }
 
     /**
@@ -135,14 +109,9 @@ public class MessageController {
      */
     @PostMapping("/mark-read")
     public Result<Boolean> markAsRead(@RequestParam Long messageId) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<Boolean> result = messageService.markAsRead(messageId, userId);
-            return result;
-        } catch (Exception e) {
-            log.error("标记消息已读失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "标记消息已读失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Boolean> result = messageService.markAsRead(messageId, userId);
+        return result;
     }
 
     /**
@@ -150,14 +119,9 @@ public class MessageController {
      */
     @DeleteMapping("/delete/{messageId}")
     public Result<Boolean> deleteMessage(@PathVariable Long messageId) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<Boolean> result = messageService.deleteMessage(messageId, userId);
-            return result;
-        } catch (Exception e) {
-            log.error("删除消息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "删除消息失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Boolean> result = messageService.deleteMessage(messageId, userId);
+        return result;
     }
 
     /**
@@ -165,14 +129,9 @@ public class MessageController {
      */
     @DeleteMapping("/batch-delete")
     public Result<Boolean> deleteAllMessages(@RequestBody List<Long> messageIds) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<Boolean> result = messageService.deleteAllMessages(messageIds, userId);
-            return result;
-        } catch (Exception e) {
-            log.error("批量删除消息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量删除消息失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Boolean> result = messageService.deleteAllMessages(messageIds, userId);
+        return result;
     }
 
     /**
@@ -180,14 +139,9 @@ public class MessageController {
      */
     @GetMapping("/detail/{messageId}")
     public Result<SystemMessage> getMessageDetail(@PathVariable Long messageId) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            Result<SystemMessage> result = messageService.getMessageDetail(messageId, userId);
-            return result;
-        } catch (Exception e) {
-            log.error("获取消息详情失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取消息详情失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<SystemMessage> result = messageService.getMessageDetail(messageId, userId);
+        return result;
     }
 
     // ========================== 会话管理接口 ==========================
@@ -199,14 +153,9 @@ public class MessageController {
     public Result<IPage<Conversation>> getUserConversations(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            IPage<Conversation> conversations = conversationService.getUserConversations(userId, pageNum, pageSize);
-            return Result.success("获取用户会话列表成功", conversations);
-        } catch (Exception e) {
-            log.error("获取用户会话列表失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取用户会话列表失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        IPage<Conversation> conversations = conversationService.getUserConversations(userId, pageNum, pageSize);
+        return Result.success("获取用户会话列表成功", conversations);
     }
 
     /**
@@ -217,14 +166,9 @@ public class MessageController {
             @RequestParam String name,
             @RequestParam String type,
             @RequestBody List<Long> memberIds) {
-        try {
-            Long creatorId = UserBusinessInfoUtils.getCurrentUserId();
-            Conversation conversation = conversationService.createConversation(name, type, creatorId, memberIds);
-            return Result.success("创建会话成功", conversation);
-        } catch (Exception e) {
-            log.error("创建会话失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "创建会话失败: " + e.getMessage());
-        }
+        Long creatorId = UserBusinessInfoUtils.getCurrentUserId();
+        Conversation conversation = conversationService.createConversation(name, type, creatorId, memberIds);
+        return Result.success("创建会话成功", conversation);
     }
 
     /**
@@ -235,13 +179,8 @@ public class MessageController {
             @PathVariable Long conversationId,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String avatar) {
-        try {
-            boolean result = conversationService.updateConversation(conversationId, name, avatar);
-            return Result.success("更新会话信息成功", result);
-        } catch (Exception e) {
-            log.error("更新会话信息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "更新会话信息失败: " + e.getMessage());
-        }
+        boolean result = conversationService.updateConversation(conversationId, name, avatar);
+        return Result.success("更新会话信息成功", result);
     }
 
     /**
@@ -249,14 +188,9 @@ public class MessageController {
      */
     @PostMapping("/conversation/{conversationId}/leave")
     public Result<Boolean> leaveConversation(@PathVariable Long conversationId) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            boolean result = conversationService.leaveConversation(conversationId, userId);
-            return Result.success("退出会话成功", result);
-        } catch (Exception e) {
-            log.error("退出会话失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "退出会话失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        boolean result = conversationService.leaveConversation(conversationId, userId);
+        return Result.success("退出会话成功", result);
     }
 
     /**
@@ -267,13 +201,8 @@ public class MessageController {
             @PathVariable Long conversationId,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize) {
-        try {
-            IPage<ConversationMember> members = conversationService.getConversationMembers(conversationId, pageNum, pageSize);
-            return Result.success("获取会话成员成功", members);
-        } catch (Exception e) {
-            log.error("获取会话成员失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取会话成员失败: " + e.getMessage());
-        }
+        IPage<ConversationMember> members = conversationService.getConversationMembers(conversationId, pageNum, pageSize);
+        return Result.success("获取会话成员成功", members);
     }
 
     /**
@@ -284,13 +213,8 @@ public class MessageController {
             @RequestParam String keyword,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize) {
-        try {
-            Long userId = UserBusinessInfoUtils.getCurrentUserId();
-            IPage<Conversation> conversations = conversationService.searchConversations(userId, keyword, pageNum, pageSize);
-            return Result.success("搜索会话成功", conversations);
-        } catch (Exception e) {
-            log.error("搜索会话失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "搜索会话失败: " + e.getMessage());
-        }
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        IPage<Conversation> conversations = conversationService.searchConversations(userId, keyword, pageNum, pageSize);
+        return Result.success("搜索会话成功", conversations);
     }
 }

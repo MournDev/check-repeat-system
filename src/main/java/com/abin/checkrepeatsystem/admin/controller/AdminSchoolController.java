@@ -4,7 +4,6 @@ import com.abin.checkrepeatsystem.admin.service.AdminSchoolService;
 import com.abin.checkrepeatsystem.admin.service.DataStatService;
 import com.abin.checkrepeatsystem.admin.vo.StatQueryReq;
 import com.abin.checkrepeatsystem.common.Result;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,19 +13,20 @@ import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+
 
 @RestController
-@RequestMapping("/api/admin/school")
+@RequestMapping("/api/v1/admin/school")
 @PreAuthorize("hasAuthority('ADMIN')")
+@RequiredArgsConstructor
 public class AdminSchoolController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSchoolController.class);
 
-    @Resource
-    private AdminSchoolService adminSchoolService;
+    private final AdminSchoolService adminSchoolService;
 
-    @Resource
-    private DataStatService dataStatService;
+    private final DataStatService dataStatService;
 
     @GetMapping("/overview")
     public Result<Map<String, Object>> getSchoolOverview() {
