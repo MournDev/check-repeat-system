@@ -25,6 +25,9 @@ import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 /**
  * 操作日志切面
  * 自动记录带有@OperationLog注解的方法执行情况
@@ -58,11 +61,19 @@ public class OperationLogAspect {
             final long finalStartTime = startTime;
             final Object finalResult = result;
             final String finalErrorMsg = errorMsg;
+            // 在主线程捕获 SecurityContext 和 RequestContext，传递给异步线程
+            final SecurityContext securityContext = SecurityContextHolder.getContext();
+            final ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             CompletableFuture.runAsync(() -> {
                 try {
+                    SecurityContextHolder.setContext(securityContext);
+                    RequestContextHolder.setRequestAttributes(requestAttributes, true);
                     recordLog(joinPoint, operationLog, finalResult, finalErrorMsg, System.currentTimeMillis() - finalStartTime);
                 } catch (Exception e) {
                     log.error("记录操作日志失败: {}", e.getMessage(), e);
+                } finally {
+                    SecurityContextHolder.clearContext();
+                    RequestContextHolder.resetRequestAttributes();
                 }
             }, asyncExecutor);
         }

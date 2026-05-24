@@ -44,7 +44,7 @@ public class UserBusinessInfoUtils {
                 return sysUser;
             }
         } catch (Exception e) {
-            log.error("获取用户信息失败", e);
+            log.warn("获取用户信息失败（异步线程或未登录场景属正常情况）: {}", e.getMessage());
         }
         
         // 前端操作都是登录后进行的，用户信息应该始终存在
