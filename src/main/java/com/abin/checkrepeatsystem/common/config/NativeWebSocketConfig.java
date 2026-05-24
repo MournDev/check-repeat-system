@@ -41,6 +41,9 @@ public class NativeWebSocketConfig implements WebSocketConfigurer {
     }
 
     private String[] getAllowedOrigins() {
+        if (allowedOriginsConfig == null || allowedOriginsConfig.isBlank()) {
+            return new String[]{"*"};
+        }
         return Arrays.stream(allowedOriginsConfig.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())

@@ -244,6 +244,10 @@ advisor-assign:
   max-task-count: 10
   retry-count: 3
 
+# WebSocket 允许的来源（开发环境）
+websocket:
+  allowed-origins: http://localhost:3000,http://localhost:5173
+
 # 兼容性配置（用于旧代码）
 upload:
   base-path: ${UPLOAD_BASE_PATH:./upload/}

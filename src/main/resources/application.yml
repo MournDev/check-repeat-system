@@ -281,6 +281,10 @@ advisor-assign:
   max-task-count: 10
   retry-count: 3
 
+# WebSocket 允许的来源（生产环境通过环境变量 WEBSOCKET_ALLOWED_ORIGINS 指定）
+websocket:
+  allowed-origins: ${WEBSOCKET_ALLOWED_ORIGINS:}
+
 # 兼容性配置
 upload:
   base-path: ${UPLOAD_BASE_PATH:/data/upload/}

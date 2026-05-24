@@ -31,11 +31,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        List<String> allowedOrigins = Arrays.stream(allowedOriginsConfig.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
-        // 生产环境通过环境变量 WEBSOCKET_ALLOWED_ORIGINS 指定允许的来源
+        List<String> allowedOrigins;
+        if (allowedOriginsConfig == null || allowedOriginsConfig.isBlank()) {
+            allowedOrigins = List.of("*");
+        } else {
+            allowedOrigins = Arrays.stream(allowedOriginsConfig.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+        }
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(allowedOrigins.toArray(new String[0]))
                 .withSockJS();
