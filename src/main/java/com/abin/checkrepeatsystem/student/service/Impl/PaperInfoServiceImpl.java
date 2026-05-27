@@ -334,12 +334,6 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         // 3. 创建提交记录
         createPaperSubmitRecord(paperInfo, fileId, fileMd5, studentId);
 
-//        // 4. 发送论文提交通知
-//        notificationFacadeService.sendPaperSubmittedNotice(
-//                paperInfo.getId(),
-//                paperInfo.getPaperTitle(),
-//                studentId
-//        );
         // 4. 发送论文提交成功通知
         sendPaperSubmitSuccessNotification(paperInfo, studentId, isNewPaper);
 

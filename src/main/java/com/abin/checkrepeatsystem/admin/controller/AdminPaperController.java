@@ -144,6 +144,16 @@ public class AdminPaperController {
     }
 
     /**
+     * 批量删除论文
+     */
+    @PostMapping("/batch-delete")
+    @OperationLog(type = "admin_paper_batch_delete", description = "管理员批量删除论文")
+    public Result<String> batchDeletePapers(@RequestBody List<Long> paperIds) {
+        log.info("接收批量删除论文请求: paperIds={}", paperIds);
+        return adminPaperService.batchDeletePapers(paperIds);
+    }
+
+    /**
      * 获取论文统计信息
      */
     @GetMapping({"/statistics", "/stats"})

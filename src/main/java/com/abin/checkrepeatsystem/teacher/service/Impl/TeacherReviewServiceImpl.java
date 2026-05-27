@@ -18,12 +18,16 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherReviewService;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.ReviewAttachUtils;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+
+import java.math.BigDecimal;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import io.micrometer.core.annotation.Timed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -74,6 +78,8 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
     private final PaperStatusLogMapper paperStatusLogMapper;
 
     private final StudentInfoService studentInfoService;
+
+    private final ApplicationMonitorService monitorService;
 
     @Value("${app.host:localhost}")
     private String serverHost;
@@ -147,6 +153,7 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @Timed(value = "review.do", description = "执行审核操作耗时")
     public Result<Map<String, Object>> doReview(ReviewOperateReq operateReq) {
         Long currentTeacherId = UserBusinessInfoUtils.getCurrentUserId();
         List<Long> paperIds = operateReq.getPaperIds();
@@ -261,6 +268,16 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         resultMap.put("failCount", paperIds.size() - successCount);
         resultMap.put("failReasons", failReasons);
 
+        // 记录审核业务指标
+        if (successCount > 0) {
+            String resultLabel = ReviewStatusEnum.PASS.getValue().equals(reviewStatus) ? "pass" : "reject";
+            monitorService.recordBusinessEvent("paper_review", resultLabel, successCount);
+        }
+        int failCount = paperIds.size() - successCount;
+        if (failCount > 0) {
+            monitorService.recordBusinessEvent("paper_review", "failure", failCount);
+        }
+
         return Result.success("审核操作完成", resultMap);
     }
 
@@ -296,10 +313,33 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
         paperWrapper.in(PaperInfo::getId, reviewedPaperIds)
                 .eq(PaperInfo::getTeacherId, currentTeacherId)
-                .in(PaperInfo::getPaperStatus,
-                        PaperStatusEnum.COMPLETED.getValue(), // 审核通过
-                        PaperStatusEnum.REJECTED.getValue()) // 审核不通过
                 .eq(PaperInfo::getIsDeleted, 0);
+
+        // 审核状态筛选
+        if (StringUtils.hasText(queryReq.getStatus())) {
+            paperWrapper.eq(PaperInfo::getPaperStatus, queryReq.getStatus());
+        } else {
+            paperWrapper.in(PaperInfo::getPaperStatus,
+                    PaperStatusEnum.COMPLETED.getValue(),
+                    PaperStatusEnum.REJECTED.getValue());
+        }
+
+        // 审核时间范围筛选
+        if (StringUtils.hasText(queryReq.getStartTime())) {
+            paperWrapper.ge(PaperInfo::getCheckTime, queryReq.getStartTime());
+        }
+        if (StringUtils.hasText(queryReq.getEndTime())) {
+            paperWrapper.le(PaperInfo::getCheckTime, queryReq.getEndTime());
+        }
+
+        // 相似度范围筛选
+        if (StringUtils.hasText(queryReq.getSimilarityRange())) {
+            String[] range = queryReq.getSimilarityRange().split("-");
+            if (range.length == 2) {
+                paperWrapper.ge(PaperInfo::getSimilarityRate, new BigDecimal(range[0]))
+                           .le(PaperInfo::getSimilarityRate, new BigDecimal(range[1]));
+            }
+        }
 
         // 2. 模糊查询条件（与待审核列表一致）
         if (StringUtils.hasText(queryReq.getStudentName())) {
@@ -350,9 +390,9 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
         if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
             return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或已删除");
         }
-//        if (!paperInfo.getTeacherId().equals(currentTeacherId) && !UserBusinessInfoUtils.isAdmin()) {
-//            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看他人指导论文的审核详情");
-//        }
+        if (!paperInfo.getTeacherId().equals(currentTeacherId) && !UserBusinessInfoUtils.isAdmin()) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看他人指导论文的审核详情");
+        }
 
         // 2. 转换为DTO
         List<ReviewResultDTO> dtoList = convertToReviewResultDTOList(Collections.singletonList(paperInfo));
@@ -422,16 +462,17 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
             return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或已删除");
         }
         // 仅审核不通过的论文可重新发起审核
-//        if (paperInfo.getPaperStatus() != 4) {
-//            return Result.error(ResultCode.PERMISSION_NOT_STATUS,
-//                    String.format("仅审核不通过（状态4）的论文可重新发起审核，当前状态：%s", getPaperStatusDesc(paperInfo.getPaperStatus())));
-//        }
-//        // 校验权限（仅指导教师或管理员可操作）
-//        if (!paperInfo.getTeacherId().equals(currentTeacherId) && !UserBusinessInfoUtils.isAdmin()) {
-//            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限重新发起他人指导论文的审核");
-//        }
+        if (!"rejected".equals(paperInfo.getPaperStatus())) {
+            String currentStatusDesc = getPaperStatusDesc(paperInfo.getPaperStatus());
+            return Result.error(ResultCode.PERMISSION_NOT_STATUS,
+                    String.format("仅审核不通过（状态）的论文可重新发起审核，当前状态：%s", currentStatusDesc));
+        }
+        // 校验权限（仅指导教师或管理员可操作）
+        if (!paperInfo.getTeacherId().equals(currentTeacherId) && !UserBusinessInfoUtils.isAdmin()) {
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限重新发起他人指导论文的审核");
+        }
 
-        // 2. 更新论文状态为“待审核”
+        // 2. 更新论文状态为"待审核"
         PaperInfo updatePaper = new PaperInfo();
         updatePaper.setId(paperId);
         updatePaper.setPaperStatus(PaperStatusEnum.AUDITING.getValue()); // 待审核状态，使用枚举值
@@ -545,6 +586,21 @@ public class TeacherReviewServiceImpl extends ServiceImpl<ReviewRecordMapper, Re
 
 
     // ------------------------------ 私有辅助方法 ------------------------------
+
+    /**
+     * 获取论文状态描述
+     */
+    private String getPaperStatusDesc(String paperStatus) {
+        if (paperStatus == null) {
+            return "未知状态";
+        }
+        try {
+            PaperStatusEnum statusEnum = PaperStatusEnum.fromCode(paperStatus);
+            return statusEnum != null ? statusEnum.getDescription() : paperStatus;
+        } catch (Exception e) {
+            return paperStatus;
+        }
+    }
 
     /**
      * 记录论文状态变更日志

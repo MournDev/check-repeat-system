@@ -130,10 +130,19 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                     .map(PaperInfo::getStudentId)
                     .distinct()
                     .collect(Collectors.toList());
-            Map<Long, SysUser> userMap = sysUserMapper.selectBatchIds(studentIds).stream()
-                    .collect(Collectors.toMap(SysUser::getId, u -> u, (a, b) -> a));
-            Map<Long, StudentInfo> studentInfoMap = studentInfoService.listByUserIds(studentIds).stream()
-                    .collect(Collectors.toMap(StudentInfo::getUserId, s -> s, (a, b) -> a));
+            
+            Map<Long, SysUser> userMap;
+            Map<Long, StudentInfo> studentInfoMap;
+            
+            if (!studentIds.isEmpty()) {
+                userMap = sysUserMapper.selectBatchIds(studentIds).stream()
+                        .collect(Collectors.toMap(SysUser::getId, u -> u, (a, b) -> a));
+                studentInfoMap = studentInfoService.listByUserIds(studentIds).stream()
+                        .collect(Collectors.toMap(StudentInfo::getUserId, s -> s, (a, b) -> a));
+            } else {
+                userMap = new HashMap<>();
+                studentInfoMap = new HashMap<>();
+            }
 
             // 转换为前端需要的格式
             Page<Map<String, Object>> resultMap = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());

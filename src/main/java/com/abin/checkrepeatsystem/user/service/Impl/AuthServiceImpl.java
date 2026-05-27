@@ -12,6 +12,7 @@ import com.abin.checkrepeatsystem.common.utils.JwtUtils;
 import com.abin.checkrepeatsystem.common.utils.UserAgentUtils;
 import com.abin.checkrepeatsystem.mapper.SysRoleMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
+import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.pojo.dto.ForgotPasswordReq;
 import com.abin.checkrepeatsystem.pojo.dto.LoginReq;
 import com.abin.checkrepeatsystem.pojo.dto.RefreshTokenReq;
@@ -28,6 +29,7 @@ import com.abin.checkrepeatsystem.user.service.AdminInfoService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.user.vo.RefreshTokenVO;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import io.micrometer.core.annotation.Timed;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +80,7 @@ public class AuthServiceImpl implements AuthService {
     private final SysOperationLogMapper sysOperationLogMapper;
     private final RedisTemplate<String, String> redisTemplate;
     private final JavaMailSender mailSender;
+    private final ApplicationMonitorService monitorService;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -87,6 +90,7 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @Timed(value = "auth.register", description = "用户注册耗时")
     public Result<String> register(RegisterReq registerReq) {
         // 1. 校验用户名唯一性（避免重复注册）
         try {
@@ -122,6 +126,7 @@ public class AuthServiceImpl implements AuthService {
 
         // 4. 插入数据库（审计字段由MyBatis-Plus自动填充：createTime、createUserId等）
         sysUserMapper.insert(newUser);
+        monitorService.recordBusinessEvent("user_register", "success", 1);
         log.info("用户注册成功：用户名={}，角色={}", registerReq.getUsername(), sysRole.getRoleCode());
         return Result.success("注册成功");
     }
@@ -130,6 +135,7 @@ public class AuthServiceImpl implements AuthService {
      * 用户登录（Spring Security认证 + JWT生成）
      */
     @Override
+    @Timed(value = "auth.login", description = "用户登录耗时")
     public Result<LoginVO> login(LoginReq loginReq) {
         String loginIp = HttpIpUtils.getRealIp(request);           // IP地址
         String loginDevice = UserAgentUtils.parseDevice(request);   // 设备信息
@@ -168,6 +174,7 @@ public class AuthServiceImpl implements AuthService {
             } catch (Exception ex) {
                 log.warn("记录登录失败操作日志失败", ex);
             }
+            monitorService.recordBusinessEvent("user_login", "failure", 1);
             return Result.error(ResultCode.PARAM_ERROR, "用户名或密码错误");
         }
 
@@ -254,6 +261,7 @@ public class AuthServiceImpl implements AuthService {
             }
         }
 
+        monitorService.recordBusinessEvent("user_login", "success", 1);
         log.info("用户登录成功：用户名={}，角色={}，令牌过期时间={}",
                 loginReq.getUsername(), sysRole.getRoleCode(), loginVO.getExpireTime());
         return Result.success("登录成功", loginVO);
@@ -456,59 +464,4 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-
-    // UserService.java
-//    public Map<String, Object> getUserInfoByRole(Long userId, String userType) {
-//        SysUser sysUser = sysUserMapper.selectById(userId);
-//
-//        // 根据用户类型返回不同的字段集合
-//        return switch (userType) {
-//            case "STUDENT" -> buildStudentResponse(sysUser);
-//            case "TEACHER" -> buildTeacherResponse(sysUser);
-//            case "ADMIN" -> buildAdminResponse(sysUser);
-//            default -> Map.of();
-//        };
-//    }
-
-//    private Map<String, Object> buildStudentResponse(SysUser sysUser) {
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("userId", sysUser.getId());
-//        response.put("roleCode", sysUser.getRoleId());
-//        response.put("username", sysUser.getUsername());
-//        response.put("realName", sysUser.getRealName());
-//        response.put("major", sysUser.getMajor());
-//        response.put("userType", sysUser.getUserType());
-//        response.put("email", sysUser.getEmail());
-//        response.put("phone", sysUser.getPhone());
-//        return response;
-//    }
-//
-//    private Map<String, Object> buildTeacherResponse(SysUser sysUser) {
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("id", sysUser.getId());
-//        response.put("username", sysUser.getUsername());
-//        response.put("realName", sysUser.getRealName());
-//        response.put("collegeId", sysUser.getCollegeId());
-//        response.put("userType", sysUser.getUserType());
-//        response.put("email", sysUser.getEmail());
-//        response.put("phone", sysUser.getPhone());
-//        // 教师不需要的字段：studentId, grade, classInfo 等
-//        return response;
-//    }
-//
-//    private Map<String, Object> buildAdminResponse(SysUser sysUser) {
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("id", sysUser.getId());
-//        response.put("username", sysUser.getUsername());
-//        response.put("realName", sysUser.getRealName());
-//        response.put("userType", sysUser.getUserType());
-//        response.put("email", sysUser.getEmail());
-//        response.put("phone", sysUser.getPhone());
-//        response.put("roleId", sysUser.getRoleId());
-//        // 管理员可以看到所有字段
-//        response.put("department", sysUser.getDepartment());
-//        response.put("collegeId", sysUser.getCollegeId());
-//        // 但不需要学生和教师的特定字段
-//        return response;
-//    }
 }

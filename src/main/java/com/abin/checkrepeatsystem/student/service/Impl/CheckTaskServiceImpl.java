@@ -4,7 +4,6 @@ package com.abin.checkrepeatsystem.student.service.Impl;
 import com.abin.checkrepeatsystem.admin.mapper.CheckResultMapper;
 import com.abin.checkrepeatsystem.admin.mapper.CompareLibMapper;
 import com.abin.checkrepeatsystem.user.mapper.PaperStatusLogMapper;
-import cn.hutool.core.date.DateTime;
 import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
@@ -33,16 +32,15 @@ import com.alibaba.fastjson2.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import io.micrometer.core.annotation.Timed;
 import jakarta.annotation.PostConstruct;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,15 +118,20 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
 
     private final CheckTaskMapper checkTaskMapper;
 
-    @Autowired
-    @Lazy
-    private com.abin.checkrepeatsystem.student.controller.CheckStatusWebSocketController checkStatusWebSocketController;
+    private final ObjectProvider<com.abin.checkrepeatsystem.student.controller.CheckStatusWebSocketController> checkStatusWebSocketControllerProvider;
 
     /**
      * 初始化上传路径，确保在Windows环境下使用正确的路径
      */
     @PostConstruct
     private void init() {
+        // 注册查重任务队列深度Gauge
+        monitorService.registerGauge("check.task.queue.depth",
+                "待处理查重任务数（PENDING状态）",
+                () -> baseMapper.selectCount(
+                        new LambdaQueryWrapper<CheckTask>()
+                                .eq(CheckTask::getCheckStatus, DictConstants.CheckStatus.PENDING)
+                                .eq(CheckTask::getIsDeleted, 0)));
         try {
             // 如果是 Windows 环境且路径为 Unix 风格，转换为 Windows 路径
             if (System.getProperty("os.name").toLowerCase().contains("win") && 
@@ -148,6 +151,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
     private final Tika tika = new Tika();
 
     @Override
+    @Timed(value = "check.task.create", description = "创建查重任务耗时")
     public Result<CheckResultVO> createCheckTask(Long paperId) {
         Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
         
@@ -515,6 +519,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
      * 3. 失败时回滚论文状态
      */
     @Async
+    @Timed(value = "check.task.execute", description = "执行查重任务耗时")
     public void executeCheckTaskAsync(Long taskId, Long paperId) {
         LocalDateTime startTime = LocalDateTime.now();
         log.info("开始异步执行查重任务 - 任务 ID: {}, 论文 ID: {}", taskId, paperId);
@@ -551,7 +556,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                 }
                 
                 // 推送状态更新
-                checkStatusWebSocketController.onTaskStatusChange(paperId);
+                checkStatusWebSocketControllerProvider.getObject().onTaskStatusChange(paperId);
             
                 // 【关键改进 2】校验任务超时（防止任务无限执行）
                 if (Duration.between(startTime, LocalDateTime.now()).toMillis() > taskTimeout) {
@@ -606,7 +611,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                 updateById(checkTask);
 
                 // 推送状态更新
-                checkStatusWebSocketController.onTaskStatusChange(paperId);
+                checkStatusWebSocketControllerProvider.getObject().onTaskStatusChange(paperId);
 
                 // 【关键改进 3】成功后再更新论文状态
                 updatePaperSuccess(paperInfo, maxSimilarity);
@@ -653,7 +658,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                     );
                 
                     // 推送状态更新
-                    checkStatusWebSocketController.onTaskStatusChange(paperId);
+                    checkStatusWebSocketControllerProvider.getObject().onTaskStatusChange(paperId);
                 
                     // 【关键改进 4】失败时回滚论文状态
                     PaperInfo updatePaper = new PaperInfo();

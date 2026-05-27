@@ -223,6 +223,29 @@ public class MonitoringController {
         return applicationMonitorService.getCacheMetrics();
     }
 
+    /**
+     * 获取自定义业务指标（Prometheus counters/gauges/timers）
+     * GET /api/v1/admin/monitoring/metrics
+     */
+    @GetMapping("/metrics")
+    @Operation(summary = "业务指标监控", description = "获取自定义业务指标，包括事件计数、队列深度、方法耗时等")
+    public Result<Map<String, Object>> getMetrics() {
+        log.info("管理员请求获取业务指标");
+        return applicationMonitorService.getBusinessMetrics();
+    }
+
+    /**
+     * 获取响应时间趋势（按分钟聚合，支持最近1-30分钟）
+     * GET /api/v1/admin/monitoring/response-time-trend?minutes=15
+     */
+    @GetMapping("/response-time-trend")
+    @Operation(summary = "响应时间趋势", description = "获取最近N分钟的响应时间趋势（平均值、P95、请求量），用于前端图表展示")
+    public Result<Map<String, Object>> getResponseTimeTrend(
+            @RequestParam(defaultValue = "15") int minutes) {
+        log.info("管理员请求获取响应时间趋势: minutes={}", minutes);
+        return applicationMonitorService.getResponseTimeTrend(Math.min(minutes, 30));
+    }
+
     // ===== 私有辅助方法 =====
 
     /**

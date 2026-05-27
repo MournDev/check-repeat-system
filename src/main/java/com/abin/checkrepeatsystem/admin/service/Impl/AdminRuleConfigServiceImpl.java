@@ -214,12 +214,12 @@ public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, Che
         }
 
         // 2. 校验规则是否已关联查重任务（已关联则不允许删除）
-//        LambdaQueryWrapper<CheckTask> taskWrapper = new LambdaQueryWrapper<>();
-//        taskWrapper.eq(CheckTask::getCheckRuleId, ruleId)
-//                .eq(CheckTask::getIsDeleted, 0);
-//        if (checkTaskMapper.selectCount(taskWrapper) > 0) {
-//            return Result.error(ResultCode.PERMISSION_NOT_STATUS, "该规则已关联查重任务，无法删除");
-//        }
+        LambdaQueryWrapper<CheckTask> taskWrapper = new LambdaQueryWrapper<>();
+        taskWrapper.eq(CheckTask::getCheckRuleId, ruleId)
+                .eq(CheckTask::getIsDeleted, 0);
+        if (checkTaskMapper.selectCount(taskWrapper) > 0) {
+            return Result.error(ResultCode.PERMISSION_NOT_STATUS, "该规则已关联查重任务，无法删除");
+        }
 
         // 3. 软删除规则
         checkRule.setIsDeleted(1);

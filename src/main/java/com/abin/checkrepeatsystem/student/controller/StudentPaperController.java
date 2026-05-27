@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.service.FileService;
+import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperAttachment;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
@@ -55,6 +56,8 @@ public class StudentPaperController {
 
     private final FileService fileService;
 
+    private final ApplicationMonitorService monitorService;
+
     /**
      * 1. 论文提交接口（推荐方式）- 只接收文件ID，不处理文件上传
      *
@@ -97,6 +100,7 @@ public class StudentPaperController {
                 request.getFileMd5(),
                 studentId
         );
+        monitorService.recordBusinessEvent("paper_submit", "success", 1);
         return Result.success("论文提交成功", paperInfo);
 
     }

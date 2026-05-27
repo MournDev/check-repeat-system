@@ -145,4 +145,11 @@ public class CheckTask extends BaseEntity {
      */
     @TableField("retry_count")
     private Integer retryCount;
+
+    /**
+     * 查重规则ID（关联check_rule.id）
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    @TableField("check_rule_id")
+    private Long checkRuleId;
 } 

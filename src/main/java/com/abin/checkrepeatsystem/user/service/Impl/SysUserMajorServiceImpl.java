@@ -76,17 +76,17 @@ public class SysUserMajorServiceImpl extends ServiceImpl<SysUserMajorMapper, Maj
             throw new IllegalArgumentException("指导任务上限需在1-50之间，请重新输入");
         }
 
-//        // 5. 校验新上限是否小于当前指导数（避免设置的上限低于已分配任务数）
-//        Integer currentCount = userMajor.getCurrentAdvisorCount();
-//        if (newMaxCount < currentCount) {
-//            throw new RuntimeException(
-//                    String.format("新上限（%d）不能小于当前指导数（%d），请先减少已分配任务或提高上限",
-//                            newMaxCount, currentCount)
-//            );
-//        }
-//
-//        // 6. 执行修改
-//        userMajor.setMaxAdvisorCount(newMaxCount);
+        // 5. 校验新上限是否小于当前指导数（避免设置的上限低于已分配任务数）
+        Integer currentCount = userMajor.getCurrentAdvisorCount();
+        if (newMaxCount < currentCount) {
+            throw new RuntimeException(
+                    String.format("新上限（%d）不能小于当前指导数（%d），请先减少已分配任务或提高上限",
+                            newMaxCount, currentCount)
+            );
+        }
+
+        // 6. 执行修改
+        userMajor.setMaxAdvisorCount(newMaxCount);
         this.updateById(userMajor);
 
         return userMajor;

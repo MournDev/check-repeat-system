@@ -62,7 +62,7 @@ public class CommonDictServiceImpl implements CommonDictService {
             List<Map<String, Object>> result = colleges.stream()
                     .map(college -> {
                         Map<String, Object> map = new HashMap<>();
-                        map.put("value", college.getId());
+                        map.put("value", String.valueOf(college.getId()));
                         map.put("label", college.getCollegeName());
                         map.put("code", college.getCollegeCode());
                         return map;
@@ -119,10 +119,10 @@ public class CommonDictServiceImpl implements CommonDictService {
             List<Map<String, Object>> result = majors.stream()
                     .map(major -> {
                         Map<String, Object> map = new HashMap<>();
-                        map.put("value", major.getId());
+                        map.put("value", String.valueOf(major.getId()));
                         map.put("label", major.getMajorName());
                         map.put("code", major.getMajorCode());
-                        map.put("collegeId", major.getCollegeId());
+                        map.put("collegeId", String.valueOf(major.getCollegeId()));
                         return map;
                     })
                     .collect(Collectors.toList());

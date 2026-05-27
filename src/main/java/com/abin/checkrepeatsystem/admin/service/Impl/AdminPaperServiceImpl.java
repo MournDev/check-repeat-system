@@ -294,6 +294,31 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     }
 
     @Override
+    public Result<String> batchDeletePapers(List<Long> paperIds) {
+        try {
+            if (paperIds == null || paperIds.isEmpty()) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
+            }
+            int successCount = 0;
+            for (Long paperId : paperIds) {
+                PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+                if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+                    continue;
+                }
+                paperInfo.setIsDeleted(1);
+                paperInfo.setUpdateTime(LocalDateTime.now());
+                paperInfoMapper.updateById(paperInfo);
+                successCount++;
+            }
+            log.info("批量论文删除成功: 请求{}篇, 成功{}篇", paperIds.size(), successCount);
+            return Result.success(String.format("批量删除成功，共处理%d篇论文", successCount));
+        } catch (Exception e) {
+            log.error("批量论文删除失败: paperIds={}", paperIds, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "批量论文删除失败: " + e.getMessage());
+        }
+    }
+
+    @Override
     public Result<Map<String, Object>> getPaperStatistics() {
         try {
             Map<String, Object> stats = new HashMap<>();

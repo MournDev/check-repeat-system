@@ -3,6 +3,8 @@ package com.abin.checkrepeatsystem.common.jwt;
 import com.alibaba.fastjson2.JSON;
 import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
+import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,6 +49,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        boolean shouldContinueChain = true;
+
         try {
             // 1. 获取请求URI（包含上下文路径）
             String requestUri = request.getRequestURI();
@@ -57,63 +61,65 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     ? requestUri.substring(contextPath.length())
                     : requestUri;
 
-
-
-            // 2. 放行登录、注册、忘记密码接口、Actuator监控接口和预览文件接口
+            // 2. 判断路径类型
             boolean isPreviewFile = pathWithoutContext.startsWith("/api/v1/file/preview/");
             boolean isPreviewApi = pathWithoutContext.startsWith("/api/v1/preview/");
             boolean isRefreshToken = pathWithoutContext.startsWith("/api/v1/auth/refresh-token");
-
-            if (pathWithoutContext.startsWith("/api/v1/auth/login")
+            boolean isPublicPath = pathWithoutContext.startsWith("/api/v1/auth/login")
                     || pathWithoutContext.startsWith("/api/v1/auth/register")
                     || pathWithoutContext.startsWith("/api/v1/auth/forgot-password")
                     || pathWithoutContext.startsWith("/actuator")
                     || isPreviewFile
-                    || isPreviewApi
-            ) {
-                log.debug("放行路径: {}", requestUri);
-                filterChain.doFilter(request, response);
-                return;
-            }
+                    || isPreviewApi;
 
-            // 对refresh-token端点：解析header中的JWT并检查黑名单，但不强制要求认证
-            if (isRefreshToken) {
+            if (isPublicPath) {
+                log.debug("放行路径: {}", requestUri);
+            } else if (isRefreshToken) {
+                // 对refresh-token端点：解析header中的JWT并检查黑名单
                 String jwt = parseJwt(request);
                 if (jwt != null && Boolean.TRUE.equals(redisTemplate.hasKey("token_blacklist:" + jwt))) {
                     log.warn("refresh-token请求使用的令牌已在黑名单中，拒绝访问");
                     writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, 401, "令牌已失效，请重新登录");
-                    return;
+                    shouldContinueChain = false;
                 }
-                filterChain.doFilter(request, response);
-                return;
-            }
+            } else {
+                // 3. 从请求头获取JWT令牌
+                String jwt = parseJwt(request);
+                // 4. 检查令牌是否在黑名单中（已注销）
+                if (jwt != null && Boolean.TRUE.equals(redisTemplate.hasKey("token_blacklist:" + jwt))) {
+                    log.debug("令牌已被注销，拒绝访问");
+                } else if (jwt != null && !jwtUtils.isTokenExpired(jwt)) {
+                    // 5. 验证令牌有效性
+                    String username = jwtUtils.extractUsername(jwt);
+                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            // 3. 从请求头获取JWT令牌
-            String jwt = parseJwt(request);
-            // 4. 检查令牌是否在黑名单中（已注销）
-            if (jwt != null && Boolean.TRUE.equals(redisTemplate.hasKey("token_blacklist:" + jwt))) {
-                log.debug("令牌已被注销，拒绝访问");
-                filterChain.doFilter(request, response);
-                return;
-            }
-            // 5. 验证令牌有效性
-            if (jwt != null && !jwtUtils.isTokenExpired(jwt)) {
-                // 从令牌中提取用户名
-                String username = jwtUtils.extractUsername(jwt);
-                // 从用户详情服务获取用户信息
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                // 构建认证令牌并设置到Security上下文
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                    // 设置UserContextHolder，供业务层直接获取用户信息
+                    try {
+                        SysUser sysUser = userDetailsService.findSysUserByUsername(username);
+                        UserContextHolder.setUser(sysUser);
+                    } catch (Exception e) {
+                        log.debug("设置UserContextHolder失败: {}", e.getMessage());
+                    }
+                }
             }
         } catch (Exception e) {
             logger.error("无法设置用户认证信息: {}", e);
         }
 
-        // 继续执行过滤链
-        filterChain.doFilter(request, response);
+        // 继续执行过滤链（所有路径统一出口，确保ThreadLocal清理）
+        if (shouldContinueChain) {
+            try {
+                filterChain.doFilter(request, response);
+            } finally {
+                UserContextHolder.removeUser();
+            }
+        } else {
+            UserContextHolder.removeUser();
+        }
     }
 
     private void writeJsonError(HttpServletResponse response, int httpStatus, int errorCode, String message) throws IOException {

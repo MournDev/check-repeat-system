@@ -41,6 +41,11 @@ public interface AdminPaperService {
     Result<String> deletePaper(Long paperId);
 
     /**
+     * 批量删除论文
+     */
+    Result<String> batchDeletePapers(List<Long> paperIds);
+
+    /**
      * 获取论文统计信息
      */
     Result<Map<String, Object>> getPaperStatistics();

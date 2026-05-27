@@ -207,9 +207,8 @@ management:
       system: true
       process: true
       logback: true
-  prometheus:
-    metrics:
-      export:
+    export:
+      prometheus:
         enabled: true
 
 # 报告模块配置
@@ -267,6 +266,14 @@ paper-check:
   compare-library:
     #校内论文库：true
     network-resource: false
+
+# 数据库备份配置
+backup:
+  db:
+    enabled: ${BACKUP_ENABLED:true}
+    dir: ${BACKUP_DIR:/data/backups/database}
+    retention-days: ${BACKUP_RETENTION_DAYS:30}
+    cron: ${BACKUP_CRON:0 0 2 * * ?}
 
 # 系统告警配置
 monitor:

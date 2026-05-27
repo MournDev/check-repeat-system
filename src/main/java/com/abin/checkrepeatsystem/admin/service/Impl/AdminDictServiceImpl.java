@@ -42,10 +42,10 @@ public class AdminDictServiceImpl implements AdminDictService {
         List<Map<String, Object>> majors = majorList.stream()
                 .map(major -> {
                     Map<String, Object> map = new HashMap<>();
-                    map.put("value", major.getId());
+                    map.put("value", String.valueOf(major.getId()));
                     map.put("label", major.getMajorName());
                     map.put("code", major.getMajorCode());
-                    map.put("collegeId", major.getCollegeId());
+                    map.put("collegeId", String.valueOf(major.getCollegeId()));
                     return map;
                 })
                 .collect(Collectors.toList());
@@ -97,7 +97,7 @@ public class AdminDictServiceImpl implements AdminDictService {
         List<Map<String, Object>> colleges = collegeList.stream()
                 .map(college -> {
                     Map<String, Object> map = new HashMap<>();
-                    map.put("value", college.getId());
+                    map.put("value", String.valueOf(college.getId()));
                     map.put("label", college.getCollegeName());
                     map.put("code", college.getCollegeCode());
                     return map;

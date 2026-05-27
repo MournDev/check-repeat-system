@@ -3,6 +3,8 @@ package com.abin.checkrepeatsystem.admin.service.Impl;
 import com.abin.checkrepeatsystem.admin.mapper.CheckResultMapper;
 import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
 import com.abin.checkrepeatsystem.admin.service.AdminDashboardService;
+import com.abin.checkrepeatsystem.mapper.SysBackupLogMapper;
+import com.abin.checkrepeatsystem.pojo.entity.SysBackupLog;
 import com.abin.checkrepeatsystem.admin.vo.CollegePaperStatsVO;
 import com.abin.checkrepeatsystem.admin.vo.MajorPaperStatsVO;
 import com.abin.checkrepeatsystem.common.Result;
@@ -59,6 +61,8 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     private final DatabaseMonitorService databaseMonitorService;
 
     private final MeterRegistry meterRegistry;
+
+    private final SysBackupLogMapper sysBackupLogMapper;
 
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -141,17 +145,22 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             LocalDateTime todayStart = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
             LocalDateTime weekStart = LocalDateTime.now().minusDays(7);
             LocalDateTime monthStart = LocalDateTime.now().minusDays(30);
-            
+
             Long todaySubmissions = paperInfoMapper.selectCount(new LambdaQueryWrapper<PaperInfo>()
                     .ge(PaperInfo::getCreateTime, todayStart));
             Long weekSubmissions = paperInfoMapper.selectCount(new LambdaQueryWrapper<PaperInfo>()
                     .ge(PaperInfo::getCreateTime, weekStart));
             Long monthSubmissions = paperInfoMapper.selectCount(new LambdaQueryWrapper<PaperInfo>()
                     .ge(PaperInfo::getCreateTime, monthStart));
-            
+
             stats.put("todaySubmissions", todaySubmissions);
             stats.put("weekSubmissions", weekSubmissions);
             stats.put("monthSubmissions", monthSubmissions);
+
+            // 今日访问量（今日登录次数）
+            Long todayVisits = sysLoginLogMapper.selectCount(new LambdaQueryWrapper<SysLoginLog>()
+                    .ge(SysLoginLog::getLoginTime, todayStart));
+            stats.put("todayVisits", todayVisits);
             
             // 本周审核统计
             Long weekReviews = checkResultMapper.selectCount(new LambdaQueryWrapper<CheckResult>()
@@ -193,7 +202,16 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             // 9. 性能指标
             Map<String, Object> performanceMetrics = getPerformanceMetrics();
             stats.put("performanceMetrics", performanceMetrics);
-            
+
+            // 10. 最近备份时间
+            SysBackupLog lastBackup = sysBackupLogMapper.selectOne(
+                new LambdaQueryWrapper<SysBackupLog>()
+                    .eq(SysBackupLog::getStatus, "SUCCESS")
+                    .orderByDesc(SysBackupLog::getCreateTime)
+                    .last("LIMIT 1")
+            );
+            stats.put("lastBackup", lastBackup != null ? lastBackup.getEndTime() : null);
+
             log.info("获取系统统计数据成功: totalUsers={}, totalPapers={}", totalUsers, totalPapers);
             return Result.success("系统统计数据获取成功", stats);
         } catch (Exception e) {
@@ -433,6 +451,23 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                     String uptime = (String) runtimeInfo.get("uptime");
                     if (uptime != null) {
                         monitorInfo.put("uptime", uptime);
+                    }
+                    String javaVersion = (String) runtimeInfo.get("javaVersion");
+                    if (javaVersion != null) {
+                        monitorInfo.put("javaVersion", javaVersion);
+                    }
+                }
+
+                // 数据库类型
+                Map<String, Object> dbMonitorData = databaseMonitorService.getDatabaseStatus().getData();
+                if (dbMonitorData != null) {
+                    Map<String, Object> dbInfo = (Map<String, Object>) dbMonitorData.get("databaseInfo");
+                    if (dbInfo != null) {
+                        String productName = (String) dbInfo.get("productName");
+                        String productVersion = (String) dbInfo.get("productVersion");
+                        if (productName != null) {
+                            monitorInfo.put("databaseType", productName + " " + (productVersion != null ? productVersion : ""));
+                        }
                     }
                 }
                 

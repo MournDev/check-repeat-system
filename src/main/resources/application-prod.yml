@@ -167,9 +167,8 @@ management:
       system: true
       process: true
       logback: true
-  prometheus:
-    metrics:
-      export:
+    export:
+      prometheus:
         enabled: true
 
 # 报告模块配置

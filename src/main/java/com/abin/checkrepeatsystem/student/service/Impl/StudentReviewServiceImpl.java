@@ -266,11 +266,11 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
             return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权限查看他人论文的重新提交记录");
         }
 
-        // 2. 查询重新提交记录（通过标题中的“修改版”标识，或通过关联表，此处简化）
+        // 2. 查询重新提交记录（通过parent_paper_id关联原论文）
         Page<PaperInfo> paperPage = new Page<>(currentPage, pageSize);
         LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PaperInfo::getStudentId, currentStudentId)
-                .like(PaperInfo::getPaperTitle, "修改版")
+                .eq(PaperInfo::getParentPaperId, originalPaperId)
                 .eq(PaperInfo::getIsDeleted, 0)
                 .orderByDesc(PaperInfo::getSubmitTime);
 
@@ -329,13 +329,14 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
             reviewMap.put(entry.getKey(), latestReview);
         }
 
-//        // 1.4 批量查询教师信息（Map<教师ID, 教师实体>）
-//        Set<Long> teacherIds = paperList.stream()
-//                .map(PaperInfo::getTeacherId)
-//                .distinct()
-//                .collect(Collectors.toSet());
-//        Map<Long, SysUser> teacherMap = sysUserMapper.selectBatchIds(teacherIds).stream()
-//                .collect(Collectors.toMap(SysUser::getId, teacher -> teacher));
+        // 1.4 批量查询教师信息（Map<教师ID, 教师实体>）
+        Set<Long> teacherIds = paperList.stream()
+                .map(PaperInfo::getTeacherId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Map<Long, SysUser> teacherMap = teacherIds.isEmpty() ? Map.of() :
+                sysUserMapper.selectBatchIds(teacherIds).stream()
+                        .collect(Collectors.toMap(SysUser::getId, teacher -> teacher));
 
         // 2. 转换为DTO
         return paperList.stream().map(paper -> {
@@ -345,11 +346,13 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
             StudentReviewDetailDTO.PaperBasicDTO paperBasic = new StudentReviewDetailDTO.PaperBasicDTO();
             paperBasic.setPaperId(paper.getId());
             paperBasic.setPaperTitle(paper.getPaperTitle());
-            paperBasic.setSubmitTime(paper.getSubmitTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            paperBasic.setSubmitTime(paper.getSubmitTime() != null ?
+                    paper.getSubmitTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
             // 填充教师姓名
-//            if (teacher != null) {
-//                paperBasic.setTeacherName(teacher.getRealName());
-//            }
+            SysUser teacher = teacherMap.get(paper.getTeacherId());
+            if (teacher != null) {
+                paperBasic.setTeacherName(teacher.getRealName());
+            }
             dto.setPaperBasic(paperBasic);
 
             // 2.2 填充查重核心结果
@@ -357,7 +360,9 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
             if (task != null) {
                 StudentReviewDetailDTO.CheckCoreDTO checkCore = new StudentReviewDetailDTO.CheckCoreDTO();
                 checkCore.setCheckRate(task.getCheckRate() != null ? task.getCheckRate().doubleValue() : 0.0);
-//                checkCore.setCheckTime(task.getEndTime().format("yyyy-MM-dd HH:mm:ss"));
+                if (task.getEndTime() != null) {
+                    checkCore.setCheckTime(task.getEndTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                }
                 // 构建查重报告下载URL
                 CheckReport report = checkReportMapper.selectById(task.getReportId());
                 if (report != null) {
@@ -457,10 +462,8 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
      * 获取原论文的最新重新提交记录
      */
     private StudentReviewDetailDTO.LatestResubmitDTO getLatestResubmitRecord(Long originalPaperId) {
-        // 查询标题含“修改版”且备注含原论文ID的最新论文
         LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
-        wrapper.like(PaperInfo::getPaperTitle, "修改版")
-//                .like(PaperInfo::getRemark, "原论文ID：" + originalPaperId)
+        wrapper.eq(PaperInfo::getParentPaperId, originalPaperId)
                 .eq(PaperInfo::getIsDeleted, 0)
                 .orderByDesc(PaperInfo::getSubmitTime)
                 .last("LIMIT 1");

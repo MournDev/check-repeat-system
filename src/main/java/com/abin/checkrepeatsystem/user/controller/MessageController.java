@@ -115,6 +115,16 @@ public class MessageController {
     }
 
     /**
+     * 批量标记消息已读
+     */
+    @PostMapping("/batch-read")
+    public Result<Boolean> batchMarkAsRead(@RequestBody List<Long> messageIds) {
+        Long userId = UserBusinessInfoUtils.getCurrentUserId();
+        Result<Boolean> result = messageService.batchMarkAsRead(messageIds, userId);
+        return result;
+    }
+
+    /**
      * 删除消息
      */
     @DeleteMapping("/delete/{messageId}")

@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.common.config;
 
+import com.abin.checkrepeatsystem.common.filter.MaintenanceFilter;
 import com.abin.checkrepeatsystem.common.jwt.JwtAuthenticationEntryPoint;
 import com.abin.checkrepeatsystem.common.jwt.JwtAuthenticationFilter;
 import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
@@ -42,6 +43,8 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint unauthorizedHandler;
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    private final MaintenanceFilter maintenanceFilter;
 
     /**
      * 密码编码器（BCrypt加密）
@@ -166,6 +169,8 @@ public class SecurityConfig {
                 )
                 // 注册认证提供者
                 .authenticationProvider(authenticationProvider())
+                // 维护模式过滤器（在JWT认证之前，解析JWT判断管理员身份）
+                .addFilterBefore(maintenanceFilter, UsernamePasswordAuthenticationFilter.class)
                 // 在UsernamePasswordAuthenticationFilter之前添加JWT认证过滤器
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

@@ -4,6 +4,7 @@ import com.abin.checkrepeatsystem.admin.dto.PerformanceConfigDTO;
 import com.abin.checkrepeatsystem.admin.vo.CheckRuleOperateReq;
 import com.abin.checkrepeatsystem.admin.vo.CompareLibOperateReq;
 import com.abin.checkrepeatsystem.admin.dto.RuleLibRelationDTO;
+import com.abin.checkrepeatsystem.admin.mapper.SystemParamMapper;
 import com.abin.checkrepeatsystem.admin.vo.SystemParamReq;
 import com.abin.checkrepeatsystem.admin.service.AdminRuleConfigService;
 import com.abin.checkrepeatsystem.admin.service.SystemConfigService;
@@ -42,7 +43,9 @@ public class AdminRuleConfigController {
     private final AdminRuleConfigService adminRuleConfigService;
     
     private final SystemConfigService systemConfigService;
-    
+
+    private final SystemParamMapper systemParamMapper;
+
     @Value("${spring.mail.host:localhost}")
     private String mailHost;
     
@@ -303,6 +306,7 @@ public class AdminRuleConfigController {
     public Result<String> updateBasicConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新基础配置请求: {}", config);
         saveConfig("system_basic", config, "系统基础配置");
+        syncMaintenanceToSystemParam(config);
         log.info("基础配置更新成功");
         return Result.success("基础配置更新成功");
     }
@@ -434,6 +438,39 @@ public class AdminRuleConfigController {
         return Result.success("默认配置恢复成功");
     }
     
+    private void syncMaintenanceToSystemParam(Map<String, Object> config) {
+        if (!config.containsKey("maintenanceMode") && !config.containsKey("maintenanceNotice")) {
+            return;
+        }
+        try {
+            SystemParam sp = systemParamMapper.selectOne(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<SystemParam>()
+                            .eq(SystemParam::getIsDeleted, 0)
+                            .last("LIMIT 1"));
+            if (sp == null) {
+                sp = new SystemParam();
+                if (config.containsKey("maintenanceMode")) {
+                    sp.setMaintenanceStatus(Boolean.TRUE.equals(config.get("maintenanceMode")) ? 1 : 0);
+                }
+                if (config.containsKey("maintenanceNotice")) {
+                    sp.setMaintenanceNotice((String) config.get("maintenanceNotice"));
+                }
+                systemParamMapper.insert(sp);
+            } else {
+                if (config.containsKey("maintenanceMode")) {
+                    sp.setMaintenanceStatus(Boolean.TRUE.equals(config.get("maintenanceMode")) ? 1 : 0);
+                }
+                if (config.containsKey("maintenanceNotice")) {
+                    sp.setMaintenanceNotice((String) config.get("maintenanceNotice"));
+                }
+                systemParamMapper.updateById(sp);
+            }
+            log.info("维护状态已同步到system_param: maintenanceMode={}", config.get("maintenanceMode"));
+        } catch (Exception e) {
+            log.error("同步维护状态到system_param失败: {}", e.getMessage());
+        }
+    }
+
     /**
      * 保存配置的辅助方法
      */

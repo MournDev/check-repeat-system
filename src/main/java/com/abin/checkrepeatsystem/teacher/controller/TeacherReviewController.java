@@ -85,11 +85,19 @@ public class TeacherReviewController {
     public Result<Page<ReviewResultDTO>> getReviewedList(
             @RequestParam(value = "studentName", required = false) String studentName,
             @RequestParam(value = "paperTitle", required = false) String paperTitle,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "startTime", required = false) String startTime,
+            @RequestParam(value = "endTime", required = false) String endTime,
+            @RequestParam(value = "similarityRange", required = false) String similarityRange,
             @RequestParam(value = "currentPage", required = false, defaultValue = "1") Integer currentPage,
             @RequestParam(value = "pageSize", required = false, defaultValue = "10") Integer pageSize) {
         ReviewQueryReq queryReq = new ReviewQueryReq();
         queryReq.setStudentName(studentName);
         queryReq.setPaperTitle(paperTitle);
+        queryReq.setStatus(status);
+        queryReq.setStartTime(startTime);
+        queryReq.setEndTime(endTime);
+        queryReq.setSimilarityRange(similarityRange);
         queryReq.setCurrentPage(currentPage);
         queryReq.setPageSize(pageSize);
         return teacherReviewService.getReviewedList(queryReq);

@@ -13,6 +13,7 @@ import com.abin.checkrepeatsystem.student.vo.MessageSessionVO;
 import com.abin.checkrepeatsystem.student.vo.MessageVO;
 import com.abin.checkrepeatsystem.student.vo.SharedFileVO;
 import com.abin.checkrepeatsystem.teacher.service.TeacherMessageService;
+import com.abin.checkrepeatsystem.mapper.PaperAttachmentMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.user.mapper.ConversationMapper;
@@ -44,6 +45,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+import com.abin.checkrepeatsystem.common.utils.MessageUtils;
 
 /**
  * 教师消息服务实现类
@@ -69,6 +71,8 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
     private final WebSocketSender webSocketSender;
     
     private final PaperInfoMapper paperInfoMapper;
+
+    private final PaperAttachmentMapper paperAttachmentMapper;
 
 
     @Override
@@ -358,7 +362,28 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
                 // 如果有附件，也设置到 VO 中
                 if (sendDTO.getAttachmentIds() != null && !sendDTO.getAttachmentIds().isEmpty()) {
-                    // TODO: 加载附件信息并设置到 messageVO
+                    List<Long> ids = sendDTO.getAttachmentIds().stream()
+                            .filter(id -> id != null && !id.isEmpty())
+                            .map(Long::valueOf)
+                            .collect(Collectors.toList());
+                    if (!ids.isEmpty()) {
+                        List<PaperAttachment> attachments = paperAttachmentMapper.selectBatchIds(ids);
+                        if (attachments != null && !attachments.isEmpty()) {
+                            List<MessageVO.MessageAttachmentVO> attachmentVOs = attachments.stream()
+                                    .map(att -> {
+                                        MessageVO.MessageAttachmentVO vo = new MessageVO.MessageAttachmentVO();
+                                        vo.setId(String.valueOf(att.getId()));
+                                        vo.setName(att.getOriginalFilename());
+                                        vo.setSize(att.getFileSize());
+                                        vo.setType(att.getFileType());
+                                        vo.setUploadTime(att.getCreateTime() != null ?
+                                                att.getCreateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+                                        return vo;
+                                    })
+                                    .collect(Collectors.toList());
+                            messageVO.setAttachments(attachmentVOs);
+                        }
+                    }
                 }
 
                 log.info("消息发送成功 - 消息 ID: {}, 发送者：{}", message.getId(), realSenderName);
@@ -486,7 +511,7 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
             List<InstantMessage> messages = instantMessageMapper.selectList(messageWrapper);
 
             // 根据格式生成导出内容
-            String exportContent = generateChatExportContent(messages, exportDTO.getFormat());
+            String exportContent = MessageUtils.generateChatExportContent(messages, exportDTO.getFormat());
 
             // 设置响应头
             String fileName = "chat_export_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) +
@@ -705,53 +730,6 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
         }
     }
 
-
-    /**
-     * 生成聊天记录导出内容
-     */
-    private String generateChatExportContent(List<InstantMessage> messages, String format) {
-        StringBuilder content = new StringBuilder();
-
-        if ("txt".equalsIgnoreCase(format)) {
-            // TXT格式
-            content.append("聊天记录导出\n");
-            content.append("导出时间: " + LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "\n");
-            content.append("========================================\n\n");
-
-            for (InstantMessage message : messages) {
-                String senderName = message.getSenderId() != null ?
-                    "用户" + message.getSenderId() : "未知用户";
-                String time = message.getSentTime() != null ?
-                    message.getSentTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "";
-
-                content.append("[" + time + "] " + senderName + ":\n");
-                content.append(message.getContent() + "\n\n");
-            }
-
-        } else {
-            // PDF/DOC格式（简化为HTML格式，便于转换）
-            content.append("<html><head><meta charset=UTF-8><title>聊天记录</title></head><body>");
-            content.append("<h1>聊天记录导出</h1>");
-            content.append("<p>导出时间: " + LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "</p>");
-            content.append("<hr>");
-
-            for (InstantMessage message : messages) {
-                String senderName = message.getSenderId() != null ?
-                    "用户" + message.getSenderId() : "未知用户";
-                String time = message.getSentTime() != null ?
-                    message.getSentTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "";
-
-                content.append("<div style=margin: 10px 0; padding: 10px; border: 1px solid #ccc;>");
-                content.append("<strong>" + time + " " + senderName + ":</strong><br>");
-                content.append(message.getContent());
-                content.append("</div>");
-            }
-
-            content.append("</body></html>");
-        }
-
-        return content.toString();
-    }
 
     /**
      * 将 InstantMessage 转换为 MessageVO

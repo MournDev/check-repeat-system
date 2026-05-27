@@ -153,12 +153,6 @@ public class StudentDashboardService {
             }
         }
 
-        // 获取最新的反馈
-//        PaperFeedback feedback = paperInfoMapper.selectLatestFeedback(latestPaper.getId());
-//        if (feedback != null) {
-//            dto.setFeedback(feedback.getContent());
-//        }
-
         // 获取查重率：优先使用已完成查重任务的数据，否则回退到论文本身的相似度
         Long latestPaperId = latestPaper.getId();
         CheckTask checkTask = checkTaskMapper.selectLatestByPaperId(latestPaperId);
@@ -197,27 +191,17 @@ public class StudentDashboardService {
         AdvisorInfoDTO dto = new AdvisorInfoDTO();
         dto.setId(teacher.getId());
         dto.setName(teacher.getRealName());
-//        dto.setTitle(teacher.getTitle());
         dto.setPhone(teacher.getPhone());
         dto.setEmail(teacher.getEmail());
-//        dto.setOffice(teacher.getOffice());
         dto.setAvatar(teacher.getAvatar());
-        
-        // 从TeacherInfo表获取教师的研究方向
+
+        // 从TeacherInfo表获取教师的研究方向、职称、办公地点
         TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
         if (teacherInfo != null) {
+            dto.setTitle(teacherInfo.getProfessionalTitle());
+            dto.setOffice(teacherInfo.getOffice());
             dto.setResearchField(teacherInfo.getResearchDirection());
         }
-
-        // 专长领域（逗号分隔转换为列表）
-//        if (StringUtils.isNotBlank(advisor.getExpertise())) {
-//            dto.setExpertise(Arrays.asList(advisor.getExpertise().split(",")));
-//        }
-
-        // 导师统计
-//        dto.setGuidedPapersCount(advisorInfoMapper.countGuidedPapers(advisor.getId()));
-//        dto.setApprovalRate(advisorInfoMapper.calculateApprovalRate(advisor.getId()));
-//        dto.setAverageScore(advisorInfoMapper.calculateAverageScore(advisor.getId()));
         // 在线状态：暂时设置为offline，后续从在线状态服务获取
         dto.setOnlineStatus("offline");
 

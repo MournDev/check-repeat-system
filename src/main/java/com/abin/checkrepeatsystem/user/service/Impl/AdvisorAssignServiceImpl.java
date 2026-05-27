@@ -49,6 +49,8 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
 
     private final StudentInfoService studentInfoService;
 
+    private final NotificationFacadeService notificationFacadeService;
+
     @Value("${advisor-assign.max-task-count}")
     private Integer maxTaskCount;
 
@@ -60,13 +62,15 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
             TeacherAllocationRecordMapper teacherAllocationRecordMapper,
             InternalMessageNotificationService internalMessageNotificationService,
             TeacherInfoDataService teacherInfoService,
-            StudentInfoService studentInfoService) {
+            StudentInfoService studentInfoService,
+            NotificationFacadeService notificationFacadeService) {
         this.sysUserMapper = sysUserMapper;
         this.paperInfoMapper = paperInfoMapper;
         this.teacherAllocationRecordMapper = teacherAllocationRecordMapper;
         this.internalMessageNotificationService = internalMessageNotificationService;
         this.teacherInfoService = teacherInfoService;
         this.studentInfoService = studentInfoService;
+        this.notificationFacadeService = notificationFacadeService;
     }
 
     @Override
@@ -239,7 +243,7 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     private void sendAssignmentNotifications(Long paperId, String paperTitle, Long studentId, Long advisorId) {
         try {
             // 1. 发送邮箱通知（独立发送，互不影响）
-            //emailNotificationService.sendTeacherAssignmentEmail(paperId, paperTitle, studentId, advisorId);
+            notificationFacadeService.sendAdvisorAssignedNotice(paperId, paperTitle, studentId, advisorId);
 
             // 2. 发送站内信通知（独立发送，互不影响）
             internalMessageNotificationService.sendTeacherAssignmentNotice(paperId, paperTitle, studentId, advisorId);

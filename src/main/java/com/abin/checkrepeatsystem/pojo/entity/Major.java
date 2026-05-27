@@ -35,4 +35,22 @@ public class Major extends BaseEntity {
     @TableField("major_desc")
     private String majorDesc;
 
+    /**
+     * 用户ID（用于 sys_user_major 关联查询）
+     */
+    @TableField("user_id")
+    private Long userId;
+
+    /**
+     * 当前指导任务数
+     */
+    @TableField("current_advisor_count")
+    private Integer currentAdvisorCount;
+
+    /**
+     * 最大指导任务上限
+     */
+    @TableField("max_advisor_count")
+    private Integer maxAdvisorCount;
+
 }
