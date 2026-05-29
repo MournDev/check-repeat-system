@@ -45,9 +45,10 @@ public interface TeacherMessageService {
      * 上传文件
      * @param file 文件
      * @param teacherId 教师ID
+     * @param sessionId 会话ID（可选，传入则关联到会话）
      * @return 文件上传VO
      */
-    com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long teacherId);
+    com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long teacherId, Long sessionId);
 
     /**
      * 下载附件
@@ -87,6 +88,13 @@ public interface TeacherMessageService {
      * @param response 响应
      */
     void downloadSharedFile(Long fileId, Long teacherId, HttpServletResponse response);
+
+    /**
+     * 删除共享文件
+     * @param fileId 文件ID
+     * @param teacherId 教师ID
+     */
+    void deleteSharedFile(Long fileId, Long teacherId);
 
     /**
      * 标记消息已读

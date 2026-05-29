@@ -92,12 +92,14 @@ public class StudentMessageController {
      */
     @PostMapping("/upload")
     @ApiOperation("上传文件")
-    public Result<FileUploadVO> uploadFile(@RequestParam("file") MultipartFile file) {
+    public Result<FileUploadVO> uploadFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) Long sessionId) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
-        log.info("上传文件 - 学生ID: {}, 文件名: {}, 文件大小: {}", 
-                studentId, file.getOriginalFilename(), file.getSize());
+        log.info("上传文件 - 学生ID: {}, 文件名: {}, 文件大小: {}, 会话ID: {}",
+                studentId, file.getOriginalFilename(), file.getSize(), sessionId);
 
-        FileUploadVO fileVO = studentMessageService.uploadFile(file, studentId);
+        FileUploadVO fileVO = studentMessageService.uploadFile(file, studentId, sessionId);
         return Result.success("文件上传成功", fileVO);
     }
 
@@ -272,6 +274,20 @@ public class StudentMessageController {
 
         studentMessageService.recallMessage(studentId, messageIdLong);
         return Result.success("消息撤回成功");
+    }
+
+    /**
+     * 12. 删除共享文件
+     * DELETE /api/student/messages/shared-file/{fileId}
+     */
+    @DeleteMapping("/shared-file/{fileId}")
+    @ApiOperation("删除共享文件")
+    public Result<String> deleteSharedFile(@PathVariable Long fileId) {
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("删除共享文件 - 学生ID: {}, 文件ID: {}", studentId, fileId);
+
+        studentMessageService.deleteSharedFile(fileId, studentId);
+        return Result.success("删除共享文件成功");
     }
 
 }

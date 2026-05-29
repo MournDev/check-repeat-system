@@ -461,16 +461,59 @@ public class StudentMessageServiceImpl implements StudentMessageService {
     }
 
     @Override
-    public com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long studentId) {
+    public com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long studentId, Long sessionId) {
         try {
-            log.info("上传文件 -学生ID: {}, 文件名: {}, 文件大小: {}", 
-                    studentId, file.getOriginalFilename(), file.getSize());
-            
+            log.info("上传文件 -学生ID: {}, 文件名: {}, 文件大小: {}, 会话ID: {}",
+                    studentId, file.getOriginalFilename(), file.getSize(), sessionId);
+
             // 使用文件服务上传文件
             Long fileId = fileService.uploadFile(file, studentId);
-                        
+
+            // 如果传入了 sessionId，创建 FILE 类型的消息记录使文件出现在共享文件列表中
+            if (sessionId != null) {
+                try {
+                    // 查找会话中的对方用户作为 receiverId
+                    Conversation conversation = conversationMapper.selectById(sessionId);
+                    if (conversation != null) {
+                        List<ConversationMember> members = conversationMemberMapper.selectList(
+                            new LambdaQueryWrapper<ConversationMember>()
+                                .eq(ConversationMember::getConversationId, sessionId));
+                        Long receiverId = members.stream()
+                            .filter(m -> !m.getUserId().equals(studentId))
+                            .map(ConversationMember::getUserId)
+                            .findFirst().orElse(null);
+
+                        if (receiverId != null) {
+                            InstantMessage msg = new InstantMessage();
+                            msg.setSenderId(studentId);
+                            msg.setReceiverId(receiverId);
+                            msg.setConversationId(sessionId);
+                            msg.setContent("[文件] " + file.getOriginalFilename());
+                            msg.setContentType("FILE");
+                            msg.setStatus("SENT");
+                            msg.setSentTime(LocalDateTime.now());
+                            msg.setCreateTime(LocalDateTime.now());
+                            msg.setUpdateTime(LocalDateTime.now());
+
+                            // 构建附件 JSON
+                            Map<String, Object> attachment = new HashMap<>();
+                            attachment.put("id", fileId);
+                            attachment.put("name", file.getOriginalFilename());
+                            attachment.put("size", file.getSize());
+                            ObjectMapper om = new ObjectMapper();
+                            msg.setAttachments(om.writeValueAsString(Collections.singletonList(attachment)));
+
+                            instantMessageMapper.insert(msg);
+                            updateConversationLastMessage(sessionId);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("创建共享文件消息记录失败，文件仍上传成功: {}", e.getMessage());
+                }
+            }
+
             //构建响应 VO
-            com.abin.checkrepeatsystem.student.dto.FileUploadVO fileVO = 
+            com.abin.checkrepeatsystem.student.dto.FileUploadVO fileVO =
                 new com.abin.checkrepeatsystem.student.dto.FileUploadVO();
             fileVO.setId(fileId);
             fileVO.setName(file.getOriginalFilename());
@@ -478,10 +521,10 @@ public class StudentMessageServiceImpl implements StudentMessageService {
             fileVO.setType(FileMimeTypeUtils.getFileExtension(file.getOriginalFilename()));
             fileVO.setUrl("/api/v1/student/messages/attachment/" + fileId);
             fileVO.setUploadTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            
+
             log.info("文件上传成功 - 文件ID: {}", fileId);
             return fileVO;
-            
+
         } catch (Exception e) {
             log.error("文件上传失败", e);
             throw new RuntimeException("文件上传失败: " + e.getMessage());
@@ -686,6 +729,43 @@ public class StudentMessageServiceImpl implements StudentMessageService {
         } catch (Exception e) {
             log.error("下载共享文件失败 - 文件ID: {}", fileId, e);
             throw new RuntimeException("共享文件下载失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteSharedFile(Long fileId, Long studentId) {
+        try {
+            log.info("删除共享文件 - 学生 ID: {}, 文件 ID: {}", studentId, fileId);
+
+            // 从消息的 attachments JSON 中移除该文件引用
+            List<InstantMessage> allMessages = instantMessageMapper.selectList(
+                new LambdaQueryWrapper<InstantMessage>()
+                    .like(InstantMessage::getAttachments, String.valueOf(fileId)));
+            for (InstantMessage msg : allMessages) {
+                try {
+                    ObjectMapper om = new ObjectMapper();
+                    List<Map<String, Object>> attachments = om.readValue(msg.getAttachments(),
+                        new TypeReference<List<Map<String, Object>>>() {});
+                    attachments.removeIf(a -> String.valueOf(a.get("id")).equals(String.valueOf(fileId)));
+                    if (attachments.isEmpty()) {
+                        msg.setAttachments(null);
+                    } else {
+                        msg.setAttachments(om.writeValueAsString(attachments));
+                    }
+                    instantMessageMapper.updateById(msg);
+                } catch (Exception e) {
+                    log.warn("清理消息附件引用失败 - 消息ID: {}", msg.getId(), e);
+                }
+            }
+
+            // 删除物理文件
+            fileService.deleteFile(fileId);
+            log.info("删除共享文件成功 - 文件 ID: {}", fileId);
+
+        } catch (Exception e) {
+            log.error("删除共享文件失败 - 文件ID: {}", fileId, e);
+            throw new RuntimeException("删除共享文件失败: " + e.getMessage());
         }
     }
 

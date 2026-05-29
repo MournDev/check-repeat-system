@@ -35,7 +35,7 @@ public interface StudentMessageService {
     /**
      * 上传文件
      */
-    com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long studentId);
+    com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long studentId, Long sessionId);
 
     /**
      * 下载附件
@@ -61,6 +61,11 @@ public interface StudentMessageService {
      * 下载共享文件
      */
     void downloadSharedFile(Long fileId, Long studentId, HttpServletResponse response);
+
+    /**
+     * 删除共享文件
+     */
+    void deleteSharedFile(Long fileId, Long studentId);
 
     /**
      *标消息已读

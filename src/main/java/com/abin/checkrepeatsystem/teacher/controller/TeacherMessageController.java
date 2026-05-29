@@ -82,11 +82,12 @@ public class TeacherMessageController {
      */
     @PostMapping("/upload")
     public Result<com.abin.checkrepeatsystem.student.dto.FileUploadVO> uploadFile(
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) Long sessionId) {
         Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-        log.info("上传文件请求 - 教师 ID: {}, 文件名: {}", teacherId, file.getOriginalFilename());
+        log.info("上传文件请求 - 教师 ID: {}, 文件名: {}, 会话ID: {}", teacherId, file.getOriginalFilename(), sessionId);
 
-        com.abin.checkrepeatsystem.student.dto.FileUploadVO fileVO = teacherMessageService.uploadFile(file, teacherId);
+        com.abin.checkrepeatsystem.student.dto.FileUploadVO fileVO = teacherMessageService.uploadFile(file, teacherId, sessionId);
         return Result.success("文件上传成功", fileVO);
     }
 
@@ -250,5 +251,18 @@ public class TeacherMessageController {
 
         com.abin.checkrepeatsystem.student.vo.StudentInfoVO studentInfo = teacherMessageService.getStudentInfo(teacherId, studentId);
         return Result.success("获取学生信息成功", studentInfo);
+    }
+
+    /**
+     * 删除共享文件
+     * DELETE /api/teacher/message/files/{fileId}
+     */
+    @DeleteMapping("/files/{fileId}")
+    public Result<String> deleteSharedFile(@PathVariable Long fileId) {
+        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("删除共享文件请求 - 教师 ID: {}, 文件 ID: {}", teacherId, fileId);
+
+        teacherMessageService.deleteSharedFile(fileId, teacherId);
+        return Result.success("删除共享文件成功");
     }
 }
