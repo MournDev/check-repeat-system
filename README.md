@@ -1,166 +1,164 @@
-# 论文查重管理系统
+# 论文查重管理系统（后端）
 
 ## 项目简介
 
-论文查重管理系统是一个基于 Spring Boot + Vue 3 的全栈应用，专为高校论文查重和管理设计。系统支持学生论文提交、自动查重、教师审核、实时消息通知等核心功能，提供了完整的论文管理工作流程。
+论文查重管理系统后端，基于 Spring Boot 构建，为高校论文查重和审核流程提供完整的 RESTful API 服务。支持学生论文提交与查重、教师在线审核、管理员系统监控等功能，涵盖论文全生命周期管理。
 
 ## 技术栈
 
-### 后端
-- **框架**：Spring Boot 3.2.4
-- **数据库**：MySQL 8.0+
-- **缓存**：Redis
-- **认证**：JWT
-- **文件处理**：Apache Commons FileUpload
-- **WebSocket**：原生 WebSocket（实时消息通知）
-- **构建工具**：Maven
-
-### 前端
-- **框架**：Vue 3 + Composition API
-- **UI 库**：Element Plus
-- **状态管理**：Pinia
-- **路由**：Vue Router
-- **HTTP 客户端**：Axios
-- **动画**：GSAP（登录页角色动画）
-- **图表**：ECharts
-- **样式**：SCSS
+| 技术 | 版本 | 说明 |
+|------|------|------|
+| Spring Boot | 3.5.7 | 应用框架 |
+| Java | 17 | 开发语言 |
+| MyBatis-Plus | 3.5.5 | ORM 框架 |
+| MySQL | 8.0+ | 关系型数据库 |
+| Redis | 6.0+ | 缓存与会话管理 |
+| MinIO | — | 对象存储（文件管理） |
+| Spring Security | — | 安全框架，JWT 无状态认证 |
+| Apache Tika | — | 文档内容提取（doc/docx/pdf） |
+| IK Analyzer | — | 中文分词（自定义词典） |
+| iText7 | — | PDF 报告生成（支持中文 SimHei 字体） |
+| Micrometer + Prometheus | — | 应用性能监控 |
+| Springfox Swagger 3 | — | API 文档 |
+| Lombok | — | 代码简化 |
 
 ## 核心功能
 
-### 1. 学生端
-- **论文提交**：支持Word、PDF等格式文件上传，自动计算MD5实现秒传
-- **查重监控**：实时查看查重进度和结果
-- **历史记录**：查看历史查重记录和趋势分析
-- **导师互动**：实时消息聊天和文件共享
-- **论文管理**：查看和管理已提交的论文
+### 学生模块
+- 论文提交（支持 Word/PDF，MD5 秒传）
+- 查重任务监控（WebSocket 实时推送进度）
+- 查重报告查看与下载
+- 论文版本管理与版本对比
+- 论文撤回与重新提交
+- 导师互动消息系统
 
-### 2. 教师端
-- **论文审核**：审核学生提交的论文
-- **待审核列表**：查看待审核的论文
-- **审核记录**：查看历史审核记录
-- **学生管理**：管理学生信息
-- **审核工作流**：配置审核流程
+### 教师模块
+- 待审核论文列表与优先级排序
+- 论文审核（通过/驳回/修改建议）
+- 审核统计与趋势分析
+- 学生分组管理
+- 批量审核操作
 
-### 3. 管理员端
-- **用户管理**：管理系统用户
-- **系统配置**：配置系统参数
-- **数据统计**：查看系统数据统计
-- **日志管理**：查看系统操作日志
+### 管理员模块
+- 用户管理（学生/教师/管理员）
+- 论文分配（手动/自动）
+- 查重规则配置
+- 系统监控（CPU/内存/磁盘/数据库连接池）
+- 数据备份与恢复
+- 操作日志审计
+- 学校/学院/专业基础数据管理
+
+### 查重引擎
+- 本地 SimHash 引擎（Hamming 距离 ≤ 3 判定相似）
+- 支持第三方和深度学习引擎扩展（默认禁用）
+- IK 分词 + 自定义词典
 
 ## 系统架构
 
-系统采用前后端分离架构：
-
-1. **前端**：Vue 3 单页应用，部署在 Nginx 或类似Web服务器
-2. **后端**：Spring Boot 应用，提供 RESTful API
-3. **数据库**：MySQL 存储业务数据
-4. **缓存**：Redis 缓存热点数据和管理 Session
-5. **文件存储**：本地文件系统或对象存储
-6. **实时通信**：WebSocket 实现实时消息通知
-
-## 目录结构
-
 ```
-check-repeat-system/
-├── .github/                # GitHub 配置
-│   └── workflows/          # CI/CD 工作流
-├── frontend/               # 前端项目
-│   ├── public/             # 静态资源
-│   ├── src/                # 源代码
-│   │   ├── api/            # API 接口
-│   │   ├── components/     # 组件
-│   │   ├── views/          # 页面
-│   │   ├── composables/    # 组合式函数
-│   │   ├── router/         # 路由
-│   │   └── store/          # 状态管理
-│   └── package.json        # 前端依赖
-├── src/                    # 后端源代码
-│   ├── main/java/com/abin/checkrepeatsystem/
-│   │   ├── admin/          # 管理员模块
-│   │   ├── common/         # 公共模块
-│   │   ├── config/         # 配置
-│   │   ├── mapper/         # MyBatis 映射
-│   │   ├── model/          # 数据模型
-│   │   ├── service/        # 业务逻辑
-│   │   ├── student/        # 学生模块
-│   │   ├── teacher/        # 教师模块
-│   │   └── websocket/      # WebSocket 处理
-│   └── main/resources/     # 资源文件
-├── pom.xml                 # Maven 配置
-└── README.md               # 项目说明
+Vue 前端 (port 3000) → Vite 代理 → Spring Boot (port 8080, /check 上下文)
+                                        ↓
+                          MySQL (业务数据) + Redis (缓存) + MinIO (文件)
 ```
 
-## 安装部署
+## 包结构
+
+```
+com.abin.checkrepeatsystem
+├── admin/              # 管理员模块（用户/论文/配置/统计/分配）
+├── student/            # 学生模块（论文提交/查重/报告/消息）
+├── teacher/            # 教师模块（审核/统计/学生管理）
+├── user/               # 认证模块（登录/刷新/通知/消息）
+├── common/             # 公共模块
+│   ├── config/         #   安全配置、WebSocket、CORS
+│   ├── filter/         #   JWT 过滤器
+│   ├── handler/        #   全局异常处理
+│   ├── service/        #   文件服务（MinIO/本地）
+│   ├── utils/          #   工具类（JWT、PDF 生成等）
+│   └── annotation/     #   自定义注解（操作日志）
+├── monitor/            # 监控模块（系统指标采集、数据库监控）
+├── notification/       # 通知模块（消息发送、公告发布）
+├── detection/          # 查重检测模块（SimHash、引擎管理）
+├── pojo/
+│   ├── entity/         #   40+ 实体类（MyBatis-Plus，雪花ID，软删除）
+│   ├── dto/            #   请求/响应 DTO
+│   └── vo/             #   视图对象
+├── mapper/             # MyBatis-Plus Mapper 接口
+└── schedule/           # 定时任务（数据完整性检查等）
+```
+
+## 快速开始
 
 ### 环境要求
+
 - JDK 17+
 - MySQL 8.0+
 - Redis 6.0+
-- Node.js 16+
 - Maven 3.8+
 
-### 后端部署
-1. **配置数据库**：
-   - 创建数据库 `check_repeat_system`
-   - 执行数据库脚本
+### 配置
 
-2. **修改配置**：
-   - 修改 `src/main/resources/application.yml` 中的数据库连接信息
-   - 修改 Redis 连接信息
+编辑 `src/main/resources/application-dev.yml`，配置数据库、Redis、MinIO 连接信息。
 
-3. **构建项目**：
-   ```bash
-   mvn clean package
-   ```
+敏感信息（邮件密码、OSS 密钥等）建议通过环境变量或 Jasypt 加密配置。
 
-4. **运行项目**：
-   ```bash
-   java -jar target/check-repeat-system-0.0.1-SNAPSHOT.jar
-   ```
+### 构建与运行
 
-### 前端部署
-1. **安装依赖**：
-   ```bash
-   cd frontend
-   npm install
-   ```
+```bash
+# 编译
+mvn clean package
 
-2. **构建项目**：
-   ```bash
-   npm run build
-   ```
+# 运行（默认 dev profile）
+java -jar target/check-repeat-system-0.0.1-SNAPSHOT.jar
 
-3. **部署到服务器**：
-   - 将 `dist` 目录部署到 Nginx 或其他 Web 服务器
+# 指定 profile
+java -jar target/check-repeat-system-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
 
-## CI/CD 配置
+# 仅运行测试
+mvn test
+```
 
-项目使用 GitHub Actions 进行持续集成，配置文件位于 `.github/workflows/maven.yml`，主要包括：
+### API 文档
 
-- **代码检出**：从 GitHub 仓库检出代码
-- **环境配置**：设置 Java 17 环境
-- **依赖缓存**：缓存 Maven 依赖
-- **编译构建**：编译 Java 源代码
-- **运行测试**：执行单元测试
-- **打包项目**：生成可执行的 jar 文件
+启动后访问 Swagger UI：
+```
+http://localhost:8080/check/swagger-ui/
+```
 
-## 贡献指南
+### 监控端点
 
-1. **Fork 项目**
-2. **创建分支**：`git checkout -b feature/your-feature`
-3. **提交修改**：`git commit -m "Add your feature"`
-4. **推送分支**：`git push origin feature/your-feature`
-5. **创建 Pull Request**
+```
+http://localhost:8080/check/actuator/prometheus    # Prometheus 指标
+http://localhost:8080/check/actuator/health         # 健康检查
+```
+
+## 数据库规范
+
+- 主键：雪花 ID（`ASSIGN_ID`）
+- 字段映射：下划线转驼峰
+- 软删除：`is_deleted` 字段（1 = 已删除）
+- 自动填充：`BaseEntity` 提供 `createTime`/`updateTime` 自动填充
+
+## 配置说明
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `file.upload.storage-type` | 文件存储类型（minio/local） | minio |
+| `jwt.secret` | JWT 签名密钥 | — |
+| `jwt.expiration` | JWT 过期时间 | — |
+| `spring.datasource.*` | 数据库连接 | — |
+| `spring.data.redis.*` | Redis 连接 | — |
 
 ## 许可证
 
-本项目采用 MIT 许可证，详见 [LICENSE](LICENSE) 文件。
+MIT License
 
 ## 联系方式
 
-- **开发者**：MournDev
-- **邮箱**：3070500838@qq.com
-- **GitHub**：https://github.com/MournDev/check-repeat-system
+- 开发者：MournDev
+- 邮箱：3070500838@qq.com
+- GitHub：https://github.com/MournDev/check-repeat-system
 
+---
 
 **© 2026 论文查重管理系统 版权所有**

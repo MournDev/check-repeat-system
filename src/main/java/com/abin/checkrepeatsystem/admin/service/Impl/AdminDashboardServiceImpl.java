@@ -429,7 +429,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 // 磁盘使用率（真实数据）
                 Map<String, Object> diskInfo = (Map<String, Object>) systemStatus.get("disk");
                 if (diskInfo != null) {
-                    Double diskUsage = (Double) diskInfo.get("usage");
+                    Double diskUsage = (Double) diskInfo.get("usagePercent");
                     if (diskUsage != null) {
                         monitorInfo.put("diskUsage", diskUsage);
                         monitorInfo.put("diskStatus", diskUsage < 80 ? "normal" : diskUsage < 95 ? "warning" : "danger");

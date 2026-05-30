@@ -11,6 +11,8 @@ import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperAttachment;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
+import com.abin.checkrepeatsystem.pojo.entity.ReviewRecord;
+import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import com.abin.checkrepeatsystem.student.service.StudentReviewService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
@@ -18,6 +20,9 @@ import com.abin.checkrepeatsystem.student.vo.PaperQueryRequest;
 import com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest;
 import com.abin.checkrepeatsystem.student.vo.PaperReSubmitReq;
 import com.abin.checkrepeatsystem.student.dto.*;
+import com.abin.checkrepeatsystem.teacher.mapper.ReviewRecordMapper;
+import com.abin.checkrepeatsystem.user.service.SysUserService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +62,10 @@ public class StudentPaperController {
     private final FileService fileService;
 
     private final ApplicationMonitorService monitorService;
+
+    private final ReviewRecordMapper reviewRecordMapper;
+
+    private final SysUserService sysUserService;
 
     /**
      * 1. 论文提交接口（推荐方式）- 只接收文件ID，不处理文件上传
@@ -134,16 +143,67 @@ public class StudentPaperController {
      * 3. 学生查询论文详情接口
      *
      * @param paperId 论文ID
-     * @return 论文详情
+     * @return 论文详情（含审核记录、导师联系方式等丰富信息）
      */
     @GetMapping("/detail")
-    public Result<PaperInfo> getPaperDetail(@RequestParam Long paperId) {
+    public Result<PaperDetailDTO> getPaperDetail(@RequestParam Long paperId) {
         PaperInfo paperInfo = paperInfoService.getById(paperId);
         if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
             return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或已删除");
         }
-        // 2. 返回论文详情
-        return Result.success("论文详情查询成功", paperInfo);
+
+        PaperDetailDTO dto = PaperDetailDTO.fromPaperInfo(paperInfo);
+
+        // 查询导师联系方式
+        if (paperInfo.getTeacherId() != null) {
+            SysUser teacher = sysUserService.getById(paperInfo.getTeacherId());
+            if (teacher != null) {
+                dto.setTeacherPhone(teacher.getPhone());
+                dto.setTeacherEmail(teacher.getEmail());
+                dto.setTeacherAvatar(teacher.getAvatar());
+            }
+        }
+
+        // 查询文件格式
+        if (paperInfo.getFileId() != null) {
+            FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
+            if (fileInfo != null && fileInfo.getOriginalFilename() != null) {
+                String fileName = fileInfo.getOriginalFilename();
+                int dotIndex = fileName.lastIndexOf('.');
+                if (dotIndex > 0) {
+                    dto.setFileFormat(fileName.substring(dotIndex));
+                }
+            }
+        }
+
+        // 查询审核记录
+        List<ReviewRecord> records = reviewRecordMapper.selectList(
+            new LambdaQueryWrapper<ReviewRecord>()
+                .eq(ReviewRecord::getPaperId, paperId)
+                .orderByDesc(ReviewRecord::getReviewTime)
+        );
+
+        if (records != null && !records.isEmpty()) {
+            // 最新审核记录
+            ReviewRecord latest = records.get(0);
+            dto.setFeedback(latest.getReviewOpinion());
+            dto.setFeedbackTime(latest.getReviewTime());
+            dto.setReviewTime(latest.getReviewTime());
+
+            // 构建审核历史
+            List<PaperDetailDTO.ReviewHistoryItem> historyItems = records.stream().map(r -> {
+                PaperDetailDTO.ReviewHistoryItem item = new PaperDetailDTO.ReviewHistoryItem();
+                item.setId(r.getId());
+                item.setType(r.getReviewStatus());
+                item.setComments(r.getReviewOpinion());
+                item.setReviewTime(r.getReviewTime());
+                item.setReviewerName(r.getTeacherName());
+                return item;
+            }).collect(Collectors.toList());
+            dto.setReviewHistory(historyItems);
+        }
+
+        return Result.success("论文详情查询成功", dto);
     }
 
     /**
