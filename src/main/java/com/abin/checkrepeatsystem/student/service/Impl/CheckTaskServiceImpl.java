@@ -10,7 +10,9 @@ import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.engine.CheckEngineManager;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.common.enums.CheckTaskStatusEnum;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.statemachine.CheckTaskStateMachine;
 import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.TextSimilarityUtils;
@@ -81,6 +83,8 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
     private final CheckTaskStateMachine stateMachine;
 
     private final CheckEngineManager checkEngineManager;
+
+    private final FileService fileService;
 
     @Value("${file.upload.base-path}")
     private String basePath;
@@ -189,6 +193,12 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         checkTask.setCheckStatus(DictConstants.CheckStatus.PENDING); // 保持待处理状态
         UserBusinessInfoUtils.setAuditField(checkTask, true);
         save(checkTask);
+
+        // 2. 同步论文状态为"查重中"
+        PaperInfo updatePaper = new PaperInfo();
+        updatePaper.setId(paperId);
+        updatePaper.setPaperStatus(DictConstants.PaperStatus.CHECKING);
+        paperInfoMapper.updateById(updatePaper);
 
         // 2. 存储当前用户信息到ThreadLocal，供异步线程使用
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
@@ -308,7 +318,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         List<CheckTask> checkTasks = list(queryWrapper);
         CheckTask checkTask = checkTasks.isEmpty() ? null : checkTasks.get(0); // 替代 getFirst()
         if (checkTask == null || checkTask.getIsDeleted() == 1) {
-            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "查重任务不存在或已删除");
+            return Result.success("暂无查重任务", null);
         }
 
         // 2. 权限校验（学生查自己的，教师查指导的，管理员查所有）
@@ -518,7 +528,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
      * 2. 再更新论文状态为 CHECKING
      * 3. 失败时回滚论文状态
      */
-    @Async
+    @Async("checkTaskExecutor")
     @Timed(value = "check.task.execute", description = "执行查重任务耗时")
     public void executeCheckTaskAsync(Long taskId, Long paperId) {
         LocalDateTime startTime = LocalDateTime.now();
@@ -564,12 +574,12 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                         "查重任务执行超时（超过" + taskTimeout / 1000 + "秒）");
                 }
                     
-                if (paperInfo.getFilePath() == null || paperInfo.getFilePath().trim().isEmpty()) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "论文文件路径未设置");
+                if (paperInfo.getFileId() == null) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "论文文件ID未设置");
                 }
-                        
-                // 3. 提取论文文本内容（从文件路径读取）
-                String paperText = extractTextFromFile(paperInfo.getFilePath());
+
+                // 3. 提取论文文本内容（从MinIO读取）
+                String paperText = extractTextFromFile(paperInfo.getFileId());
                 if (paperText.trim().isEmpty()) {
                     throw new BusinessException(ResultCode.PARAM_TYPE_ERROR,
                         "论文文本提取失败，文件可能为空或格式不支持");
@@ -695,6 +705,34 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
      */
     private void updatePaperSuccess(PaperInfo paperInfo, double similarity) {
         boolean qualified = similarity <= defaultThreshold.doubleValue();
+
+        // 构建查重结果JSON对象
+        Map<String, Object> checkResult = new HashMap<>();
+        checkResult.put("score", similarity);
+        checkResult.put("time", LocalDateTime.now());
+
+        // 如果论文已处于终态（已通过/已驳回），不再更新状态，避免覆盖教师审核结果
+        PaperStatusEnum currentStatus = PaperStatusEnum.fromCode(paperInfo.getPaperStatus());
+        if (currentStatus != null && currentStatus.isTerminalStatus()) {
+            log.info("论文已处于终态（{}），跳过状态更新，仅更新查重结果字段: paperId={}",
+                    currentStatus.getDescription(), paperInfo.getId());
+            PaperInfo updatePaper = new PaperInfo();
+            updatePaper.setId(paperInfo.getId());
+            updatePaper.setSimilarityRate(BigDecimal.valueOf(similarity));
+            updatePaper.setCheckCompleted(1);
+            updatePaper.setCheckSource("LOCAL");
+            updatePaper.setCheckEngineType("local");
+            updatePaper.setCheckResult(qualified ? "合格" : "不合格");
+            updatePaper.setCheckTime(LocalDateTime.now());
+            try {
+                updatePaper.setInternalCheckResult(JSON.toJSONString(checkResult));
+            } catch (Exception e) {
+                log.warn("存储校内查重结果JSON失败: {}", e.getMessage());
+            }
+            paperInfoMapper.updateById(updatePaper);
+            return;
+        }
+
         PaperInfo updatePaper = new PaperInfo();
         updatePaper.setId(paperInfo.getId());
         updatePaper.setPaperStatus(qualified
@@ -707,22 +745,17 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         updatePaper.setCheckEngineType("local");
         updatePaper.setCheckResult(qualified ? "合格" : "不合格");
         updatePaper.setCheckTime(LocalDateTime.now());
-        
-        // 构建查重结果JSON对象
-        Map<String, Object> checkResult = new HashMap<>();
-        checkResult.put("score", similarity);
-        checkResult.put("time", LocalDateTime.now());
-        
+
         try {
             // 存储JSON格式的查重结果
             updatePaper.setInternalCheckResult(JSON.toJSONString(checkResult));
         } catch (Exception e) {
             log.warn("存储校内查重结果JSON失败: {}", e.getMessage());
         }
-        
+
         paperInfoMapper.updateById(updatePaper);
-            
-        log.info("论文状态更新成功 - 论文 ID: {}, 相似度：{}%, 结果：{}", 
+
+        log.info("论文状态更新成功 - 论文 ID: {}, 相似度：{}%, 结果：{}",
                 paperInfo.getId(), similarity, qualified ? "合格" : "不合格");
     }
         
@@ -818,29 +851,22 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
 
     /**
      * 从文件中提取文本内容（支持doc/docx/pdf）
+     * 支持从MinIO或本地文件系统读取
      */
-    private String extractTextFromFile(String filePath) throws IOException, TikaException, SAXException {
-        // 确保basePath以斜杠结尾
-        String normalizedBasePath = basePath.endsWith("/") ? basePath : basePath + "/";
-        // 处理文件路径中的反斜杠，统一转换为斜杠
-        String normalizedFilePath = filePath.replace("\\", "/");
-        String fullPath = normalizedBasePath + normalizedFilePath;
-        
-        // 打印完整文件路径，方便调试
-        log.info("尝试读取论文文件：{}", fullPath);
-        
-        File file = new File(fullPath);
-        if (!file.exists() || !file.isFile()) {
-            // 检查目录是否存在
-            File parentDir = file.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                log.warn("论文文件目录不存在：{}", parentDir.getAbsolutePath());
-            }
-            throw new BusinessException(ResultCode.PARAM_ERROR,"论文文件不存在：" + fullPath);
+    private String extractTextFromFile(Long fileId) throws Exception {
+        log.info("开始从文件提取文本内容，fileId: {}", fileId);
+
+        // 使用FileService从MinIO或本地读取文件内容
+        byte[] fileContent = fileService.getFileContent(fileId);
+        if (fileContent == null || fileContent.length == 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "文件内容为空，fileId: " + fileId);
         }
-        // 使用Tika提取文本（自动识别文件类型）
-        try (InputStream inputStream = new FileInputStream(file)) {
-            return tika.parseToString(inputStream);
+
+        // 使用Tika提取文本
+        try (InputStream inputStream = new java.io.ByteArrayInputStream(fileContent)) {
+            String content = tika.parseToString(inputStream);
+            log.info("文本提取成功，fileId: {}, 内容长度: {}", fileId, content != null ? content.length() : 0);
+            return content;
         }
     }
 

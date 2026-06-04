@@ -46,4 +46,20 @@ public class BaseEntity {
     @TableLogic // MyBatis-Plus自动处理软删除逻辑
     private Integer isDeleted;
 
+    /**
+     * 删除人ID（审计字段）
+     * 注意：MyBatis-Plus @TableLogic 软删除不会触发自动填充，
+     * 业务层需在调用 removeById 前手动设置此字段
+     */
+    @TableField(fill = FieldFill.UPDATE)
+    private Long deleteBy;
+
+    /**
+     * 删除时间（审计字段）
+     * 注意：MyBatis-Plus @TableLogic 软删除不会触发自动填充，
+     * 业务层需在调用 removeById 前手动设置此字段
+     */
+    @TableField(fill = FieldFill.UPDATE)
+    private LocalDateTime deleteTime;
+
 }

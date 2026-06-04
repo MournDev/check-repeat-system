@@ -27,6 +27,14 @@ minio:
 spring:
   application:
     name: check-repeat-system
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # Caffeine 本地缓存配置
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=600s
 
   # 数据源配置
   datasource:
@@ -35,9 +43,9 @@ spring:
     password: ${MYSQL_PASSWORD}   # 必须通过环境变量设置
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 10
-      idle-timeout: 180000
+      maximum-pool-size: 30          # 查重任务(10) + 异步任务 + HTTP请求
+      minimum-idle: 5                # 低流量时减少空闲连接浪费
+      idle-timeout: 300000           # 空闲连接5分钟回收
       connection-timeout: 30000
       max-lifetime: 1800000
       validation-timeout: 5000
@@ -216,18 +224,9 @@ admin:
 # 文件上传配置
 file:
   upload:
-    storage-type: ${STORAGE_TYPE:LOCAL}
+    storage-type: MINIO
     base-path: ${UPLOAD_BASE_PATH:/data/upload/}
     max-size-mb: 50
-
-# 阿里云OSS配置（可选）
-aliyun:
-  oss:
-    endpoint: ${ALIYUN_OSS_ENDPOINT:}
-    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID:}
-    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}
-    bucket-name: ${ALIYUN_OSS_BUCKET_NAME:}
-    access-prefix: ${ALIYUN_OSS_ACCESS_PREFIX:}
 
 # 论文查重服务配置
 paper-check:
@@ -243,6 +242,10 @@ paper-check:
 advisor-assign:
   max-task-count: 10
   retry-count: 3
+
+# WebSocket 允许的来源（生产环境必须通过环境变量指定）
+websocket:
+  allowed-origins: ${WEBSOCKET_ALLOWED_ORIGINS:}
 
 # 兼容性配置
 upload:

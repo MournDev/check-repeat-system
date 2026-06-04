@@ -100,49 +100,39 @@ public class EnhancedSimilarityDetectionService {
 
     /**
      * 执行完整的论文查重检测（带任务管理）
+     * 事务拆分：DB写入在短事务中，IO/CPU密集操作在事务外
      *
      * @param paperId        待检测论文ID
      * @param targetPaperIds 比对论文ID列表（null表示全库比对）
      * @return 查重检测结果
      */
-    @Transactional(rollbackFor = Exception.class)
     public Result<SimilarityDetectionResult> detectPaperSimilarity(Long paperId, List<Long> targetPaperIds) {
-        // 生成任务编号
         String taskNo = generateTaskNo();
         log.info("开始论文查重检测: taskNo={}, paperId={}, targetCount={}",
                 taskNo, paperId, targetPaperIds != null ? targetPaperIds.size() : "全库");
 
-        // 1. 创建查重任务记录
-        CheckTask checkTask = createCheckTask(paperId, taskNo);
-        Long userId = getPaperStudentId(paperId);
-
         long startTime = System.currentTimeMillis();
         boolean success = false;
 
-        try {
-            // 2. 更新任务状态为进行中
-            updateTaskStatus(checkTask.getId(), CheckTaskStatusEnum.CHECKING, null);
+        // 事务1：创建查重任务记录
+        CheckTask checkTask = createAndStartCheckTask(paperId, taskNo);
+        Long userId = getPaperStudentId(paperId);
 
-            // 3. 发送WebSocket开始消息
+        try {
+            // 事务外：发送WebSocket开始消息
             try {
                 progressWebSocketService.sendCheckStart(paperId, userId, taskNo, 0);
             } catch (Exception e) {
                 log.warn("WebSocket推送失败（任务开始）: {}", e.getMessage());
             }
 
-            // 4. 执行查重检测
+            // 事务外：执行查重检测（CPU密集型，不持有DB连接）
             SimilarityDetectionResult result = performDetection(paperId, targetPaperIds, checkTask, userId);
 
-            // 5. 保存查重结果
-            saveCheckResult(checkTask, result);
+            // 事务2：保存查重结果并更新状态
+            saveCheckResultAndComplete(checkTask, result, paperId);
 
-            // 6. 更新论文的查重状态
-            updatePaperCheckStatus(paperId, result);
-
-            // 7. 更新任务状态为完成
-            updateTaskStatus(checkTask.getId(), CheckTaskStatusEnum.COMPLETED, null);
-
-            // 8. 发送WebSocket完成消息
+            // 事务外：发送WebSocket完成消息
             try {
                 progressWebSocketService.sendCheckComplete(paperId, userId,
                         result.getOverallSimilarity(), result.getRiskLevel());
@@ -158,10 +148,14 @@ public class EnhancedSimilarityDetectionService {
 
         } catch (Exception e) {
             log.error("论文查重检测失败: taskNo={}, paperId={}", taskNo, paperId, e);
-            // 更新任务状态为失败
-            updateTaskStatus(checkTask.getId(), CheckTaskStatusEnum.FAILURE, e.getMessage());
+            // 事务3：更新任务状态为失败
+            try {
+                updateTaskStatus(checkTask.getId(), CheckTaskStatusEnum.FAILURE, e.getMessage());
+            } catch (Exception ex) {
+                log.error("更新失败状态异常: {}", ex.getMessage());
+            }
 
-            // 发送WebSocket失败消息
+            // 事务外：发送WebSocket失败消息
             try {
                 progressWebSocketService.sendCheckError(paperId, userId, e.getMessage());
             } catch (Exception wsEx) {
@@ -170,10 +164,29 @@ public class EnhancedSimilarityDetectionService {
 
             return Result.error(ResultCode.SYSTEM_ERROR, "查重检测失败: " + e.getMessage());
         } finally {
-            // 记录查重任务执行时间
             long duration = System.currentTimeMillis() - startTime;
             monitorService.recordCheckTaskTime(paperId, duration, success);
         }
+    }
+
+    /**
+     * 事务1：创建查重任务并标记为执行中
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CheckTask createAndStartCheckTask(Long paperId, String taskNo) {
+        CheckTask checkTask = createCheckTask(paperId, taskNo);
+        updateTaskStatus(checkTask.getId(), CheckTaskStatusEnum.CHECKING, null);
+        return checkTask;
+    }
+
+    /**
+     * 事务2：保存查重结果并更新论文状态
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void saveCheckResultAndComplete(CheckTask checkTask, SimilarityDetectionResult result, Long paperId) {
+        saveCheckResult(checkTask, result);
+        updatePaperCheckStatus(paperId, result);
+        updateTaskStatus(checkTask.getId(), CheckTaskStatusEnum.COMPLETED, null);
     }
 
     /**
@@ -208,7 +221,14 @@ public class EnhancedSimilarityDetectionService {
         List<PaperInfo> comparisonPapers = getComparisonPapers(targetPaperIds, targetPaper.getCollegeId(), paperId);
         if (comparisonPapers.isEmpty()) {
             log.warn("无可用的比对论文，返回空结果: paperId={}", paperId);
-            return createEmptyResult(targetPaper);
+            SimilarityDetectionResult emptyResult = createEmptyResult(targetPaper);
+            // 缓存空结果，防止重复查询穿透
+            try {
+                redisTemplate.opsForValue().set(cacheKey, emptyResult, 30, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                log.warn("Redis缓存写入失败: {}", e.getMessage());
+            }
+            return emptyResult;
         }
 
         log.info("开始并行查重检测: paperId={}, comparisonCount={}", paperId, comparisonPapers.size());

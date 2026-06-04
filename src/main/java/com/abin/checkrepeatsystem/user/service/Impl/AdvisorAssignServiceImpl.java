@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -82,20 +83,9 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void reassignAfterRejection(Long paperId, Long excludedTeacherId) {
-        // 重置论文状态为待分配，清空之前分配的教师信息
-        PaperInfo resetPaper = new PaperInfo();
-        resetPaper.setId(paperId);
-        resetPaper.setTeacherId(null);
-        resetPaper.setTeacherName(null);
-        resetPaper.setAllocationStatus(null);
-        resetPaper.setAllocationType(null);
-        resetPaper.setPaperStatus(DictConstants.PaperStatus.PENDING);
-        resetPaper.setUpdateTime(LocalDateTime.now());
-        paperInfoMapper.updateById(resetPaper);
+        // rejectAssignment 已清除 teacherId 并设置 PENDING_REASSIGN，此处直接触发重新分配
+        log.info("导师拒绝后准备重新分配 - 论文ID: {}, 排除教师ID: {}", paperId, excludedTeacherId);
 
-        log.info("已重置论文状态并准备重新分配 - 论文ID: {}, 排除教师ID: {}", paperId, excludedTeacherId);
-
-        // 重新自动分配，排除已拒绝的教师
         Set<Long> excluded = Collections.singleton(excludedTeacherId);
         Result<Boolean> result = doAutoAssign(paperId, excluded);
         if (!result.isSuccess()) {
@@ -117,7 +107,10 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
             if (paperInfo.getTeacherId() != null) {
                 return Result.success("论文已分配老师", true);
             }
-            if (!DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())) {
+            // 允许 PENDING（首次分配）和 PENDING_REASSIGN（导师拒绝后重新分配）
+            boolean canAssign = DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus())
+                    || DictConstants.AllocationStatus.PENDING_REASSIGN.equals(paperInfo.getAllocationStatus());
+            if (!canAssign) {
                 return Result.error(ResultCode.BUSINESS_TASK_ASSIGNED,
                         "论文状态不允许分配老师，当前状态：" + paperInfo.getPaperStatus());
             }
@@ -270,12 +263,18 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
                         .last("LIMIT 500")
         );
 
+        // 批量查询教师信息，避免N+1
+        List<Long> teacherIds = teachers.stream().map(SysUser::getId).collect(Collectors.toList());
+        Map<Long, TeacherInfo> teacherInfoMap = teacherIds.isEmpty() ? Collections.emptyMap() :
+                teacherInfoService.listByUserIds(teacherIds).stream()
+                        .collect(Collectors.toMap(TeacherInfo::getUserId, t -> t, (a, b) -> a));
+
         return teachers.stream().map(teacher -> {
             PaperAdvisorTaskVO vo = new PaperAdvisorTaskVO();
             vo.setAdvisorId(teacher.getId());
             vo.setAdvisorName(teacher.getRealName());
 
-            TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+            TeacherInfo teacherInfo = teacherInfoMap.get(teacher.getId());
             if (teacherInfo != null) {
                 vo.setMajorId(teacherInfo.getMajorId());
                 vo.setResearchDirection(teacherInfo.getResearchDirection());
@@ -353,29 +352,19 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
      * 获取分配类型标签
      */
     private String getAllocationTypeLabel(String allocationType) {
-        switch (allocationType) {
-            case DictConstants.AllocationType.AUTO:
-                return "自动分配";
-            case DictConstants.AllocationType.MANUAL:
-                return "手动分配";
-            default:
-                return "未知类型";
-        }
+        if (DictConstants.AllocationType.AUTO.equals(allocationType)) return "自动分配";
+        if (DictConstants.AllocationType.MANUAL.equals(allocationType)) return "手动分配";
+        return "未知类型";
     }
     /**
      * 获取分配状态标签
      */
     private String getAllocationStatusLabel(String allocationStatus) {
-        switch (allocationStatus) {
-            case DictConstants.AllocationStatus.PENDING:
-                return "待确认";
-            case DictConstants.AllocationStatus.CONFIRMED:
-                return "已确认";
-            case DictConstants.AllocationStatus.REJECTED:
-                return "已拒绝";
-            default:
-                return "未知状态";
-        }
+        if (DictConstants.AllocationStatus.PENDING.equals(allocationStatus)) return "待确认";
+        if (DictConstants.AllocationStatus.CONFIRMED.equals(allocationStatus)) return "已确认";
+        if (DictConstants.AllocationStatus.REJECTED.equals(allocationStatus)) return "已拒绝";
+        if (DictConstants.AllocationStatus.PENDING_REASSIGN.equals(allocationStatus)) return "待重新分配";
+        return "未知状态";
     }
 
     /**

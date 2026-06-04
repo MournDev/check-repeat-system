@@ -482,7 +482,7 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
                     response.setContentType(FileMimeTypeUtils.getContentType(fileName));
                     response.setHeader("Content-Disposition",
                         "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-                    response.setContentLength((int) file.length());
+                    response.setContentLengthLong(file.length());
 
                     // 写入文件内容
                     try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {

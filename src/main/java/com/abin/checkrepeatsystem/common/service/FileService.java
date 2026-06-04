@@ -12,7 +12,7 @@ import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import io.minio.MinioClient;
+import io.minio.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
@@ -29,11 +29,14 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
 
@@ -61,9 +64,9 @@ public class FileService {
     private void init() {
         try {
             String bucketName = minioProp.getBucket().getFile();
-            boolean bucketExists = minioClient.bucketExists(io.minio.BucketExistsArgs.builder().bucket(bucketName).build());
+            boolean bucketExists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
             if (!bucketExists) {
-                minioClient.makeBucket(io.minio.MakeBucketArgs.builder().bucket(bucketName).build());
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
                 log.info("创建MinIO bucket成功：{}", bucketName);
             } else {
                 log.info("MinIO bucket已存在：{}", bucketName);
@@ -93,20 +96,26 @@ public class FileService {
         log.info("开始处理文件上传 - 文件名：{}, 用户 ID: {}", originalFilename, userId);
 
         try {
-            // 1. 计算文件 MD5（使用字节数组方式，避免依赖临时文件）
+            // 1. 计算文件 MD5
             byte[] fileBytes = file.getBytes();
             String fileMd5 = calculateFileMd5FromBytes(fileBytes);
 
-            // 2. 同步检查文件是否存在并上传，防止并发插入导致唯一索引冲突
+            // 2. 快速检查：已存在则直接返回（无需加锁）
+            FileInfo existingFile = getByMd5(fileMd5);
+            if (existingFile != null) {
+                log.info("文件已存在，使用秒传 - 文件 ID: {}, MD5: {}", existingFile.getId(), fileMd5);
+                return existingFile.getId();
+            }
+
+            // 3. synchronized 仅保护 DB 写入（最小化锁范围）
+            Long fileId;
             synchronized (this) {
-                // 检查是否已存在相同文件（通过MD5）
-                FileInfo existingFile = getByMd5(fileMd5);
+                // 双重检查：并发场景下可能已被其他线程插入
+                existingFile = getByMd5(fileMd5);
                 if (existingFile != null) {
-                    log.info("文件已存在，使用已有的文件信息 - 文件 ID: {}, MD5: {}", existingFile.getId(), fileMd5);
                     return existingFile.getId();
                 }
 
-                // 3. 先创建 FileInfo 对象用于生成雪花ID
                 FileInfo fileInfo = new FileInfo();
                 fileInfo.setMd5(fileMd5);
                 fileInfo.setOriginalFilename(originalFilename);
@@ -119,25 +128,28 @@ public class FileService {
                 fileInfo.setCreateTime(LocalDateTime.now());
                 fileInfo.setUpdateTime(LocalDateTime.now());
 
-                // 插入数据库，MyBatis-Plus 会自动生成雪花ID
                 fileInfoMapper.insert(fileInfo);
-                Long fileId = fileInfo.getId();
-                log.info("文件ID生成成功：{}", fileId);
-
-                // 4. 保存文件到MinIO
-                String filePath = saveFileToMinio(file, fileId, String.valueOf(userId), fileBytes);
-
-                // 5. 更新文件路径
-                fileInfo.setStoragePath(filePath);
-                fileInfo.setAccessUrl(minioProp.getEndpoint() + "/" + minioProp.getBucket().getFile() + "/" + filePath);
-                fileInfoMapper.updateById(fileInfo);
-
-                // 6. 异步处理：统计字数和页数
-                asyncProcessFile(fileBytes, fileInfo);
-
-                log.info("文件上传成功 - 文件 ID: {}, 文件名：{}, 用户 ID: {}", fileId, originalFilename, userId);
-                return fileId;
+                fileId = fileInfo.getId();
             }
+
+            // 4. MinIO 上传在锁外执行（IO 操作不阻塞其他文件上传）
+            String filePath = saveFileToMinio(file, fileId, String.valueOf(userId), fileBytes);
+
+            // 5. 更新文件路径
+            FileInfo updateInfo = new FileInfo();
+            updateInfo.setId(fileId);
+            updateInfo.setStoragePath(filePath);
+            updateInfo.setAccessUrl(minioProp.getEndpoint() + "/" + minioProp.getBucket().getFile() + "/" + filePath);
+            fileInfoMapper.updateById(updateInfo);
+
+            // 6. 异步处理：统计字数和页数
+            FileInfo fileInfoForAsync = new FileInfo();
+            fileInfoForAsync.setId(fileId);
+            fileInfoForAsync.setOriginalFilename(originalFilename);
+            asyncProcessFile(fileBytes, fileInfoForAsync);
+
+            log.info("文件上传成功 - 文件 ID: {}, 文件名：{}, 用户 ID: {}", fileId, originalFilename, userId);
+            return fileId;
 
         } catch (Exception e) {
             log.error("文件上传失败 - 文件名：{}, 用户 ID: {}", originalFilename, userId, e);
@@ -327,8 +339,8 @@ public class FileService {
      */
     private int countDocxPages(byte[] fileBytes) throws Exception {
         try (ByteArrayInputStream inputStream = new ByteArrayInputStream(fileBytes);
-             java.util.zip.ZipInputStream zipInputStream = new java.util.zip.ZipInputStream(inputStream)) {
-            java.util.zip.ZipEntry entry;
+             ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
+            ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
                 if (entry.getName().equals("docProps/app.xml")) {
                     // 读取app.xml文件，其中包含页数信息
@@ -382,7 +394,7 @@ public class FileService {
      * 统计TXT文件页数
      */
     private int countTxtPages(byte[] fileBytes) throws Exception {
-        String content = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8);
+        String content = new String(fileBytes, StandardCharsets.UTF_8);
         String[] lines = content.split("\\r?\\n");
         // 假设每页30行
         int estimatedPages = (int) Math.ceil(lines.length / 30.0);
@@ -402,7 +414,7 @@ public class FileService {
         String objectName = "files/" + userId + "/" + datePath + "/" + fileId + "_" + safeFilename;
         
         try (InputStream inputStream = new ByteArrayInputStream(fileBytes)) {
-            minioClient.putObject(io.minio.PutObjectArgs.builder()
+            minioClient.putObject(PutObjectArgs.builder()
                     .bucket(minioProp.getBucket().getFile())
                     .object(objectName)
                     .stream(inputStream, fileBytes.length, -1)
@@ -419,7 +431,7 @@ public class FileService {
      */
     public String calculateFileMd5FromBytes(byte[] fileBytes) {
         try {
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] digest = md.digest(fileBytes);
 
             StringBuilder sb = new StringBuilder();
@@ -430,6 +442,32 @@ public class FileService {
 
         } catch (Exception e) {
             log.warn("计算文件MD5失败", e);
+            return "md5_" + System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * 流式计算文件MD5 - 避免将整个文件加载到内存
+     * 适用于大文件上传场景
+     */
+    public String calculateFileMd5FromStream(InputStream inputStream) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                md.update(buffer, 0, bytesRead);
+            }
+            byte[] digest = md.digest();
+
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+
+        } catch (Exception e) {
+            log.warn("流式计算文件MD5失败", e);
             return "md5_" + System.currentTimeMillis();
         }
     }
@@ -548,7 +586,7 @@ public class FileService {
     public FileInfo getByMd5(String md5) {
         try {
             List<FileInfo> fileInfos = fileInfoMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<FileInfo>()
+                    new LambdaQueryWrapper<FileInfo>()
                             .eq(FileInfo::getMd5, md5));
             
             if (fileInfos == null || fileInfos.isEmpty()) {
@@ -596,48 +634,12 @@ public class FileService {
         }
     }
 
-    public Result<String> getReportPreviewUrl(String paperId) {
-        LambdaQueryWrapper<CheckTask> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(CheckTask::getPaperId, paperId)
-                .eq(CheckTask::getIsDeleted, 0)
-                .orderByDesc(CheckTask::getCreateTime)
-                .last("LIMIT 1");
-        CheckTask checkTask = checkTaskMapper.selectOne(queryWrapper);
-        if (checkTask == null) {
-            return Result.error(ResultCode.RESOURCE_NOT_FOUND);
-        }
-        if (!checkTask.getCheckStatus().equals("completed")) {
-            return Result.error(ResultCode.SYSTEM_ERROR, "查重尚未完成");
-        }
-        Long reportId = checkTask.getReportId();
-        CheckReport checkReport = checkReportMapper.selectById(reportId);
-        if (checkReport == null) {
-            return Result.error(ResultCode.SYSTEM_ERROR);
-        }
-        String reportPath = checkReport.getReportPath();
-        File reportFile = new File(reportPath);
-        if (!reportFile.exists()) {
-            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "报告文件不存在");
-        }
-        log.info("报告文件路径: {}", reportPath);
-        try {
-            String encodedPath = URLEncoder.encode(reportPath, StandardCharsets.UTF_8);
-            String previewUrl = kkfileviewUrl + "/onlinePreview?url=" + encodedPath;
-            log.info("生成的预览URL: {}", previewUrl);
-            return Result.success(previewUrl);
-        } catch (Exception e) {
-            log.error("生成预览URL失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "生成预览URL失败");
-        }
-
-    }
-
     /**
      * 从MinIO读取文件内容
      */
     public byte[] getFileContentFromMinio(String objectName) throws Exception {
         try (InputStream inputStream = minioClient.getObject(
-                io.minio.GetObjectArgs.builder()
+                GetObjectArgs.builder()
                         .bucket(minioProp.getBucket().getFile())
                         .object(objectName)
                         .build())) {
@@ -646,7 +648,19 @@ public class FileService {
     }
 
     /**
-     * 从本地或MinIO读取文件内容
+     * 从MinIO获取文件输入流（用于流式下载，避免大文件占用堆内存）
+     * 注意：调用方负责关闭返回的 InputStream
+     */
+    public InputStream getFileStreamFromMinio(String objectName) throws Exception {
+        return minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(minioProp.getBucket().getFile())
+                        .object(objectName)
+                        .build());
+    }
+
+    /**
+     * 从MinIO读取文件内容
      */
     public byte[] getFileContent(Long fileId) throws Exception {
         FileInfo fileInfo = getById(fileId);
@@ -655,16 +669,10 @@ public class FileService {
         }
 
         String storagePath = fileInfo.getStoragePath();
-        if (storagePath.startsWith("files/")) {
-            // 从MinIO读取
-            return getFileContentFromMinio(storagePath);
-        } else {
-            // 从本地读取
-            File file = new File(uploadPath, storagePath);
-            if (!file.exists()) {
-                throw new RuntimeException("文件不存在");
-            }
-            return Files.readAllBytes(file.toPath());
+        if (storagePath == null || storagePath.isEmpty()) {
+            throw new RuntimeException("文件存储路径为空");
         }
+
+        return getFileContentFromMinio(storagePath);
     }
 }

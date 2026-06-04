@@ -20,6 +20,7 @@ import com.abin.checkrepeatsystem.student.service.CheckTaskService;
 import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import com.abin.checkrepeatsystem.student.vo.PaperQueryRequest;
 import com.abin.checkrepeatsystem.student.dto.*;
+import com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest;
 import com.abin.checkrepeatsystem.user.service.AdvisorAssignService;
 import com.abin.checkrepeatsystem.user.service.Impl.InternalMessageNotificationService;
 import com.abin.checkrepeatsystem.user.service.Impl.NotificationFacadeService;
@@ -35,6 +36,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -417,22 +420,13 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             return "未知状态";
         }
 
-        switch (statusValue) {
-            case DictConstants.PaperStatus.PENDING:
-                return "待分配指导老师";
-            case DictConstants.PaperStatus.CHECKING:
-                return "待重中";
-            case DictConstants.PaperStatus.AUDITING:
-                return "待审核";
-            case DictConstants.PaperStatus.COMPLETED:
-                return "已完成";
-            case DictConstants.PaperStatus.REJECTED:
-                return "已拒绝";
-            case DictConstants.PaperStatus.WITHDRAWN:
-                return "已撤回";
-            default:
-                return "未知状态";
-        }
+        if (DictConstants.PaperStatus.PENDING.equals(statusValue)) return "待分配指导老师";
+        if (DictConstants.PaperStatus.CHECKING.equals(statusValue)) return "待重中";
+        if (DictConstants.PaperStatus.AUDITING.equals(statusValue)) return "待审核";
+        if (DictConstants.PaperStatus.COMPLETED.equals(statusValue)) return "已完成";
+        if (DictConstants.PaperStatus.REJECTED.equals(statusValue)) return "已拒绝";
+        if (DictConstants.PaperStatus.WITHDRAWN.equals(statusValue)) return "已撤回";
+        return "未知状态";
     }
 
     /**
@@ -727,8 +721,9 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                 return false;
             }
                 
-            // 3. 验证论文状态：待分配、待查重、待审核状态的论文可以撤回
+            // 3. 验证论文状态：待分配、已分配、查重中、待审核状态的论文可以撤回
             if (!(DictConstants.PaperStatus.PENDING.equals(paperInfo.getPaperStatus()) ||
+                  DictConstants.PaperStatus.ASSIGNED.equals(paperInfo.getPaperStatus()) ||
                   DictConstants.PaperStatus.CHECKING.equals(paperInfo.getPaperStatus()) ||
                   DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus()))) {
                 String statusLabel = getPaperStatusLabel(paperInfo.getPaperStatus());
@@ -790,16 +785,23 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      * 撤回后重新提交论文
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public PaperInfo resubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId) {
         try {
-            // 事务内处理核心业务
             PaperInfo updatedPaper = doResubmitAfterWithdraw(paperId, request, studentId);
-            
-            // 事务外调用异步处理
-            asyncProcessPaperAfterSubmit(paperId, studentId);
-            
+
+            // 事务提交后再执行异步处理（避免自调用导致 @Transactional 失效）
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        asyncProcessPaperAfterSubmit(paperId, studentId);
+                    }
+                }
+            );
+
             return updatedPaper;
-            
+
         } catch (BusinessException e) {
             log.error("撤回后重新提交失败 - 论文 ID: {}", paperId, e);
             throw e;
@@ -808,12 +810,11 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             throw new RuntimeException("重新提交失败：" + e.getMessage());
         }
     }
-    
+
     /**
-     * 实际执行撤回后重新提交的核心逻辑
+     * 实际执行撤回后重新提交的核心逻辑（无事务注解，由调用方管理事务）
      */
-    @Transactional(rollbackFor = Exception.class)
-    protected PaperInfo doResubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId) {
+    private PaperInfo doResubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId) {
         log.info("开始撤回后重新提交 - 论文 ID: {}, 学生 ID: {}", paperId, studentId);
         
         // 1. 验证文件信息
@@ -834,9 +835,9 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
         Integer currentVersion = getCurrentVersion(paperId);
         Integer newVersion = currentVersion+1;
         
-        // 4. 重置状态为待分配
+        // 4. 重置状态为已分配（论文已有教师，跳过待分配阶段）
         String oldStatus = "WITHDRAWN";
-        String newStatus = DictConstants.PaperStatus.PENDING;
+        String newStatus = DictConstants.PaperStatus.ASSIGNED;
         updatePaper.setPaperStatus(newStatus);
         updatePaper.setUpdateTime(LocalDateTime.now());
         
@@ -1096,10 +1097,10 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             response.setContentType(FileMimeTypeUtils.getContentType(fileName));
             response.setHeader("Content-Disposition", 
                 "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-            response.setContentLength((int) file.length());
+            response.setContentLengthLong(file.length());
             
             // 写入文件内容
-            try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+            try (FileInputStream fis = new FileInputStream(file)) {
                 byte[] buffer = new byte[1024];
                 int len;
                 while ((len = fis.read(buffer)) > 0) {
@@ -1153,10 +1154,10 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
                     response.setContentType(FileMimeTypeUtils.getContentType(fileName));
                     response.setHeader("Content-Disposition", 
                         "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-                    response.setContentLength((int) file.length());
+                    response.setContentLengthLong(file.length());
                     
                     // 写入文件内容
-                    try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+                    try (FileInputStream fis = new FileInputStream(file)) {
                         byte[] buffer = new byte[1024];
                         int len;
                         while ((len = fis.read(buffer)) > 0) {
@@ -1283,14 +1284,14 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      * 获取专业列表接口实现
      */
     @Override
-    public List<com.abin.checkrepeatsystem.pojo.entity.Major> getMajorList() {
+    public List<Major> getMajorList() {
         try {
             log.info("获取专业列表");
             // 从数据库中查询所有专业
-            List<com.abin.checkrepeatsystem.pojo.entity.Major> majorList = majorMapper.selectList(
-                new LambdaQueryWrapper<com.abin.checkrepeatsystem.pojo.entity.Major>()
-                    .eq(com.abin.checkrepeatsystem.pojo.entity.Major::getIsDeleted, 0)
-                    .orderByAsc(com.abin.checkrepeatsystem.pojo.entity.Major::getMajorName)
+            List<Major> majorList = majorMapper.selectList(
+                new LambdaQueryWrapper<Major>()
+                    .eq(Major::getIsDeleted, 0)
+                    .orderByAsc(Major::getMajorName)
             );
             log.info("获取专业列表成功，共 {} 个专业", majorList.size());
             return majorList;
@@ -1304,13 +1305,20 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
      * 更新论文信息接口实现
      */
     @Override
-    public PaperInfo updatePaper(Long paperId, com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest request, Long studentId) {
+    @Transactional(rollbackFor = Exception.class)
+    public PaperInfo updatePaper(Long paperId, PaperSubmitRequest request, Long studentId) {
         try {
-            // 事务内处理核心业务
             PaperInfo paperInfo = doUpdatePaper(paperId, request, studentId);
-            
-            // 事务外调用异步处理
-            asyncProcessPaperAfterSubmit(paperId, studentId);
+
+            // 事务提交后再执行异步处理
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        asyncProcessPaperAfterSubmit(paperId, studentId);
+                    }
+                }
+            );
 
             log.info("论文更新成功 - 论文ID: {}", paperId);
             return paperInfo;
@@ -1320,12 +1328,11 @@ public class PaperInfoServiceImpl extends ServiceImpl<PaperInfoMapper, PaperInfo
             throw new RuntimeException("更新论文失败: " + e.getMessage());
         }
     }
-    
+
     /**
-     * 实际执行更新论文的核心逻辑
+     * 实际执行更新论文的核心逻辑（无事务注解，由调用方管理事务）
      */
-    @Transactional(rollbackFor = Exception.class)
-    protected PaperInfo doUpdatePaper(Long paperId, com.abin.checkrepeatsystem.student.vo.PaperSubmitRequest request, Long studentId) {
+    private PaperInfo doUpdatePaper(Long paperId, PaperSubmitRequest request, Long studentId) {
         log.info("开始更新论文 - 论文ID: {}, 学生ID: {}, 请求参数: {}", paperId, studentId, request);
 
         // 1. 验证论文信息

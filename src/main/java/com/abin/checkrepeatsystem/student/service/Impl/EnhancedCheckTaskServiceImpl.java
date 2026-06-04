@@ -1,10 +1,13 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
+import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.pojo.vo.CheckResult;
 import com.abin.checkrepeatsystem.common.engine.CheckEngineManager;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.common.enums.CheckTaskStatusEnum;
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
@@ -37,6 +40,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -94,7 +98,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
         save(checkTask);
         
         // 4. 更新论文状态
-        paperInfo.setPaperStatus(com.abin.checkrepeatsystem.common.constant.DictConstants.PaperStatus.CHECKING);
+        paperInfo.setPaperStatus(DictConstants.PaperStatus.CHECKING);
         paperInfo.setCheckTime(LocalDateTime.now());
         paperInfoMapper.updateById(paperInfo);
         
@@ -269,7 +273,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
     
     // ------------------------------ 异步执行方法 ------------------------------
     
-    @Async
+    @Async("checkTaskExecutor")
     public void executeCheckTaskAsync(Long taskId, List<CheckEngineTypeEnum> engineTypes) {
         CheckTask task = getById(taskId);
         if (task == null) return;
@@ -291,7 +295,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
             updateById(task);
             
             // 执行查重
-            com.abin.checkrepeatsystem.pojo.vo.CheckResult checkResult = 
+            CheckResult checkResult =
                     checkEngineManager.executeCheck(paperText, paperInfo.getPaperTitle(), engineTypes);
             
             // 生成报告
@@ -318,7 +322,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
             // 恢复论文状态
             PaperInfo paperInfo = paperInfoMapper.selectById(task.getPaperId());
             if (paperInfo != null) {
-                paperInfo.setPaperStatus(com.abin.checkrepeatsystem.common.constant.DictConstants.PaperStatus.PENDING);
+                paperInfo.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
                 paperInfo.setCheckTime(null);
                 paperInfoMapper.updateById(paperInfo);
             }
@@ -338,7 +342,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
     }
     
     private String generateTaskNo() {
-        String datePrefix = LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String datePrefix = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String seqPrefix = "CHECK" + datePrefix;
         
         LambdaQueryWrapper<CheckTask> wrapper = new LambdaQueryWrapper<>();
@@ -370,9 +374,9 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
         }
     }
     
-    private CheckReport generateCheckReport(CheckTask task, com.abin.checkrepeatsystem.pojo.vo.CheckResult checkResult) {
+    private CheckReport generateCheckReport(CheckTask task, CheckResult checkResult) {
         String reportNo = "REPORT" + task.getTaskNo().substring(5);
-        String reportPath = "/reports/" + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+        String reportPath = "/reports/" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                           + "/" + reportNo + ".pdf";
         
         CheckReport report = new CheckReport();
@@ -389,7 +393,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
         return report;
     }
     
-    private void generatePdfReport(CheckTask task, CheckReport report, com.abin.checkrepeatsystem.pojo.vo.CheckResult checkResult) {
+    private void generatePdfReport(CheckTask task, CheckReport report, CheckResult checkResult) {
         try {
             ReportPreviewDTO previewDTO = buildReportPreviewDTO(task, report, checkResult);
             pdfReportGenerator.generatePdfToFile(previewDTO, report.getReportPath());
@@ -399,7 +403,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
     }
     
     private ReportPreviewDTO buildReportPreviewDTO(CheckTask task, CheckReport report, 
-                                                 com.abin.checkrepeatsystem.pojo.vo.CheckResult checkResult) {
+                                                 CheckResult checkResult) {
         ReportPreviewDTO dto = new ReportPreviewDTO();
         ReportPreviewDTO.ReportBaseInfoDTO baseInfo = new ReportPreviewDTO.ReportBaseInfoDTO();
         
@@ -421,10 +425,18 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
     }
     
     private void updatePaperStatus(PaperInfo paperInfo, BigDecimal similarity) {
+        // 如果论文已处于终态（已通过/已驳回），不再更新状态，避免覆盖教师审核结果
+        PaperStatusEnum currentStatus = PaperStatusEnum.fromCode(paperInfo.getPaperStatus());
+        if (currentStatus != null && currentStatus.isTerminalStatus()) {
+            log.info("论文已处于终态（{}），跳过状态更新: paperId={}",
+                    currentStatus.getDescription(), paperInfo.getId());
+            return;
+        }
+
         String newStatus = similarity.compareTo(defaultThreshold) <= 0 ?
-                com.abin.checkrepeatsystem.common.constant.DictConstants.PaperStatus.AUDITING :
-                com.abin.checkrepeatsystem.common.constant.DictConstants.PaperStatus.REJECTED;
-        
+                DictConstants.PaperStatus.AUDITING :
+                DictConstants.PaperStatus.REJECTED;
+
         paperInfo.setPaperStatus(newStatus);
         paperInfoMapper.updateById(paperInfo);
     }

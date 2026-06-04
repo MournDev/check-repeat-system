@@ -199,16 +199,14 @@ public class CheckTaskValidationService {
      * 获取论文状态名称
      */
     private String getPaperStatusName(String statusCode) {
-        switch (statusCode) {
-            case DictConstants.PaperStatus.PENDING: return "待分配";
-            case DictConstants.PaperStatus.ASSIGNED: return "已分配";
-            case DictConstants.PaperStatus.CHECKING: return "查重中";
-            case DictConstants.PaperStatus.AUDITING: return "审核中";
-            case DictConstants.PaperStatus.COMPLETED: return "已完成";
-            case DictConstants.PaperStatus.REJECTED: return "已驳回";
-            case DictConstants.PaperStatus.WITHDRAWN: return "已撤回";
-            default: return "未知状态";
-        }
+        if (DictConstants.PaperStatus.PENDING.equals(statusCode)) return "待分配";
+        if (DictConstants.PaperStatus.ASSIGNED.equals(statusCode)) return "已分配";
+        if (DictConstants.PaperStatus.CHECKING.equals(statusCode)) return "查重中";
+        if (DictConstants.PaperStatus.AUDITING.equals(statusCode)) return "审核中";
+        if (DictConstants.PaperStatus.COMPLETED.equals(statusCode)) return "已完成";
+        if (DictConstants.PaperStatus.REJECTED.equals(statusCode)) return "已驳回";
+        if (DictConstants.PaperStatus.WITHDRAWN.equals(statusCode)) return "已撤回";
+        return "未知状态";
     }
     
     /**

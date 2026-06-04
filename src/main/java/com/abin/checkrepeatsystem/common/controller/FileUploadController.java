@@ -2,9 +2,10 @@ package com.abin.checkrepeatsystem.common.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.VO.FileUploadResponse;
-import com.abin.checkrepeatsystem.common.annotation.Idempotent;
 import com.abin.checkrepeatsystem.common.annotation.RateLimit;
+import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.common.service.FilePreviewService;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.service.Impl.FileValidationService;
@@ -121,7 +122,7 @@ public class FileUploadController {
      */
     @PostMapping("/upload")
     @RateLimit(maxRequests = 20, windowSeconds = 60, message = "上传过于频繁，请60秒后重试")
-    @Idempotent(message = "请勿重复提交相同文件")
+    @OperationLog(type = "file_upload", description = "文件上传")
     public Result<FileUploadResponse> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Long userId
@@ -136,9 +137,11 @@ public class FileUploadController {
             return Result.error(ResultCode.PARAM_ERROR, validationResult.getMessage());
         }
 
-        // 2. 获取文件字节数组并计算文件 MD5（用于秒传和校验）
-        byte[] fileBytes = file.getBytes();
-        String fileMd5 = fileService.calculateFileMd5FromBytes(fileBytes);
+        // 2. 流式计算文件 MD5（避免将整个文件加载到内存）
+        String fileMd5;
+        try (java.io.InputStream inputStream = file.getInputStream()) {
+            fileMd5 = fileService.calculateFileMd5FromStream(inputStream);
+        }
 
 
         // 3. 检查是否已存在相同文件（秒传功能）
@@ -204,59 +207,31 @@ public class FileUploadController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
 
+            // 权限校验：文件上传者、教师、管理员可下载
+            Long currentUserId = UserContextHolder.getUserId();
+            String currentUserType = UserContextHolder.getUser().getUserType();
+            boolean isOwner = String.valueOf(currentUserId).equals(fileInfo.getUploadUserId());
+            boolean hasAccess = isOwner || "TEACHER".equals(currentUserType)
+                    || "ADMIN".equals(currentUserType) || "SUPER_ADMIN".equals(currentUserType);
+            if (!hasAccess) {
+                log.warn("文件下载权限不足 - fileId: {}, 当前用户: {}", fileId, currentUserId);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             // 2. 使用传入的文件名或数据库中的文件名
             String actualFileName = (fileName != null && !fileName.trim().isEmpty()) ?
                     fileName : fileInfo.getOriginalFilename();
 
-            // 3. 根据存储类型获取文件内容
+            // 3. 从MinIO获取文件流（流式传输，避免大文件占用堆内存）
             String storagePath = fileInfo.getStoragePath();
-            Resource resource;
-            long contentLength;
 
-            if (storagePath.startsWith("files/")) {
-                // MinIO存储：从MinIO读取
-                log.info("从MinIO读取文件 - fileId: {}, 存储路径: {}", fileId, storagePath);
-                byte[] fileContent = fileService.getFileContentFromMinio(storagePath);
-                resource = new org.springframework.core.io.ByteArrayResource(fileContent);
-                contentLength = fileContent.length;
-            } else {
-                // 本地存储：流式传输，避免大文件全部读入内存
-                log.info("原始存储路径: {}", storagePath);
-
-                storagePath = storagePath.replace("/data/upload/", "");
-                storagePath = storagePath.replace("\\data\\upload\\", "");
-                while (storagePath.startsWith("\\") || storagePath.startsWith("/")) {
-                    storagePath = storagePath.substring(1);
-                }
-                storagePath = storagePath.replace("\\\\", "\\");
-
-                String fileStoragePath = uploadBasePath + File.separator + storagePath;
-                fileStoragePath = fileStoragePath.replace("\\", File.separator);
-                fileStoragePath = fileStoragePath.replace("/", File.separator);
-
-                File file = new File(fileStoragePath);
-
-                log.info("上传基础路径: {}", uploadBasePath);
-                log.info("最终文件路径: {}", fileStoragePath);
-
-                if (!file.exists()) {
-                    log.error("文件不存在 - fileId: {}, 路径: {}", fileId, fileStoragePath);
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-                }
-
-                if (file.length() == 0) {
-                    log.error("文件为空 - fileId: {}, 路径: {}", fileId, fileStoragePath);
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-                }
-
-                resource = new org.springframework.core.io.FileSystemResource(file);
-                contentLength = file.length();
-                log.info("准备流式下载文件 - 大小: {} bytes", contentLength);
-            }
+            log.info("从MinIO读取文件 - fileId: {}, 存储路径: {}", fileId, storagePath);
+            java.io.InputStream minioStream = fileService.getFileStreamFromMinio(storagePath);
+            Resource resource = new InputStreamResource(minioStream);
 
             // 4. 日志打印
             log.info("文件下载请求成功 - fileId: {}, 文件名: {}, 大小: {} bytes",
-                    fileId, actualFileName, contentLength);
+                    fileId, actualFileName, fileInfo.getFileSize());
 
             // 5. 获取Content-Type
             String contentType = FileMimeTypeUtils.getContentType(actualFileName);
@@ -281,7 +256,7 @@ public class FileUploadController {
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength))
+                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileInfo.getFileSize()))
                     .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
                     .header(HttpHeaders.PRAGMA, "no-cache")
                     .header(HttpHeaders.EXPIRES, "0")
@@ -324,50 +299,16 @@ public class FileUploadController {
             String actualFileName = (fileName != null && !fileName.trim().isEmpty()) ?
                     fileName : fileInfo.getOriginalFilename();
 
-            // 4. 根据存储类型获取文件内容
+            // 4. 从MinIO获取文件流（流式传输）
             String storagePath = fileInfo.getStoragePath();
-            Resource resource;
-            long contentLength;
 
-            if (storagePath.startsWith("files/")) {
-                // MinIO存储：从MinIO读取
-                log.info("从MinIO读取预览文件 - fileId: {}, 存储路径: {}", fileId, storagePath);
-                byte[] fileContent = fileService.getFileContentFromMinio(storagePath);
-                resource = new org.springframework.core.io.ByteArrayResource(fileContent);
-                contentLength = fileContent.length;
-            } else {
-                // 本地存储：流式传输，避免大文件全部读入内存
-                storagePath = storagePath.replace("/data/upload/", "");
-                storagePath = storagePath.replace("\\data\\upload\\", "");
-                while (storagePath.startsWith("\\") || storagePath.startsWith("/")) {
-                    storagePath = storagePath.substring(1);
-                }
-                storagePath = storagePath.replace("\\\\", "\\");
-                String fileStoragePath = uploadBasePath + File.separator + storagePath;
-                fileStoragePath = fileStoragePath.replace("\\", File.separator);
-                fileStoragePath = fileStoragePath.replace("/", File.separator);
-                File file = new File(fileStoragePath);
-
-                log.info("从本地磁盘读取预览文件 - fileId: {}, 存储路径: {}", fileId, fileStoragePath);
-
-                if (!file.exists()) {
-                    log.error("预览文件不存在 - fileId: {}, 路径: {}", fileId, fileStoragePath);
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-                }
-
-                if (file.length() == 0) {
-                    log.error("预览文件为空 - fileId: {}, 路径: {}", fileId, fileStoragePath);
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-                }
-
-                resource = new org.springframework.core.io.FileSystemResource(file);
-                contentLength = file.length();
-                log.info("准备流式预览文件 - 大小: {} bytes", contentLength);
-            }
+            log.info("从MinIO读取预览文件 - fileId: {}, 存储路径: {}", fileId, storagePath);
+            java.io.InputStream minioStream = fileService.getFileStreamFromMinio(storagePath);
+            Resource resource = new InputStreamResource(minioStream);
 
             // 5. 日志打印
             log.info("预览文件请求成功 - fileId: {}, 文件名: {}, 大小: {} bytes",
-                    fileId, actualFileName, contentLength);
+                    fileId, actualFileName, fileInfo.getFileSize());
 
             // 6. 获取Content-Type
             String contentType = FileMimeTypeUtils.getContentType(actualFileName);
@@ -384,12 +325,12 @@ public class FileUploadController {
                     encodedFileName, encodedFileName);
 
             // 8. 返回预览文件
-            log.info("准备返回预览文件 - ContentType: {}, ContentLength: {}", contentType, contentLength);
+            log.info("准备返回预览文件 - ContentType: {}, ContentLength: {}", contentType, fileInfo.getFileSize());
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength))
+                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileInfo.getFileSize()))
                     .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
                     .header(HttpHeaders.PRAGMA, "no-cache")
                     .header(HttpHeaders.EXPIRES, "0")
@@ -470,6 +411,17 @@ public class FileUploadController {
 
             PaperInfo paper = paperInfoService.getById(checkTask.getPaperId());
             if (paper == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+
+            // 权限校验：论文所有者、教师、管理员可下载报告
+            Long currentUserId = UserContextHolder.getUserId();
+            String currentUserType = UserContextHolder.getUser().getUserType();
+            boolean isOwner = currentUserId != null && currentUserId.equals(paper.getStudentId());
+            boolean hasAccess = isOwner || "TEACHER".equals(currentUserType)
+                    || "ADMIN".equals(currentUserType) || "SUPER_ADMIN".equals(currentUserType);
+            if (!hasAccess) {
+                log.warn("报告下载权限不足 - reportId: {}, 当前用户: {}", reportId, currentUserId);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
@@ -507,8 +459,24 @@ public class FileUploadController {
      * 删除文件接口
      */
     @DeleteMapping("/delete/file")
+    @OperationLog(type = "file_delete", description = "文件删除")
     public Result<Void> deleteFile(@RequestParam Long fileId) {
         log.info("文件删除请求 - fileId: {}", fileId);
+
+        // 权限校验：仅文件上传者或管理员可删除
+        FileInfo fileInfo = fileService.getById(fileId);
+        if (fileInfo == null) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
+        }
+        Long currentUserId = UserContextHolder.getUserId();
+        String currentUserType = UserContextHolder.getUser().getUserType();
+        boolean isOwner = String.valueOf(currentUserId).equals(fileInfo.getUploadUserId());
+        boolean isAdmin = "ADMIN".equals(currentUserType) || "SUPER_ADMIN".equals(currentUserType);
+        if (!isOwner && !isAdmin) {
+            log.warn("文件删除权限不足 - fileId: {}, 当前用户: {}", fileId, currentUserId);
+            return Result.error(ResultCode.PERMISSION_NO_ACCESS, "无权删除此文件");
+        }
+
         boolean deleted = fileService.deleteFile(fileId);
         if (deleted) {
             log.info("文件删除成功 - fileId: {}", fileId);
@@ -533,8 +501,8 @@ public class FileUploadController {
             log.info("下载导出文件请求 - filePath: {}", filePath);
 
             // 安全校验：规范化路径并限制在导出目录内
-            java.nio.file.Path exportDir = java.nio.file.Paths.get(exportBasePath).toRealPath();
-            java.nio.file.Path requestedPath = java.nio.file.Paths.get(filePath).toRealPath();
+            Path exportDir = Paths.get(exportBasePath).toRealPath();
+            Path requestedPath = Paths.get(filePath).toRealPath();
             if (!requestedPath.startsWith(exportDir)) {
                 log.warn("路径遍历攻击检测 - 请求路径: {} 不在导出目录: {} 内", filePath, exportBasePath);
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);

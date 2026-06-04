@@ -252,7 +252,7 @@ public class PaperVersionServiceImpl {
                 response.setContentType(FileMimeTypeUtils.getContentType(fileName));
                 response.setHeader("Content-Disposition",
                     "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-                response.setContentLength((int) file.length());
+                response.setContentLengthLong(file.length());
 
                 try (FileInputStream fis = new FileInputStream(file)) {
                     byte[] buffer = new byte[1024];

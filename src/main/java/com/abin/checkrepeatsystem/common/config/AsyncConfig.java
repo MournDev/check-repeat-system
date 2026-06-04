@@ -13,6 +13,11 @@ import java.util.concurrent.ThreadPoolExecutor;
  * 异步任务线程池配置
  * 注意：@EnableAsync 在 Application 类上统一声明，此处只定义线程池 Bean
  * 线程池参数支持通过环境变量覆盖，未设置时使用默认值
+ *
+ * 线程池职责划分：
+ * - checkTaskExecutor: 查重任务专用（CPU密集型，核心5/最大20）
+ * - asyncExecutor: 论文处理流程（分配导师、内容提取等IO密集型，核心3/最大10）
+ * - taskExecutor (ThreadPoolConfig): 通用异步任务（通知、文件处理等）
  */
 @Configuration
 public class AsyncConfig {

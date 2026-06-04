@@ -10,7 +10,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * 线程池配置类
+ * 通用线程池配置
+ * 用途：通知发送、文件异步处理、自动分配等通用异步任务
+ * 注意：查重任务专用线程池见 AsyncConfig.checkTaskExecutor
  */
 @Configuration
 public class ThreadPoolConfig {

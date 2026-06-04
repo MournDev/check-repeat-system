@@ -78,8 +78,7 @@ public class AdminPaperServiceImpl implements AdminPaperService {
         try {
             Page<PaperInfo> paperPage = new Page<>(page, size);
             LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
-            
-            // 【新增】默认排除已撤回的论文（除非明确指定要包含）
+
             wrapper.ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN);
             
             // 状态筛选
@@ -215,7 +214,12 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
             }
-            
+
+            // 验证论文状态必须为待审核
+            if (!DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus())) {
+                return Result.error(ResultCode.PARAM_ERROR, "论文当前状态不允许审核：" + paperInfo.getPaperStatus());
+            }
+
             // 更新审核状态
             if ("approved".equals(auditResult)) {
                 paperInfo.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
@@ -241,26 +245,46 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     @Override
     public Result<String> batchAuditPapers(List<Long> paperIds, String auditResult, String auditComment) {
         try {
+            // 批量查询论文信息，避免N+1
+            Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(paperIds).stream()
+                    .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
+
             int successCount = 0;
             int failCount = 0;
-            
+
             for (Long paperId : paperIds) {
                 try {
-                    Result<String> result = auditPaper(paperId, auditResult, auditComment);
-                    if (result.getCode() == 200) {
-                        successCount++;
+                    PaperInfo paperInfo = paperMap.get(paperId);
+                    if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+                        failCount++;
+                        continue;
+                    }
+                    // 验证论文状态必须为待审核
+                    if (!DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus())) {
+                        failCount++;
+                        continue;
+                    }
+                    if ("approved".equals(auditResult)) {
+                        paperInfo.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
+                    } else if ("rejected".equals(auditResult)) {
+                        paperInfo.setPaperStatus(DictConstants.PaperStatus.REJECTED);
                     } else {
                         failCount++;
+                        continue;
                     }
+                    paperInfo.setCheckResult(auditComment);
+                    paperInfo.setUpdateTime(LocalDateTime.now());
+                    paperInfoMapper.updateById(paperInfo);
+                    successCount++;
                 } catch (Exception e) {
                     log.error("批量审核单个论文失败: paperId={}", paperId, e);
                     failCount++;
                 }
             }
-            
+
             String message = String.format("批量审核完成: 成功%d个, 失败%d个", successCount, failCount);
             log.info(message);
-            
+
             if (successCount > 0) {
                 return Result.success(message);
             } else {
@@ -299,9 +323,12 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             if (paperIds == null || paperIds.isEmpty()) {
                 return Result.error(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
             }
+            // 批量查询论文信息，避免N+1
+            Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(paperIds).stream()
+                    .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
             int successCount = 0;
             for (Long paperId : paperIds) {
-                PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+                PaperInfo paperInfo = paperMap.get(paperId);
                 if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
                     continue;
                 }
@@ -386,7 +413,7 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     }
 
     @Override
-    public void exportPaperList(Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response) {
+    public void exportPaperList(Map<String, Object> params, HttpServletResponse response) {
         log.info("开始导出论文列表: params={}", params);
         try {
             // 从参数中提取筛选条件
@@ -558,24 +585,14 @@ public class AdminPaperServiceImpl implements AdminPaperService {
      * 获取论文状态文本
      */
     private String getPaperStatusText(String status) {
-        switch (status) {
-            case DictConstants.PaperStatus.PENDING:
-                return "待分配";
-            case DictConstants.PaperStatus.ASSIGNED:
-                return "已分配";
-            case DictConstants.PaperStatus.CHECKING:
-                return "查重中";
-            case DictConstants.PaperStatus.AUDITING:
-                return "审核中";
-            case DictConstants.PaperStatus.COMPLETED:
-                return "已完成";
-            case DictConstants.PaperStatus.REJECTED:
-                return "已拒绝";
-            case DictConstants.PaperStatus.WITHDRAWN:
-                return "已撤回";
-            default:
-                return status;
-        }
+        if (DictConstants.PaperStatus.PENDING.equals(status)) return "待分配";
+        if (DictConstants.PaperStatus.ASSIGNED.equals(status)) return "已分配";
+        if (DictConstants.PaperStatus.CHECKING.equals(status)) return "查重中";
+        if (DictConstants.PaperStatus.AUDITING.equals(status)) return "审核中";
+        if (DictConstants.PaperStatus.COMPLETED.equals(status)) return "已完成";
+        if (DictConstants.PaperStatus.REJECTED.equals(status)) return "已拒绝";
+        if (DictConstants.PaperStatus.WITHDRAWN.equals(status)) return "已撤回";
+        return status;
     }
     
     @Override
@@ -827,7 +844,7 @@ public class AdminPaperServiceImpl implements AdminPaperService {
             updateInfo.setCheckEngineType(engineType);
             updateInfo.setCheckSource(source);
             updateInfo.setCheckTime(LocalDateTime.now());
-            // 初始化查重完成状态为 0（未开始），实际完成时由 updatePaperCheckCompletion 设置为 1
+
             if (paperInfo.getCheckCompleted() == null) {
                 updateInfo.setCheckCompleted(0);
             }
@@ -899,30 +916,6 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     }
     
     /**
-     * 添加相似度范围筛选条件
-     */
-    private void addSimilarityRangeCondition(LambdaQueryWrapper<PaperInfo> wrapper, String similarityRange) {
-        switch (similarityRange.toLowerCase()) {
-            case "<20%":
-            case "lt20":
-                wrapper.lt(PaperInfo::getSimilarityRate, 20);
-                break;
-            case "20%-50%":
-            case "20to50":
-                wrapper.between(PaperInfo::getSimilarityRate, 20, 50);
-                break;
-            case ">50%":
-            case "gt50":
-                wrapper.gt(PaperInfo::getSimilarityRate, 50);
-                break;
-            default:
-                // 不支持的范围，不添加筛选条件
-                log.warn("不支持的相似度范围: {}", similarityRange);
-                break;
-        }
-    }
-    
-    /**
      * 添加查重状态筛选条件
      */
     private void addCheckStatusCondition(LambdaQueryWrapper<PaperInfo> wrapper, String checkStatus) {
@@ -930,7 +923,7 @@ public class AdminPaperServiceImpl implements AdminPaperService {
         
         switch (status) {
             case NOT_CHECKED:
-                // 未查重：check_completed = 0 或 check_engine_type IS NULL
+                //
                 wrapper.and(w -> w.eq(PaperInfo::getCheckCompleted, 0)
                                 .or()
                                 .isNull(PaperInfo::getCheckEngineType));

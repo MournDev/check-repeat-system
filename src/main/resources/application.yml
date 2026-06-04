@@ -27,12 +27,6 @@ minio:
     paper_content: paper-content
     file: file
 
-# # Jasypt 配置
-# jasypt:
-#   encryptor:
-#     password: ${JASYPT_ENCRYPTOR_PASSWORD:defaultEncryptionPassword}
-#     algorithm: PBEWithMD5AndDES
-
 spring:
   application:
     name: check-repeat-system
@@ -52,9 +46,9 @@ spring:
     password: ${MYSQL_PASSWORD:}   # 必须通过环境变量设置
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 10
-      idle-timeout: 180000
+      maximum-pool-size: 30          # 查重任务(10) + 异步任务 + HTTP请求，需要更多连接
+      minimum-idle: 5                # 低流量时减少空闲连接浪费
+      idle-timeout: 300000           # 空闲连接5分钟回收（原3分钟）
       connection-timeout: 30000
       max-lifetime: 1800000
       validation-timeout: 5000
@@ -245,7 +239,7 @@ review:
 # 文件上传配置
 file:
   upload:
-    storage-type: ${STORAGE_TYPE:MINIO}
+    storage-type: MINIO
     base-path: ${UPLOAD_BASE_PATH:/data/upload/}
     max-size-mb: 50
   virus-scan:
@@ -283,6 +277,15 @@ monitor:
     memory-threshold: ${MEMORY_ALERT_THRESHOLD:85.0}
     disk-threshold: ${DISK_ALERT_THRESHOLD:90.0}
 
+# 系统初始化配置（首次启动时自动创建角色和超级管理员）
+app:
+  init:
+    super-admin:
+      username: ${SUPER_ADMIN_USERNAME:superadmin}
+      password: ${SUPER_ADMIN_PASSWORD:}   # 必须通过环境变量设置，首次启动后请立即修改
+      real-name: ${SUPER_ADMIN_REAL_NAME:超级管理员}
+      email: ${SUPER_ADMIN_EMAIL:admin@system.local}
+
 # 指导老师分配配置
 advisor-assign:
   max-task-count: 10
@@ -296,32 +299,3 @@ websocket:
 upload:
   base-path: ${UPLOAD_BASE_PATH:/data/upload/}
 
-# ============================================ #
-# 数据库字段变更说明（2026-04-26） #
-# ============================================ #
-#
-# 学院和专业模块改造 - 需要执行的数据库变更：
-#
-# -- 1. 在 student_info 表添加 college_id 字段（关联 college.id）
-# ALTER TABLE student_info ADD COLUMN college_id BIGINT(20) DEFAULT NULL COMMENT '学院ID（关联college.id）' AFTER user_id;
-#
-# -- 2. 可选：为 college_id 添加外键约束（确保数据完整性）
-# ALTER TABLE student_info ADD CONSTRAINT fk_student_info_college FOREIGN KEY (college_id) REFERENCES college(id);
-#
-# -- 3. 为 college_id 和 major_id 添加索引（提高查询效率）
-# ALTER TABLE student_info ADD INDEX idx_college_id (college_id);
-# ALTER TABLE student_info ADD INDEX idx_major_id (major_id);
-#
-# -- 4. 如果需要保留历史数据一致性，可以执行数据同步：
-# UPDATE student_info si
-# INNER JOIN college c ON si.college_name = c.college_name
-# SET si.college_id = c.id
-# WHERE si.college_name IS NOT NULL AND si.college_name != '';
-#
-# -- 5. 验证数据同步结果
-# SELECT college_name, college_id, COUNT(*) as cnt
-# FROM student_info
-# WHERE college_id IS NULL AND college_name IS NOT NULL AND college_name != ''
-# GROUP BY college_name, college_id;
-#
-# ============================================ #

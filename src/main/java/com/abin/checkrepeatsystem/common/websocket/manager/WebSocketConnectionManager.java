@@ -25,9 +25,15 @@ public class WebSocketConnectionManager {
      * @param sessionId 会话ID
      */
     public void userConnect(Long userId, String sessionId) {
-        userConnections.put(userId, sessionId);
-        onlineUserCount.incrementAndGet();
-        log.info("用户连接 - 用户ID: {}, 会话ID: {}, 当前在线用户数: {}", 
+        String previousSession = userConnections.put(userId, sessionId);
+        if (previousSession == null) {
+            // 新用户连接，计数+1
+            onlineUserCount.incrementAndGet();
+        } else if (!previousSession.equals(sessionId)) {
+            // 同一用户重连（sessionId 变了），计数不变
+            log.info("用户重连 - 用户ID: {}, 旧会话: {}, 新会话: {}", userId, previousSession, sessionId);
+        }
+        log.info("用户连接 - 用户ID: {}, 会话ID: {}, 当前在线用户数: {}",
                 userId, sessionId, onlineUserCount.get());
     }
 
@@ -37,8 +43,13 @@ public class WebSocketConnectionManager {
      */
     public void userDisconnect(Long userId) {
         if (userConnections.remove(userId) != null) {
-            onlineUserCount.decrementAndGet();
-            log.info("用户断开连接 - 用户ID: {}, 当前在线用户数: {}", 
+            int newCount = onlineUserCount.decrementAndGet();
+            // 防止计数器出现负数
+            if (newCount < 0) {
+                onlineUserCount.set(0);
+                log.warn("WebSocket在线用户计数器异常（负数），已重置为0");
+            }
+            log.info("用户断开连接 - 用户ID: {}, 当前在线用户数: {}",
                     userId, onlineUserCount.get());
         }
     }
@@ -62,11 +73,19 @@ public class WebSocketConnectionManager {
     }
 
     /**
-     * 获取在线用户数量
+     * 获取在线用户数量（基于计数器，可能存在偏差）
      * @return 在线用户数
      */
     public int getOnlineUserCount() {
         return onlineUserCount.get();
+    }
+
+    /**
+     * 获取实际在线用户数量（基于连接表，精确值）
+     * @return 实际在线用户数
+     */
+    public int getActualOnlineCount() {
+        return userConnections.size();
     }
 
     /**

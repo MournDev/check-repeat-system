@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.common.websocket.WebSocketMessageType;
 import com.abin.checkrepeatsystem.common.websocket.WebSocketSender;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.dto.ChatExportDTO;
+import com.abin.checkrepeatsystem.student.dto.FileUploadVO;
 import com.abin.checkrepeatsystem.student.dto.MessageSendDTO;
 import com.abin.checkrepeatsystem.mapper.PaperAttachmentMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
@@ -328,7 +329,7 @@ public class StudentMessageServiceImpl implements StudentMessageService {
                     .eq(InstantMessage::getIsDeleted, 0)
                     .orderByAsc(InstantMessage::getSentTime);
             
-            com.baomidou.mybatisplus.core.metadata.IPage<InstantMessage> dbPage = instantMessageMapper.selectPage(messagePage, wrapper);
+            IPage<InstantMessage> dbPage = instantMessageMapper.selectPage(messagePage, wrapper);
             
             // 为每条消息设置发送者名称和头像
             for (InstantMessage message : dbPage.getRecords()) {
@@ -369,7 +370,7 @@ public class StudentMessageServiceImpl implements StudentMessageService {
             InstantMessage message = new InstantMessage();
             message.setSenderId(currentUserId); // 使用当前登录用户 ID
             message.setReceiverId(sendDTO.getReceiverId());
-            message.setConversationId(sendDTO.getSessionId()); // ✅ 直接使用前端传递的会话 ID
+            message.setConversationId(sendDTO.getSessionId());
             message.setContent(sendDTO.getContent());
             message.setMessageType(sendDTO.getMessageType());
             message.setContentType("TEXT");
@@ -461,7 +462,7 @@ public class StudentMessageServiceImpl implements StudentMessageService {
     }
 
     @Override
-    public com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long studentId, Long sessionId) {
+    public FileUploadVO uploadFile(MultipartFile file, Long studentId, Long sessionId) {
         try {
             log.info("上传文件 -学生ID: {}, 文件名: {}, 文件大小: {}, 会话ID: {}",
                     studentId, file.getOriginalFilename(), file.getSize(), sessionId);
@@ -513,8 +514,7 @@ public class StudentMessageServiceImpl implements StudentMessageService {
             }
 
             //构建响应 VO
-            com.abin.checkrepeatsystem.student.dto.FileUploadVO fileVO =
-                new com.abin.checkrepeatsystem.student.dto.FileUploadVO();
+            FileUploadVO fileVO = new FileUploadVO();
             fileVO.setId(fileId);
             fileVO.setName(file.getOriginalFilename());
             fileVO.setSize(file.getSize());
@@ -549,7 +549,7 @@ public class StudentMessageServiceImpl implements StudentMessageService {
                     response.setContentType(FileMimeTypeUtils.getContentType(fileName));
                     response.setHeader("Content-Disposition", 
                         "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-                    response.setContentLength((int) file.length());
+                    response.setContentLengthLong(file.length());
                     
                     //写入文件内容
                     try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
