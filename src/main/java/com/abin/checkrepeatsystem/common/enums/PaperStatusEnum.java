@@ -2,17 +2,24 @@ package com.abin.checkrepeatsystem.common.enums;
 
 import lombok.Getter;
 
+/**
+ * 论文状态枚举 —— 唯一权威定义
+ *
+ * 状态流转：
+ *   PENDING → ASSIGNED → CHECKING → AUDITING → COMPLETED
+ *                                            → REJECTED → (resubmit) → AUDITING
+ *           → WITHDRAWN
+ */
 @Getter
 public enum PaperStatusEnum {
-    
-    DRAFT("draft", "草稿"),
-    SUBMITTED("submitted", "已提交"),
-    AUDITING("auditing", "审核中"),
-    COMPLETED("completed", "已完成"),
-    REJECTED("rejected", "已驳回"),
-    REVISED("revised", "修改中"),
-    REVIEWED("reviewed", "已评审"),
-    PENDING("pending", "待处理");
+
+    PENDING("pending", "待分配"),
+    ASSIGNED("assigned", "已分配"),
+    CHECKING("checking", "查重中"),
+    AUDITING("auditing", "待审核"),
+    COMPLETED("completed", "审核通过"),
+    REJECTED("rejected", "审核不通过"),
+    WITHDRAWN("withdrawn", "已撤回");
 
     private final String value;
     private final String description;
@@ -38,11 +45,24 @@ public enum PaperStatusEnum {
         throw new IllegalArgumentException("Unknown paper status: " + code);
     }
 
+    /**
+     * 是否为终态（不可再流转）
+     */
     public boolean isTerminalStatus() {
-        return this == COMPLETED || this == REJECTED;
+        return this == COMPLETED || this == WITHDRAWN;
     }
 
+    /**
+     * 是否允许发起查重
+     */
+    public boolean isCheckable() {
+        return this == ASSIGNED || this == CHECKING || this == AUDITING;
+    }
+
+    /**
+     * 是否允许教师审核
+     */
     public boolean isReviewable() {
-        return this == AUDITING || this == REVISED;
+        return this == AUDITING;
     }
 }

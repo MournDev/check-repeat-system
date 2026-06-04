@@ -1,5 +1,7 @@
 package com.abin.checkrepeatsystem.common.constant;
 
+import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
+
 /**
  * 字典值常量类
  */
@@ -57,17 +59,16 @@ public class DictConstants {
 
 
     /**
-     * 论文状态字典值
+     * 论文状态字典值 —— 统一引用 PaperStatusEnum，消除硬编码
      */
     public static class PaperStatus {
-
-        public static final String PENDING = "pending";// 待分配
-        public static final String ASSIGNED = "assigned";// 已分配
-        public static final String CHECKING = "checking";// 待查重
-        public static final String AUDITING = "auditing";// 待审核
-        public static final String COMPLETED = "completed";// 审核通过
-        public static final String REJECTED = "rejected";// 审核不通过
-        public static final String WITHDRAWN = "withdrawn";// 已取消
+        public static final String PENDING   = PaperStatusEnum.PENDING.getValue();
+        public static final String ASSIGNED  = PaperStatusEnum.ASSIGNED.getValue();
+        public static final String CHECKING  = PaperStatusEnum.CHECKING.getValue();
+        public static final String AUDITING  = PaperStatusEnum.AUDITING.getValue();
+        public static final String COMPLETED = PaperStatusEnum.COMPLETED.getValue();
+        public static final String REJECTED  = PaperStatusEnum.REJECTED.getValue();
+        public static final String WITHDRAWN = PaperStatusEnum.WITHDRAWN.getValue();
     }
 
     /**
@@ -115,6 +116,7 @@ public class DictConstants {
         public static final String PENDING = "pending";// 待确认
         public static final String CONFIRMED = "confirmed";// 已确认
         public static final String REJECTED = "rejected";// 已拒绝
+        public static final String PENDING_REASSIGN = "pending_reassign";// 待重新分配（导师拒绝后）
     }
 
     /**
