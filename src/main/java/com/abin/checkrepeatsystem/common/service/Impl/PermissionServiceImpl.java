@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.common.service.AuthService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
+import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import org.springframework.stereotype.Service;
@@ -129,10 +130,35 @@ public class PermissionServiceImpl implements AuthService {
     }
 
     @Override
-    public boolean checkFileAccess(Object fileInfo) throws PermissionDeniedException {
-        // 暂时返回true，后续根据实际业务逻辑实现
-        // 例如：检查当前用户是否为文件的所有者或具有访问权限
-        return true;
+    public boolean checkFileAccess(FileInfo fileInfo) throws PermissionDeniedException {
+        if (fileInfo == null) {
+            throw new PermissionDeniedException(ResultCode.RESOURCE_NOT_FOUND, getCurrentUserId(), "file_access", "文件不存在");
+        }
+
+        // 管理员可以访问所有文件
+        if (isAdmin()) {
+            return true;
+        }
+
+        Long currentUserId = getCurrentUserId();
+        if (currentUserId == null) {
+            throw new PermissionDeniedException(ResultCode.PERMISSION_NO_ACCESS, null, "file_access", "用户未登录");
+        }
+
+        // 文件上传者可以访问自己的文件
+        if (fileInfo.getUploadUserId() != null && String.valueOf(currentUserId).equals(fileInfo.getUploadUserId())) {
+            return true;
+        }
+
+        // 通过业务关联检查权限（如论文文件，检查论文归属）
+        if (fileInfo.getBizId() != null && "paper".equals(fileInfo.getBizType())) {
+            PaperInfo paperInfo = paperInfoMapper.selectById(Long.parseLong(fileInfo.getBizId()));
+            if (paperInfo != null) {
+                return checkPaperAccess(paperInfo);
+            }
+        }
+
+        throw new PermissionDeniedException(ResultCode.PERMISSION_NO_ACCESS, currentUserId, "file_access", "无权限访问该文件");
     }
 
     @Override
@@ -156,11 +182,11 @@ public class PermissionServiceImpl implements AuthService {
                     throw new PermissionDeniedException(ResultCode.PERMISSION_NO_ACCESS, getCurrentUserId(), operation, "只有教师和管理员可以审核论文");
                 }
             case "system_config":
-                // 只有管理员可以修改系统配置
-                if (isAdmin()) {
+                // 只有超级管理员可以修改系统配置
+                if (isSuperAdmin()) {
                     return true;
                 } else {
-                    throw new PermissionDeniedException(ResultCode.PERMISSION_ADMIN_ONLY, getCurrentUserId(), operation, "只有管理员可以修改系统配置");
+                    throw new PermissionDeniedException(ResultCode.PERMISSION_ADMIN_ONLY, getCurrentUserId(), operation, "只有超级管理员可以修改系统配置");
                 }
             default:
                 throw new PermissionDeniedException(ResultCode.PERMISSION_NO_ACCESS, getCurrentUserId(), operation, "未知的操作类型");
@@ -170,7 +196,14 @@ public class PermissionServiceImpl implements AuthService {
     @Override
     public boolean isAdmin() {
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
-        return currentUser != null && UserTypeEnum.ROLE_ADMIN.equals(currentUser.getUserType());
+        return currentUser != null && (UserTypeEnum.ROLE_ADMIN.equals(currentUser.getUserType())
+                || UserTypeEnum.ROLE_SUPER_ADMIN.equals(currentUser.getUserType()));
+    }
+
+    @Override
+    public boolean isSuperAdmin() {
+        SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
+        return currentUser != null && UserTypeEnum.ROLE_SUPER_ADMIN.equals(currentUser.getUserType());
     }
 
     @Override

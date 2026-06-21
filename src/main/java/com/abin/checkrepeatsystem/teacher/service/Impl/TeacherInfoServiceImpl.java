@@ -11,6 +11,7 @@ import com.abin.checkrepeatsystem.teacher.dto.UpdateTeacherInfoReq;
 import com.abin.checkrepeatsystem.teacher.service.TeacherInfoService;
 import com.abin.checkrepeatsystem.user.mapper.TeacherInfoMapper;
 import com.abin.checkrepeatsystem.common.service.CollegeAndMajorService;
+import com.abin.checkrepeatsystem.common.service.TokenRevocationService;
 import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
 import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -40,6 +41,8 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
     private final CollegeAndMajorService collegeAndMajorService;
     
     private final ConversationMemberMapper conversationMemberMapper;
+
+    private final TokenRevocationService tokenRevocationService;
     @Override
     public Result<String> updateInfo(UpdateTeacherInfoReq updateReq){
         try {
@@ -166,8 +169,8 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
             return Result.error(ResultCode.PARAM_ERROR, "参数不能为空");
         }
 
-        if (newPassword.length() < 6 || newPassword.length() > 50) {
-            return Result.error(ResultCode.PARAM_ERROR, "密码长度必须在6-50位之间");
+        if (newPassword.length() < 8 || newPassword.length() > 50) {
+            return Result.error(ResultCode.PARAM_ERROR, "密码长度必须在8-50位之间");
         }
 
         SysUser user = sysUserMapper.selectById(userId);
@@ -182,6 +185,8 @@ public class TeacherInfoServiceImpl extends ServiceImpl<TeacherInfoMapper, Teach
         String encodePassword = passwordEncoder.encode(newPassword);
         user.setPassword(encodePassword);
         sysUserMapper.updateById(user);
+        // 吊销该用户的所有旧 token
+        tokenRevocationService.revokeAllTokensForUser(userId);
         log.info("用户密码修改成功：用户ID={}", userId);
         return Result.success("密码修改成功");
     }

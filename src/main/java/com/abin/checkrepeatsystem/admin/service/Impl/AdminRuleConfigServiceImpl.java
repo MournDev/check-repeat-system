@@ -88,6 +88,11 @@ public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, Che
         // 执行分页查询（按创建时间倒序）
         IPage<CheckRule> ruleIPage = baseMapper.selectPage(rulePage, ruleWrapper);
         Page<CheckRule> pageInfo = new Page<>();
+        pageInfo.setRecords(ruleIPage.getRecords());
+        pageInfo.setCurrent(ruleIPage.getCurrent());
+        pageInfo.setSize(ruleIPage.getSize());
+        pageInfo.setTotal(ruleIPage.getTotal());
+        pageInfo.setPages(ruleIPage.getPages());
 
         return Result.success("查重规则列表查询成功", pageInfo);
     }
@@ -100,8 +105,6 @@ public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, Che
         Integer isDefault = operateReq.getIsDefault();
         List<Long> libIds = operateReq.getLibIds();
 
-        // 1. 基础校验
-        // 1.1 校验规则编码唯一性（新增或编辑时编码变更需校验）
         LambdaQueryWrapper<CheckRule> codeWrapper = new LambdaQueryWrapper<>();
         codeWrapper.eq(CheckRule::getRuleCode, ruleCode)
                 .eq(CheckRule::getIsDeleted, 0);
@@ -310,6 +313,11 @@ public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, Che
         // 执行分页查询（按创建时间倒序）
         IPage<CompareLib> libIPage = compareLibMapper.selectPage(libPage, libWrapper);
         Page<CompareLib> pageInfo = new Page<>();
+        pageInfo.setRecords(libIPage.getRecords());
+        pageInfo.setCurrent(libIPage.getCurrent());
+        pageInfo.setSize(libIPage.getSize());
+        pageInfo.setTotal(libIPage.getTotal());
+        pageInfo.setPages(libIPage.getPages());
 
         return Result.success("比对库列表查询成功", pageInfo);
     }
@@ -432,7 +440,6 @@ public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, Che
         return Result.success("比对库" + (isEnabled == 1 ? "启用" : "禁用") + "成功");
     }
 
-    // ========================== 系统参数配置 ==========================
     @Override
     public Result<SystemParam> getCurrentSystemParam() {
         // 查询系统参数（仅一条记录）
@@ -482,10 +489,6 @@ public class AdminRuleConfigServiceImpl extends ServiceImpl<CheckRuleMapper, Che
         return Result.success("系统参数更新成功");
     }
 
-    // ------------------------------ 私有辅助方法 ------------------------------
-    /**
-     * 初始化默认系统参数（首次查询无数据时）
-     */
     private SystemParam initDefaultSystemParam() {
         SystemParam defaultParam = new SystemParam();
         defaultParam.setMaxPaperSize(defaultMaxPaperSize);

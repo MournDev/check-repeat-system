@@ -19,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * 教师论文预览控制器
@@ -161,6 +162,62 @@ public class TeacherPaperPreviewController {
                 teacherId, paperId, paperInfo.getFileId());
         return Result.success("获取预览信息成功", previewInfo);
 
+    }
+
+    /**
+     * 教师下载论文文件
+     * @param paperId 论文ID
+     * @param response HTTP响应
+     */
+    @GetMapping("/{paperId}/download")
+    @Operation(summary = "下载论文文件", description = "教师下载指导学生的论文文件")
+    public void downloadPaper(
+            @Parameter(description = "论文ID") @PathVariable Long paperId,
+            HttpServletResponse response) {
+        try {
+            Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
+            log.info("教师请求下载论文 - 教师ID: {}, 论文ID: {}", teacherId, paperId);
+
+            // 1. 验证论文存在性和权限
+            PaperInfo paperInfo = paperInfoService.getById(paperId);
+            if (paperInfo == null) {
+                log.warn("论文不存在 - 论文ID: {}", paperId);
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.getWriter().write("论文不存在");
+                return;
+            }
+
+            // 2. 验证教师权限（只能下载自己指导的学生论文）
+            if (!paperInfo.getTeacherId().equals(teacherId)) {
+                log.warn("无权限下载论文 - 教师ID: {}, 论文ID: {}, 论文指导教师ID: {}",
+                        teacherId, paperId, paperInfo.getTeacherId());
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().write("无权限下载此论文");
+                return;
+            }
+
+            // 3. 验证论文状态（确保论文未删除）
+            if (paperInfo.getIsDeleted() == 1) {
+                log.warn("论文已被删除 - 论文ID: {}", paperId);
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.getWriter().write("论文已被删除");
+                return;
+            }
+
+            // 4. 调用服务层方法下载论文
+            paperInfoService.downloadPaper(paperId, paperInfo.getStudentId(), response);
+
+            log.info("论文下载成功 - 教师ID: {}, 论文ID: {}", teacherId, paperId);
+
+        } catch (Exception e) {
+            log.error("教师下载论文失败 - 论文ID: {}", paperId, e);
+            try {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.getWriter().write("论文下载失败: " + e.getMessage());
+            } catch (Exception ex) {
+                log.error("设置错误响应失败", ex);
+            }
+        }
     }
 
     /**

@@ -1,6 +1,6 @@
 package com.abin.checkrepeatsystem.admin.dto;
 
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import java.util.List;
 
@@ -10,21 +10,21 @@ import java.util.List;
 @Data
 public class SubmitTrendStatDTO {
 
-    @ApiModelProperty(value = "时间轴（如[2024-09-01, 2024-09-02,...]）")
+    @Schema(description = "时间轴（如[2024-09-01, 2024-09-02,...]）")
     private List<String> timeAxis; // 按统计维度生成的时间列表
 
-    @ApiModelProperty(value = "每日提交量（与时间轴一一对应）")
+    @Schema(description = "每日提交量（与时间轴一一对应）")
     private List<Integer> dailySubmitCount; // 对应时间的提交人数
 
-    @ApiModelProperty(value = "每日未提交量（与时间轴一一对应）")
+    @Schema(description = "每日未提交量（与时间轴一一对应）")
     private List<Integer> dailyUnsubmitCount; // 对应时间的未提交人数
 
-    @ApiModelProperty(value = "统计周期内总提交人数")
+    @Schema(description = "统计周期内总提交人数")
     private Integer totalSubmitCount;
 
-    @ApiModelProperty(value = "统计周期内总未提交人数")
+    @Schema(description = "统计周期内总未提交人数")
     private Integer totalUnsubmitCount;
 
-    @ApiModelProperty(value = "总体提交率（保留2位小数，如85.50）")
+    @Schema(description = "总体提交率（保留2位小数，如85.50）")
     private Double submitRate;
 }

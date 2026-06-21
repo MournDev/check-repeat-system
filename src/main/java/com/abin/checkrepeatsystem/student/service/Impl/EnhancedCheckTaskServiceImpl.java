@@ -9,14 +9,17 @@ import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.common.enums.CheckTaskStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.service.PaperStatusTransitionService;
 import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.notification.service.NotificationService;
 import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.student.dto.CheckTaskResultDTO;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
 import com.abin.checkrepeatsystem.student.mapper.CheckReportMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
+import com.abin.checkrepeatsystem.student.service.CheckRuleService;
 import com.abin.checkrepeatsystem.student.service.EnhancedCheckTaskService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.abin.checkrepeatsystem.user.vo.CheckResultVO;
@@ -55,14 +58,20 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
         implements EnhancedCheckTaskService {
     
     private final PaperInfoMapper paperInfoMapper;
-    
+
     private final CheckReportMapper checkReportMapper;
-    
+
     private final CheckEngineManager checkEngineManager;
-    
+
     private final PdfReportGenerator pdfReportGenerator;
-    
+
     private final SysUserService sysUserService;
+
+    private final PaperStatusTransitionService paperStatusTransitionService;
+
+    private final CheckRuleService checkRuleService;
+
+    private final NotificationService notificationService;
     
     @Value("${file.upload.base-path}")
     private String basePath;
@@ -79,33 +88,71 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
     @Transactional(rollbackFor = Exception.class)
     public Result<CheckResultVO> createEnhancedCheckTask(Long paperId, List<String> engineTypes) {
         Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
-        
+
         // 1. 校验论文
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
         if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
             return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或已删除");
         }
-        
-        // 2. 解析引擎类型
+
+        // 2. 读取查重规则（默认规则）
+        CheckRule checkRule = checkRuleService.getDefaultRule();
+        if (checkRule == null) {
+            return Result.error(ResultCode.SYSTEM_ERROR, "未配置查重规则，请联系管理员");
+        }
+
+        // 3. 校验查重次数限制
+        if (checkRule.getMaxCheckCount() != null && checkRule.getMaxCheckCount() > 0) {
+            Long checkCount = count(new LambdaQueryWrapper<CheckTask>()
+                    .eq(CheckTask::getPaperId, paperId)
+                    .eq(CheckTask::getIsDeleted, 0)
+                    .ne(CheckTask::getCheckStatus, CheckTaskStatusEnum.CANCELLED.getCode()));
+            if (checkCount >= checkRule.getMaxCheckCount()) {
+                return Result.error(ResultCode.PERMISSION_NOT_STATUS,
+                        String.format("该论文查重次数已达上限（最多%d次）", checkRule.getMaxCheckCount()));
+            }
+        }
+
+        // 4. 校验查重间隔
+        if (checkRule.getCheckInterval() != null && checkRule.getCheckInterval() > 0) {
+            CheckTask lastTask = getOne(new LambdaQueryWrapper<CheckTask>()
+                    .eq(CheckTask::getPaperId, paperId)
+                    .eq(CheckTask::getIsDeleted, 0)
+                    .orderByDesc(CheckTask::getCreateTime)
+                    .last("LIMIT 1"));
+            if (lastTask != null && lastTask.getEndTime() != null) {
+                long secondsSinceLastCheck = java.time.Duration.between(
+                        lastTask.getEndTime(), LocalDateTime.now()).getSeconds();
+                if (secondsSinceLastCheck < checkRule.getCheckInterval()) {
+                    long waitSeconds = checkRule.getCheckInterval() - secondsSinceLastCheck;
+                    return Result.error(ResultCode.PERMISSION_NOT_STATUS,
+                            String.format("距上次查重间隔不足，请等待%d秒后重试", waitSeconds));
+                }
+            }
+        }
+
+        // 5. 解析引擎类型
         List<CheckEngineTypeEnum> engines = parseEngineTypes(engineTypes);
-        
-        // 3. 创建任务
+
+        // 6. 创建任务（关联查重规则）
         CheckTask checkTask = new CheckTask();
         checkTask.setPaperId(paperId);
         checkTask.setTaskNo(generateTaskNo());
         checkTask.setCheckStatus(CheckTaskStatusEnum.PENDING.getCode());
+        checkTask.setCheckRuleId(checkRule.getId());
         UserBusinessInfoUtils.setAuditField(checkTask, true);
         save(checkTask);
-        
-        // 4. 更新论文状态
-        paperInfo.setPaperStatus(DictConstants.PaperStatus.CHECKING);
+
+        // 7. 更新论文状态为查重中（通过状态机服务）
+        paperStatusTransitionService.transitionSilently(
+                paperId, PaperStatusEnum.CHECKING, currentUserId, "发起查重任务");
         paperInfo.setCheckTime(LocalDateTime.now());
         paperInfoMapper.updateById(paperInfo);
-        
-        // 5. 异步执行查重
+
+        // 8. 异步执行查重（传入规则阈值）
         executeCheckTaskAsync(checkTask.getId(), engines);
-        
-        // 6. 返回结果
+
+        // 9. 返回结果
         CheckResultVO resultVO = buildCheckResultVO(checkTask);
         return Result.success("查重任务创建成功", resultVO);
     }
@@ -311,7 +358,17 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
             updateTaskStatus(taskId, finalStatus, checkResult.getFailReason());
             
             // 更新论文状态
-            updatePaperStatus(paperInfo, checkResult.getSimilarity());
+            updatePaperStatus(paperInfo, checkResult.getSimilarity(), task);
+
+            // 发送查重完成通知给学生
+            try {
+                String riskLevel = checkResult.getSimilarity().compareTo(defaultThreshold) <= 0 ? "低风险" : "高风险";
+                notificationService.sendSimilarityCheckResultNotification(
+                        paperInfo.getStudentId(), paperInfo.getId(), paperInfo.getPaperTitle(),
+                        checkResult.getSimilarity().doubleValue(), riskLevel);
+            } catch (Exception notifyEx) {
+                log.warn("发送查重结果通知失败: paperId={}", paperInfo.getId(), notifyEx);
+            }
             
         } catch (Exception e) {
             log.error("查重任务执行失败：taskId={}", taskId, e);
@@ -319,10 +376,12 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
                              e.getMessage().substring(0, 500) : e.getMessage());
             updateTaskStatus(taskId, CheckTaskStatusEnum.FAILURE, e.getMessage());
             
-            // 恢复论文状态
+            // 恢复论文状态（通过状态机服务）
             PaperInfo paperInfo = paperInfoMapper.selectById(task.getPaperId());
             if (paperInfo != null) {
-                paperInfo.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
+                paperStatusTransitionService.transitionSilently(
+                        task.getPaperId(), PaperStatusEnum.ASSIGNED,
+                        paperInfo.getStudentId(), "查重任务失败，恢复状态");
                 paperInfo.setCheckTime(null);
                 paperInfoMapper.updateById(paperInfo);
             }
@@ -424,7 +483,7 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
         return dto;
     }
     
-    private void updatePaperStatus(PaperInfo paperInfo, BigDecimal similarity) {
+    private void updatePaperStatus(PaperInfo paperInfo, BigDecimal similarity, CheckTask checkTask) {
         // 如果论文已处于终态（已通过/已驳回），不再更新状态，避免覆盖教师审核结果
         PaperStatusEnum currentStatus = PaperStatusEnum.fromCode(paperInfo.getPaperStatus());
         if (currentStatus != null && currentStatus.isTerminalStatus()) {
@@ -433,12 +492,26 @@ public class EnhancedCheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, C
             return;
         }
 
-        String newStatus = similarity.compareTo(defaultThreshold) <= 0 ?
-                DictConstants.PaperStatus.AUDITING :
-                DictConstants.PaperStatus.REJECTED;
+        // 从查重任务关联的规则中获取阈值，如果没有则使用默认阈值
+        BigDecimal threshold = defaultThreshold;
+        if (checkTask.getCheckRuleId() != null) {
+            CheckRule rule = checkRuleService.getById(checkTask.getCheckRuleId());
+            if (rule != null && rule.getPassThreshold() != null) {
+                threshold = rule.getPassThreshold();
+            }
+        }
 
-        paperInfo.setPaperStatus(newStatus);
-        paperInfoMapper.updateById(paperInfo);
+        PaperStatusEnum targetStatus = similarity.compareTo(threshold) <= 0 ?
+                PaperStatusEnum.AUDITING :
+                PaperStatusEnum.REJECTED;
+
+        String reason = similarity.compareTo(threshold) <= 0 ?
+                "查重完成，相似度" + similarity + "%，低于阈值" + threshold + "%，进入待审核" :
+                "查重完成，相似度" + similarity + "%，超过阈值" + threshold + "%，审核不通过";
+
+        Long operatorId = paperInfo.getStudentId();
+        paperStatusTransitionService.transitionSilently(
+                paperInfo.getId(), targetStatus, operatorId, reason);
     }
     
     private CheckResultVO buildCheckResultVO(CheckTask task) {

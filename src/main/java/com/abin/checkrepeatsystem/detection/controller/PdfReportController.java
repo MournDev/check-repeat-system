@@ -52,7 +52,7 @@ public class PdfReportController {
             log.error("生成PDF报告失败: checkResultId={}", checkResultId, e);
             try {
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                response.getWriter().write("生成PDF报告失败: " + e.getMessage());
+                response.getWriter().write("生成PDF报告失败，请查看服务器日志");
             } catch (IOException ex) {
                 log.warn("写入错误响应失败: {}", ex.getMessage());
             }
@@ -89,7 +89,7 @@ public class PdfReportController {
             log.error("生成论文PDF报告失败: paperId={}", paperId, e);
             try {
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                response.getWriter().write("生成PDF报告失败: " + e.getMessage());
+                response.getWriter().write("生成PDF报告失败，请查看服务器日志");
             } catch (IOException ex) {
                 log.warn("写入错误响应失败: {}", ex.getMessage());
             }
@@ -125,7 +125,7 @@ public class PdfReportController {
             log.error("测试PDF生成失败: {}", e.getMessage(), e);
             try {
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                response.getWriter().write("测试PDF生成失败: " + e.getMessage());
+                response.getWriter().write("测试PDF生成失败，请查看服务器日志");
             } catch (IOException ex) {
                 log.warn("写入错误响应失败: {}", ex.getMessage());
             }

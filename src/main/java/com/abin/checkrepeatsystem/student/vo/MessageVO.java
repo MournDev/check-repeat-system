@@ -1,8 +1,7 @@
 package com.abin.checkrepeatsystem.student.vo;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -13,52 +12,52 @@ import java.util.List;
  *消息VO
  */
 @Data
-@ApiModel("消息")
+@Schema(description = "消息")
 public class MessageVO {
 
-    @ApiModelProperty("消息ID")
+    @Schema(description = "消息ID")
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long id;
 
-    @ApiModelProperty("发送者ID")
+    @Schema(description = "发送者ID")
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long senderId;
 
-    @ApiModelProperty("发送者姓名")
+    @Schema(description = "发送者姓名")
     private String senderName;
 
-    @ApiModelProperty("发送者角色")
+    @Schema(description = "发送者角色")
     private String senderRole;
 
-    @ApiModelProperty("发送者标识 (student/teacher/advisor)")
+    @Schema(description = "发送者标识 (student/teacher/advisor)")
     private String sender;
 
-    @ApiModelProperty("消息内容")
+    @Schema(description = "消息内容")
     private String content;
 
-    @ApiModelProperty("发送时间")
+    @Schema(description = "发送时间")
     private String sendTime;
 
-    @ApiModelProperty("消息状态")
+    @Schema(description = "消息状态")
     private String status;
 
-    @ApiModelProperty("消息类型")
+    @Schema(description = "消息类型")
     private String messageType;
 
-    @ApiModelProperty("附件列表")
+    @Schema(description = "附件列表")
     private List<MessageAttachmentVO> attachments;
 
-    @ApiModelProperty("发送者头像")
+    @Schema(description = "发送者头像")
     private String senderAvatar;
 
-    @ApiModelProperty("格式化后的时间（相对时间）")
+    @Schema(description = "格式化后的时间（相对时间）")
     private String formattedTime;
 
-    @ApiModelProperty("会话ID")
+    @Schema(description = "会话ID")
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long sessionId;
 
-    @ApiModelProperty("会话ID（兼容前端）")
+    @Schema(description = "会话ID（兼容前端）")
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long conversationId;
 
@@ -98,22 +97,22 @@ public class MessageVO {
      *消息附件VO
      */
     @Data
-    @ApiModel("消息附件")
+    @Schema(description = "消息附件")
     public static class MessageAttachmentVO {
-        @ApiModelProperty("附件ID")
+        @Schema(description = "附件ID")
         @JsonFormat(shape = JsonFormat.Shape.STRING)
         private String id;
 
-        @ApiModelProperty("附件名称")
+        @Schema(description = "附件名称")
         private String name;
 
-        @ApiModelProperty("附件大小")
+        @Schema(description = "附件大小")
         private Long size;
 
-        @ApiModelProperty("附件类型")
+        @Schema(description = "附件类型")
         private String type;
 
-        @ApiModelProperty("上传时间")
+        @Schema(description = "上传时间")
         private String uploadTime;
     }
 }

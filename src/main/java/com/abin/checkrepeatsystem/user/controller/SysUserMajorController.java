@@ -3,9 +3,9 @@ package com.abin.checkrepeatsystem.user.controller;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.pojo.entity.Major;
 import com.abin.checkrepeatsystem.user.service.SysUserMajorService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -20,8 +20,8 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/v1/sys/user-major")
-@Api(tags = "指导任务上限管理")
-@PreAuthorize("hasAuthority('ADMIN')")
+@Tag(name = "指导任务上限管理")
+@PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
 @RequiredArgsConstructor
 public class SysUserMajorController {
 
@@ -36,13 +36,13 @@ public class SysUserMajorController {
      * @return 结果VO
      */
     @PostMapping("/modify-advisor-max-count")
-    @ApiOperation(value = "修改指导任务上限", notes = "仅管理员可操作，新上限需在1-50之间")
+    @Operation(summary = "修改指导任务上限", description = "仅管理员可操作，新上限需在1-50之间")
     public Result<Major> modifyAdvisorMaxCount(
             // 从RequestAttribute获取当前登录用户ID（避免前端传参篡改）
             @RequestAttribute("loginUserId") Long operatorId,
-            @ApiParam(value = "目标教师ID", required = true) @RequestParam @NotNull Long targetUserId,
-            @ApiParam(value = "专业ID", required = true) @RequestParam @NotNull Long majorId,
-            @ApiParam(value = "新指导任务上限（1-50）", required = true)
+            @Parameter(description = "目标教师ID", required = true) @RequestParam @NotNull Long targetUserId,
+            @Parameter(description = "专业ID", required = true) @RequestParam @NotNull Long majorId,
+            @Parameter(description = "新指导任务上限（1-50）", required = true)
             @RequestParam @NotNull @Min(1) @Max(50) Integer newMaxCount
     ) {
         Major result = sysUserMajorService.modifyAdvisorMaxCount(

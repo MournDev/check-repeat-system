@@ -33,7 +33,10 @@ public class HttpIpUtils {
         }
         // 无代理时直接获取请求IP
         String remoteAddr = request.getRemoteAddr();
-        // 本地环境IP替换为"127.0.0.1"（避免显示"0:0:0:0:0:0:0:1"）
-        return "0:0:0:0:0:0:0:1".equals(remoteAddr) ? "127.0.0.1" : remoteAddr;
+        // 本地环境IP统一为"127.0.0.1"
+        if ("0:0:0:0:0:0:0:1".equals(remoteAddr) || "localhost".equalsIgnoreCase(remoteAddr)) {
+            return "127.0.0.1";
+        }
+        return remoteAddr;
     }
 }

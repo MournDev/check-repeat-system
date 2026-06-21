@@ -7,6 +7,7 @@ import com.abin.checkrepeatsystem.common.enums.FileType;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.service.PreviewService;
 import com.abin.checkrepeatsystem.common.service.PreviewTokenService;
+import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
@@ -162,7 +163,8 @@ public class PreviewServiceImpl implements PreviewService {
                 }
             } else {
                 // 本地存储，生成一次token
-                previewToken = previewTokenService.generatePreviewToken(fileId);
+                Long currentUserId = UserContextHolder.getUserId();
+                previewToken = previewTokenService.generatePreviewToken(fileId, currentUserId);
                 
                 if (fileType.isNativeSupported()) {
                     nativePreviewUrl = buildNativePreviewUrl(fileInfo, fileName, previewToken);
@@ -272,8 +274,9 @@ public class PreviewServiceImpl implements PreviewService {
 
     // 保留向后兼容的方法
     private String buildPreviewUrl(FileInfo fileInfo, String fileName) {
-        // 生成新token（向后兼容）
-        String previewToken = previewTokenService.generatePreviewToken(fileInfo.getId());
+        // 生成新token（向后兼容，绑定当前用户）
+        Long currentUserId = UserContextHolder.getUserId();
+        String previewToken = previewTokenService.generatePreviewToken(fileInfo.getId(), currentUserId);
         return buildPreviewUrl(fileInfo, fileName, previewToken);
     }
 

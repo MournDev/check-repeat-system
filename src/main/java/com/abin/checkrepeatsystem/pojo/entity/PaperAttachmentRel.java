@@ -4,8 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableLogic;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -16,7 +15,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @TableName("paper_attachment_rel") // 数据库表名映射
-@ApiModel(value = "PaperAttachmentRel", description = "论文-附件关联实体")
+@Schema(description = "论文-附件关联实体")
 public class PaperAttachmentRel implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -25,26 +24,26 @@ public class PaperAttachmentRel implements Serializable {
      * 关联ID（雪花id）
      */
     @TableId(type = IdType.ASSIGN_ID)
-    @ApiModelProperty(value = "关联ID（主键）", example = "1001")
+    @Schema(description = "关联ID（主键）", example = "1001")
     private Long id;
 
     /**
      * 论文ID（关联 paper_submit.id）
      */
-    @ApiModelProperty(value = "论文ID", required = true, example = "123456")
+    @Schema(description = "论文ID", required = true, example = "123456")
     private Long paperId;
 
     /**
      * 文件ID（关联 sys_attachment.id）
      */
-    @ApiModelProperty(value = "文件ID（通用文件表主键）", required = true, example = "789")
+    @Schema(description = "文件ID（通用文件表主键）", required = true, example = "789")
     private Long fileId;
 
     /**
      * 附件用途（枚举化取值）
      * 示例：PAPER_DRAFT=论文初稿，PAPER_FINAL=论文终稿，CHECK_REPORT=查重报告，REVIEW_ATTACH=审核附件
      */
-    @ApiModelProperty(value = "附件用途", example = "PAPER_DRAFT", notes = "可选值：PAPER_DRAFT/PAPER_FINAL/CHECK_REPORT/REVIEW_ATTACH")
+    @Schema(description = "附件用途 (可选值：PAPER_DRAFT/PAPER_FINAL/CHECK_REPORT/REVIEW_ATTACH)", example = "PAPER_DRAFT")
     private String attachmentUse;
 
     /**
@@ -52,7 +51,7 @@ public class PaperAttachmentRel implements Serializable {
      * MyBatis-Plus自动拦截，查询时默认过滤已删除数据
      */
     @TableLogic
-    @ApiModelProperty(value = "逻辑删除标记", hidden = true) // 隐藏Swagger文档显示
+    @Schema(description = "逻辑删除标记", accessMode = Schema.AccessMode.READ_ONLY) // 隐藏Swagger文档显示
     private Integer isDeleted = 0;
 
     /**

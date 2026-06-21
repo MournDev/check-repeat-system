@@ -11,7 +11,7 @@ import com.abin.checkrepeatsystem.teacher.vo.CollegeDistributionVO;
 import com.abin.checkrepeatsystem.teacher.vo.ReviewStatusVO;
 import com.abin.checkrepeatsystem.teacher.vo.SimilarityDistributionVO;
 import com.abin.checkrepeatsystem.teacher.vo.TrendDataVO;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +34,7 @@ public class TeacherDataAnalysisController {
     private final TeacherDataAnalysisService trendService;
 
     @GetMapping("/review-trend")
-    @ApiOperation("获取审核趋势图表数据")
+    @Operation(summary = "获取审核趋势图表数据")
     public Result<Map<String, Object>> getReviewTrendForRequirement(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange,
@@ -75,7 +75,7 @@ public class TeacherDataAnalysisController {
     }
 
     @GetMapping("/review-stats")
-    @ApiOperation("获取审核统计概览数据")
+    @Operation(summary = "获取审核统计概览数据")
     public Result<Map<String, Object>> getReviewStatsForRequirement(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange) {
@@ -97,7 +97,7 @@ public class TeacherDataAnalysisController {
     }
 
     @GetMapping("/stats")
-    @ApiOperation("获取统计数据概览")
+    @Operation(summary = "获取统计数据概览")
     public Result<Map<String, Object>> getReviewStats(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange) {
@@ -119,7 +119,7 @@ public class TeacherDataAnalysisController {
     }
 
     @GetMapping("/detail-data")
-    @ApiOperation("获取详细统计数据（表格数据）")
+    @Operation(summary = "获取详细统计数据（表格数据）")
     public Result<List<Map<String, Object>>> getDetailDataForRequirement(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange,
@@ -160,7 +160,7 @@ public class TeacherDataAnalysisController {
     }
 
     @PostMapping("/export")
-    @ApiOperation("导出数据")
+    @Operation(summary = "导出数据")
     public void exportData(
             @RequestParam(required = false) Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange,
@@ -178,7 +178,7 @@ public class TeacherDataAnalysisController {
     }
 
     @GetMapping("/review-status-distribution")
-    @ApiOperation("获取审核状态分布数据")
+    @Operation(summary = "获取审核状态分布数据")
     public Result<List<Map<String, Object>>> getReviewStatusDistributionForRequirement(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange) {
@@ -197,7 +197,7 @@ public class TeacherDataAnalysisController {
     }
 
     @GetMapping("/similarity-distribution")
-    @ApiOperation("获取论文相似度分布数据")
+    @Operation(summary = "获取论文相似度分布数据")
     public Result<Map<String, Object>> getSimilarityDistributionForRequirement(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange) {
@@ -230,7 +230,7 @@ public class TeacherDataAnalysisController {
     }
 
     @GetMapping("/college-distribution")
-    @ApiOperation("获取学院分布数据")
+    @Operation(summary = "获取学院分布数据")
     public Result<Map<String, Object>> getCollegeDistributionForRequirement(
             @RequestParam Long teacherId,
             @RequestParam(defaultValue = "week") String timeRange) {

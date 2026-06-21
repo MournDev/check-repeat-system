@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
@@ -157,12 +158,18 @@ BatchCheckTaskServiceImpl {
         checkTask.setPaperId(paperId);
         checkTask.setFileId(paperInfo.getFileId());
         checkTask.setTaskNo(generateTaskNo());
-        checkTask.setCheckStatus("PENDING");
+        checkTask.setCheckStatus(DictConstants.CheckStatus.PENDING);
         UserBusinessInfoUtils.setAuditField(checkTask, true);
-        
+
         // 保存任务
         checkTaskMapper.insert(checkTask);
-        
+
+        // 同步论文状态为"查重中"
+        PaperInfo updatePaper = new PaperInfo();
+        updatePaper.setId(paperId);
+        updatePaper.setPaperStatus(DictConstants.PaperStatus.CHECKING);
+        paperInfoMapper.updateById(updatePaper);
+
         return checkTask;
     }
 

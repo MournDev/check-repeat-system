@@ -3,6 +3,7 @@ package com.abin.checkrepeatsystem.teacher.service.Impl;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
@@ -12,12 +13,16 @@ import com.abin.checkrepeatsystem.teacher.mapper.TeacherDashboardMapper;
 import com.abin.checkrepeatsystem.teacher.service.TeacherDashboardService;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
 import com.abin.checkrepeatsystem.user.service.SysUserService;
+import com.alibaba.excel.EasyExcel;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -33,497 +38,520 @@ import java.util.*;
 public class TeacherDashboardServiceImpl implements TeacherDashboardService {
 
     private final TeacherDashboardMapper teacherDashboardMapper;
-    
+
     private final PaperInfoMapper paperInfoMapper;
-    
+
     private final SysUserService sysUserService;
-    
+
     private final StudentInfoService studentInfoService;
+
+    @Value("${file.upload.base-path:./uploads}")
+    private String uploadBasePath;
 
     @Override
     public Result<Map<String, Object>> getDashboardStats(Long teacherId) {
         Map<String, Object> stats = new HashMap<>();
-        
-        try {
-            // 1. 指导学生总数
-            Long totalStudents = teacherDashboardMapper.countTotalStudents(teacherId);
-            
-            // 2. 待审核论文数量
-            Long pendingPapers = teacherDashboardMapper.countPendingPapers(teacherId);
-            
-            // 3. 已审核论文数量
-            Long reviewedPapers = teacherDashboardMapper.countReviewedPapers(teacherId);
-            
-            // 4. 审核通过率
-            BigDecimal passRate = BigDecimal.ZERO;
-            if (reviewedPapers > 0) {
-                Long passedPapers = teacherDashboardMapper.countPassedPapers(teacherId);
-                passRate = new BigDecimal(passedPapers)
-                    .divide(new BigDecimal(reviewedPapers), 4, RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(100));
-            }
-            
-            stats.put("totalStudents", totalStudents);
-            stats.put("pendingPapers", pendingPapers);
-            stats.put("reviewedPapers", reviewedPapers);
-            stats.put("passRate", passRate);
-            
-            // 5. 添加待办事项提醒
-            List<Map<String, Object>> todoItems = getTodoItems(teacherId);
-            stats.put("todoItems", todoItems);
-            
-            // 6. 添加快速操作入口
-            List<Map<String, Object>> quickActions = getQuickActions(teacherId);
-            stats.put("quickActions", quickActions);
-            
-            // 7. 添加今日统计
-            Map<String, Object> todayStats = getTodayStatistics(teacherId);
-            stats.put("todayStats", todayStats);
-            
-            log.debug("教师{}仪表盘统计: 学生{}人, 待审核{}篇, 已审核{}篇, 通过率{}%", 
-                     teacherId, totalStudents, pendingPapers, reviewedPapers, passRate);
-                     
-            return Result.success("获取统计数据成功", stats);
-        } catch (Exception e) {
-            log.error("获取仪表盘统计数据失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取统计数据失败: " + e.getMessage());
+
+        // 1. 指导学生总数
+        Long totalStudents = teacherDashboardMapper.countTotalStudents(teacherId);
+
+        // 2. 待审核论文数量
+        Long pendingPapers = teacherDashboardMapper.countPendingPapers(teacherId);
+
+        // 3. 已审核论文数量
+        Long reviewedPapers = teacherDashboardMapper.countReviewedPapers(teacherId);
+
+        // 4. 审核通过率
+        BigDecimal passRate = BigDecimal.ZERO;
+        if (reviewedPapers > 0) {
+            Long passedPapers = teacherDashboardMapper.countPassedPapers(teacherId);
+            passRate = new BigDecimal(passedPapers)
+                .divide(new BigDecimal(reviewedPapers), 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100));
         }
+
+        stats.put("totalStudents", totalStudents);
+        stats.put("pendingPapers", pendingPapers);
+        stats.put("reviewedPapers", reviewedPapers);
+        stats.put("passRate", passRate);
+
+        // 5. 添加待办事项提醒
+        List<Map<String, Object>> todoItems = getTodoItems(teacherId);
+        stats.put("todoItems", todoItems);
+
+        // 6. 添加快速操作入口
+        List<Map<String, Object>> quickActions = getQuickActions(teacherId);
+        stats.put("quickActions", quickActions);
+
+        // 7. 添加今日统计
+        Map<String, Object> todayStats = getTodayStatistics(teacherId);
+        stats.put("todayStats", todayStats);
+
+        log.debug("教师{}仪表盘统计: 学生{}人, 待审核{}篇, 已审核{}篇, 通过率{}%",
+                 teacherId, totalStudents, pendingPapers, reviewedPapers, passRate);
+
+        return Result.success("获取统计数据成功", stats);
     }
 
     @Override
     public Result<Object> getPendingPapers(Long teacherId, Integer pageNum, Integer pageSize) {
-        try {
-            Page<PaperInfo> paperPage = new Page<>(pageNum, pageSize);
-            LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(PaperInfo::getTeacherId, teacherId)
-                   .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode()) // 待审核状态
-                   .orderByDesc(PaperInfo::getSubmitTime);
-            
-            Page<PaperInfo> resultPage = paperInfoMapper.selectPage(paperPage, wrapper);
-            
-            // 构造符合需求的数据结构
-            Map<String, Object> responseData = new HashMap<>();
-            List<Map<String, Object>> records = new ArrayList<>();
-            
-            for (PaperInfo paper : resultPage.getRecords()) {
-                Map<String, Object> record = new HashMap<>();
-                record.put("id", paper.getId());
-                
-                // 顶层字段（方便前端直接使用）
-                record.put("paperId", paper.getId());
-                record.put("paperTitle", paper.getPaperTitle());
-                record.put("fileId", paper.getFileId());
-                record.put("submitTime", paper.getSubmitTime());
-                record.put("version", paper.getFileId() != null ? 1 : 0);
-                
-                // 计算等待时间（天）
-                if (paper.getSubmitTime() != null) {
-                    LocalDateTime now = LocalDateTime.now();
-                    long days = java.time.Duration.between(paper.getSubmitTime(), now).toDays();
-                    record.put("waitingTime", (int) days);
-                } else {
-                    record.put("waitingTime", 0);
-                }
-                
-                // 计算优先级
-                Integer waitingDays = (Integer) record.get("waitingTime");
-                if (waitingDays >= 14) {
-                    record.put("priority", "urgent");
-                } else if (waitingDays >= 7) {
-                    record.put("priority", "high");
-                } else {
-                    record.put("priority", "normal");
-                }
-                
-                // 计算截止时间（默认7天后）
-                if (paper.getSubmitTime() != null) {
-                    record.put("deadline", paper.getSubmitTime().plusDays(7));
-                }
+        Page<PaperInfo> paperPage = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PaperInfo::getTeacherId, teacherId)
+               .eq(PaperInfo::getPaperStatus, PaperStatusEnum.AUDITING.getCode()) // 待审核状态
+               .orderByDesc(PaperInfo::getSubmitTime);
 
-                // paperBaseInfo 对象
-                Map<String, Object> paperBaseInfo = new HashMap<>();
-                paperBaseInfo.put("paperTitle", paper.getPaperTitle());
-                
-                // 获取学生信息
-                SysUser student = sysUserService.getById(paper.getStudentId());
-                if (student != null) {
-                    record.put("studentName", student.getRealName());
-                    record.put("studentId", student.getId());
-                    record.put("studentNo", student.getUsername());
-                    record.put("email", student.getEmail());
+        Page<PaperInfo> resultPage = paperInfoMapper.selectPage(paperPage, wrapper);
 
-                    paperBaseInfo.put("studentName", student.getRealName());
-                    paperBaseInfo.put("studentId", student.getId());
-                    paperBaseInfo.put("studentNo", student.getUsername());
-                    paperBaseInfo.put("email", student.getEmail());
-                    
-                    // 从StudentInfo表获取学生的学院信息
-                    StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
-                    if (studentInfo != null) {
-                        record.put("college", studentInfo.getCollegeName());
-                        record.put("major", studentInfo.getMajor());
-                        paperBaseInfo.put("college", studentInfo.getCollegeName());
-                        paperBaseInfo.put("major", studentInfo.getMajor());
-                    }
-                }
-                
-                record.put("paperBaseInfo", paperBaseInfo);
-                
-                // taskBaseInfo 对象
-                Map<String, Object> taskBaseInfo = new HashMap<>();
-                taskBaseInfo.put("checkEndTime", paper.getCheckTime());
-                taskBaseInfo.put("checkRate", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
-                record.put("taskBaseInfo", taskBaseInfo);
-                
-                // 相似度
-                record.put("similarity", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
-                
-                // 字数和页数（）
-                record.put("wordCount", paper.getWordCount());
-                record.put("pageCount", paper.getPageCount());
+        // 构造符合需求的数据结构
+        Map<String, Object> responseData = new HashMap<>();
+        List<Map<String, Object>> records = new ArrayList<>();
 
-                records.add(record);
+        for (PaperInfo paper : resultPage.getRecords()) {
+            Map<String, Object> record = new HashMap<>();
+            record.put("id", paper.getId());
+
+            // 顶层字段（方便前端直接使用）
+            record.put("paperId", paper.getId());
+            record.put("paperTitle", paper.getPaperTitle());
+            record.put("fileId", paper.getFileId());
+            record.put("submitTime", paper.getSubmitTime());
+            record.put("version", paper.getFileId() != null ? 1 : 0);
+
+            // 计算等待时间（天）
+            if (paper.getSubmitTime() != null) {
+                LocalDateTime now = LocalDateTime.now();
+                long days = java.time.Duration.between(paper.getSubmitTime(), now).toDays();
+                record.put("waitingTime", (int) days);
+            } else {
+                record.put("waitingTime", 0);
             }
-            
-            responseData.put("records", records);
-            responseData.put("total", resultPage.getTotal());
-            
-            return Result.success("获取待审核论文列表成功", responseData);
-        } catch (Exception e) {
-            log.error("获取待审核论文列表失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取待审核论文列表失败: " + e.getMessage());
+
+            // 计算优先级
+            Integer waitingDays = (Integer) record.get("waitingTime");
+            if (waitingDays >= 14) {
+                record.put("priority", "urgent");
+            } else if (waitingDays >= 7) {
+                record.put("priority", "high");
+            } else {
+                record.put("priority", "normal");
+            }
+
+            // 计算截止时间（默认7天后）
+            if (paper.getSubmitTime() != null) {
+                record.put("deadline", paper.getSubmitTime().plusDays(7));
+            }
+
+            // paperBaseInfo 对象
+            Map<String, Object> paperBaseInfo = new HashMap<>();
+            paperBaseInfo.put("paperTitle", paper.getPaperTitle());
+
+            // 获取学生信息
+            SysUser student = sysUserService.getById(paper.getStudentId());
+            if (student != null) {
+                record.put("studentName", student.getRealName());
+                record.put("studentId", student.getId());
+                record.put("studentNo", student.getUsername());
+                record.put("email", student.getEmail());
+
+                paperBaseInfo.put("studentName", student.getRealName());
+                paperBaseInfo.put("studentId", student.getId());
+                paperBaseInfo.put("studentNo", student.getUsername());
+                paperBaseInfo.put("email", student.getEmail());
+
+                // 从StudentInfo表获取学生的学院信息
+                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                if (studentInfo != null) {
+                    record.put("college", studentInfo.getCollegeName());
+                    record.put("major", studentInfo.getMajor());
+                    paperBaseInfo.put("college", studentInfo.getCollegeName());
+                    paperBaseInfo.put("major", studentInfo.getMajor());
+                }
+            }
+
+            record.put("paperBaseInfo", paperBaseInfo);
+
+            // taskBaseInfo 对象
+            Map<String, Object> taskBaseInfo = new HashMap<>();
+            taskBaseInfo.put("checkEndTime", paper.getCheckTime());
+            taskBaseInfo.put("checkRate", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
+            record.put("taskBaseInfo", taskBaseInfo);
+
+            // 相似度
+            record.put("similarity", paper.getSimilarityRate() != null ? paper.getSimilarityRate().doubleValue() : 0.0);
+
+            // 字数和页数（）
+            record.put("wordCount", paper.getWordCount());
+            record.put("pageCount", paper.getPageCount());
+
+            records.add(record);
         }
+
+        responseData.put("records", records);
+        responseData.put("total", resultPage.getTotal());
+
+        return Result.success("获取待审核论文列表成功", responseData);
     }
 
     @Override
     public Result<Map<String, Object>> getStudentStats(Long teacherId) {
         Map<String, Object> stats = new HashMap<>();
 
-        try {
-            // 总学生数
-            Long totalStudents = teacherDashboardMapper.countTotalStudents(teacherId);
-            // 已提交论文数（对应前端 submittedStudents）
-            Long submittedPapers = teacherDashboardMapper.countSubmittedPapers(teacherId);
-            // 已分配导师数（paper_status = 'assigned'）
-            Long assignedPapers = teacherDashboardMapper.countAssignedPapers(teacherId);
-            // 已完成审核数（paper_status = 'completed'，对应前端 completedStudents）
-            Long passedPapers = teacherDashboardMapper.countPassedPapers(teacherId);
+        // 总学生数
+        Long totalStudents = teacherDashboardMapper.countTotalStudents(teacherId);
+        // 已提交论文数（对应前端 submittedStudents）
+        Long submittedPapers = teacherDashboardMapper.countSubmittedPapers(teacherId);
+        // 已分配导师数（paper_status = 'assigned'）
+        Long assignedPapers = teacherDashboardMapper.countAssignedPapers(teacherId);
+        // 已完成审核数（paper_status = 'completed'，对应前端 completedStudents）
+        Long passedPapers = teacherDashboardMapper.countPassedPapers(teacherId);
 
-            stats.put("totalStudents", totalStudents);
-            stats.put("submittedStudents", submittedPapers);
-            stats.put("assignedStudents", assignedPapers);
-            stats.put("completedStudents", passedPapers);
+        stats.put("totalStudents", totalStudents);
+        stats.put("submittedStudents", submittedPapers);
+        stats.put("assignedStudents", assignedPapers);
+        stats.put("completedStudents", passedPapers);
 
-            log.debug("教师{}学生统计: 总{}人, 已提交{}人, 已分配{}人, 已完成{}人",
-                     teacherId, totalStudents, submittedPapers, assignedPapers, passedPapers);
+        log.debug("教师{}学生统计: 总{}人, 已提交{}人, 已分配{}人, 已完成{}人",
+                 teacherId, totalStudents, submittedPapers, assignedPapers, passedPapers);
 
-            return Result.success("获取学生状态统计成功", stats);
-        } catch (Exception e) {
-            log.error("获取学生状态统计失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取学生状态统计失败: " + e.getMessage());
-        }
+        return Result.success("获取学生状态统计成功", stats);
     }
 
     @Override
     public Result<String> batchReviewPapers(Long teacherId, BatchReviewDTO reviewDTO) {
-        try {
-            List<Long> paperIds = reviewDTO.getPaperIds();
-            String reviewStatus = reviewDTO.getReviewStatus();
-            String reviewOpinion = reviewDTO.getReviewOpinion();
-            
-            if (paperIds == null || paperIds.isEmpty()) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
-            }
-            
-            // 验证审核状态
-            String newStatus;
-            if ("APPROVED".equalsIgnoreCase(reviewStatus)) {
-                newStatus = PaperStatusEnum.COMPLETED.getCode();
-            } else if ("REJECTED".equalsIgnoreCase(reviewStatus)) {
-                newStatus = PaperStatusEnum.REJECTED.getCode();
-            } else {
-                return Result.error(ResultCode.PARAM_ERROR, "审核状态参数无效，应为APPROVED或REJECTED");
-            }
-            
-            int successCount = 0;
-            int failCount = 0;
-            
-            // 批量处理审核
-            for (Long paperId : paperIds) {
-                try {
-                    // 验证论文是否存在且属于该教师
-                    PaperInfo paper = paperInfoMapper.selectById(paperId);
-                    if (paper == null) {
-                        log.warn("论文不存在: paperId={}", paperId);
-                        failCount++;
-                        continue;
-                    }
-                    
-                    if (!paper.getTeacherId().equals(teacherId)) {
-                        log.warn("无权限审核论文: teacherId={}, paperId={}", teacherId, paperId);
-                        failCount++;
-                        continue;
-                    }
-                    
-                    // 更新论文状态
-                    paper.setPaperStatus(newStatus);
-                    paper.setCheckResult(reviewOpinion);
-                    paper.setCheckTime(LocalDateTime.now());
-                    
-                    paperInfoMapper.updateById(paper);
-                    successCount++;
-                    
-                    log.info("教师{}审核论文{}成功: 状态={}", teacherId, paperId, reviewStatus);
-                } catch (Exception e) {
-                    log.error("审核论文失败: teacherId={}, paperId={}", teacherId, paperId, e);
-                    failCount++;
-                }
-            }
-            
-            String message = String.format("批量审核完成: 成功%d篇, 失败%d篇", successCount, failCount);
-            log.info("教师{}批量审核完成: {}", teacherId, message);
-            
-            return Result.success(message);
-        } catch (Exception e) {
-            log.error("批量论文审核失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量论文审核失败: " + e.getMessage());
+        List<Long> paperIds = reviewDTO.getPaperIds();
+        String reviewStatus = reviewDTO.getReviewStatus();
+        String reviewOpinion = reviewDTO.getReviewOpinion();
+
+        if (paperIds == null || paperIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
         }
+
+        // 验证审核状态
+        String newStatus;
+        if ("APPROVED".equalsIgnoreCase(reviewStatus)) {
+            newStatus = PaperStatusEnum.COMPLETED.getCode();
+        } else if ("REJECTED".equalsIgnoreCase(reviewStatus)) {
+            newStatus = PaperStatusEnum.REJECTED.getCode();
+        } else {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "审核状态参数无效，应为APPROVED或REJECTED");
+        }
+
+        int successCount = 0;
+        int failCount = 0;
+
+        // 批量处理审核
+        for (Long paperId : paperIds) {
+            try {
+                // 验证论文是否存在且属于该教师
+                PaperInfo paper = paperInfoMapper.selectById(paperId);
+                if (paper == null) {
+                    log.warn("论文不存在: paperId={}", paperId);
+                    failCount++;
+                    continue;
+                }
+
+                if (!paper.getTeacherId().equals(teacherId)) {
+                    log.warn("无权限审核论文: teacherId={}, paperId={}", teacherId, paperId);
+                    failCount++;
+                    continue;
+                }
+
+                // 验证论文状态必须为待审核
+                if (!PaperStatusEnum.AUDITING.getValue().equals(paper.getPaperStatus())) {
+                    log.warn("论文状态不允许审核: paperId={}, status={}", paperId, paper.getPaperStatus());
+                    failCount++;
+                    continue;
+                }
+
+                // 更新论文状态
+                paper.setPaperStatus(newStatus);
+                paper.setCheckResult(reviewOpinion);
+                paper.setCheckTime(LocalDateTime.now());
+
+                paperInfoMapper.updateById(paper);
+                successCount++;
+
+                log.info("教师{}审核论文{}成功: 状态={}", teacherId, paperId, reviewStatus);
+            } catch (Exception e) {
+                log.error("审核论文失败: teacherId={}, paperId={}", teacherId, paperId, e);
+                failCount++;
+            }
+        }
+
+        String message = String.format("批量审核完成: 成功%d篇, 失败%d篇", successCount, failCount);
+        log.info("教师{}批量审核完成: {}", teacherId, message);
+
+        return Result.success(message);
     }
 
     @Override
     public Result<String> reviewPaper(Long teacherId, Long paperId, String reviewResult, String reviewComment) {
-        try {
-            // 验证论文是否存在且属于该教师
-            PaperInfo paper = paperInfoMapper.selectById(paperId);
-            if (paper == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            if (!paper.getTeacherId().equals(teacherId)) {
-                return Result.error(ResultCode.PARAM_ERROR, "无权限审核此论文");
-            }
-            
-            // 更新论文状态
-            String newStatus;
-            if ("pass".equalsIgnoreCase(reviewResult)) {
-                newStatus = PaperStatusEnum.COMPLETED.getCode();
-            } else if ("reject".equalsIgnoreCase(reviewResult)) {
-                newStatus = PaperStatusEnum.REJECTED.getCode();
-            } else {
-                return Result.error(ResultCode.PARAM_ERROR, "审核结果参数无效");
-            }
-            
-            paper.setPaperStatus(newStatus);
-            paper.setCheckResult(reviewComment);
-            paper.setCheckTime(LocalDateTime.now());
-            
-            paperInfoMapper.updateById(paper);
-            
-            log.info("教师{}审核论文{}结果: {}, 意见: {}", teacherId, paperId, reviewResult, reviewComment);
-            return Result.success("论文审核成功");
-        } catch (Exception e) {
-            log.error("论文审核失败: teacherId={}, paperId={}", teacherId, paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文审核失败: " + e.getMessage());
+        // 验证论文是否存在且属于该教师
+        PaperInfo paper = paperInfoMapper.selectById(paperId);
+        if (paper == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        if (!paper.getTeacherId().equals(teacherId)) {
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限审核此论文");
+        }
+
+        // 验证论文状态必须为待审核
+        if (!PaperStatusEnum.AUDITING.getValue().equals(paper.getPaperStatus())) {
+            throw new BusinessException(ResultCode.PERMISSION_NOT_STATUS, "论文当前状态不允许审核：" + paper.getPaperStatus());
+        }
+
+        // 更新论文状态
+        String newStatus;
+        if ("pass".equalsIgnoreCase(reviewResult)) {
+            newStatus = PaperStatusEnum.COMPLETED.getCode();
+        } else if ("reject".equalsIgnoreCase(reviewResult)) {
+            newStatus = PaperStatusEnum.REJECTED.getCode();
+        } else {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "审核结果参数无效");
+        }
+
+        paper.setPaperStatus(newStatus);
+        paper.setCheckResult(reviewComment);
+        paper.setCheckTime(LocalDateTime.now());
+
+        paperInfoMapper.updateById(paper);
+
+        log.info("教师{}审核论文{}结果: {}, 意见: {}", teacherId, paperId, reviewResult, reviewComment);
+        return Result.success("论文审核成功");
     }
 
     @Override
     public Result<String> downloadPaper(Long teacherId, Long paperId) {
-        try {
-            // 验证论文是否存在且属于该教师
-            PaperInfo paper = paperInfoMapper.selectById(paperId);
-            if (paper == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            if (!paper.getTeacherId().equals(teacherId)) {
-                return Result.error(ResultCode.PARAM_ERROR, "无权限下载此论文");
-            }
-            
-            // 生成下载链接（这里返回文件ID，前端根据文件ID下载）
-            String downloadUrl = "/api/v1/file/download/" + paper.getFileId();
-            
-            log.info("教师{}下载论文{}, 文件ID: {}", teacherId, paperId, paper.getFileId());
-            return Result.success("获取下载链接成功", downloadUrl);
-        } catch (Exception e) {
-            log.error("论文下载失败: teacherId={}, paperId={}", teacherId, paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文下载失败: " + e.getMessage());
+        // 验证论文是否存在且属于该教师
+        PaperInfo paper = paperInfoMapper.selectById(paperId);
+        if (paper == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        if (!paper.getTeacherId().equals(teacherId)) {
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限下载此论文");
+        }
+
+        // 生成下载链接（这里返回文件ID，前端根据文件ID下载）
+        String downloadUrl = "/api/v1/file/download/" + paper.getFileId();
+
+        log.info("教师{}下载论文{}, 文件ID: {}", teacherId, paperId, paper.getFileId());
+        return Result.success("获取下载链接成功", downloadUrl);
     }
 
     @Override
     public Result<Map<String, Object>> getReviewStatistics(Long teacherId) {
         Map<String, Object> statistics = new HashMap<>();
-        
-        try {
-            // 论文状态分布数据
-            List<Map<String, Object>> statusDistribution = teacherDashboardMapper.getPaperStatusDistribution(teacherId);
-            
-            // 构建图表数据格式，与前端期望一致
-            Map<String, Object> chartData = new HashMap<>();
-            List<String> labels = new ArrayList<>();
-            List<Integer> values = new ArrayList<>();
-            List<String> colors = new ArrayList<>();
-            
-            // 状态颜色映射
-            Map<String, String> statusColorMap = new HashMap<>();
-            statusColorMap.put("已通过", "#67c23a");
-            statusColorMap.put("需修改", "#f56c6c");
-            statusColorMap.put("审核中", "#e6a23c");
-            statusColorMap.put("未提交", "#909399");
-            
-            if (statusDistribution != null) {
-                for (Map<String, Object> status : statusDistribution) {
-                    if (status != null) {
-                        String statusName = (String) status.get("statusName");
-                        Object countObj = status.get("count");
-                        Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
-                        labels.add(statusName);
-                        values.add(count);
-                        colors.add(statusColorMap.getOrDefault(statusName, "#909399"));
-                    }
+
+        // 论文状态分布数据
+        List<Map<String, Object>> statusDistribution = teacherDashboardMapper.getPaperStatusDistribution(teacherId);
+
+        // 构建图表数据格式，与前端期望一致
+        Map<String, Object> chartData = new HashMap<>();
+        List<String> labels = new ArrayList<>();
+        List<Integer> values = new ArrayList<>();
+        List<String> colors = new ArrayList<>();
+
+        // 状态颜色映射
+        Map<String, String> statusColorMap = new HashMap<>();
+        statusColorMap.put("已通过", "#67c23a");
+        statusColorMap.put("需修改", "#f56c6c");
+        statusColorMap.put("审核中", "#e6a23c");
+        statusColorMap.put("未提交", "#909399");
+
+        if (statusDistribution != null) {
+            for (Map<String, Object> status : statusDistribution) {
+                if (status != null) {
+                    String statusName = (String) status.get("statusName");
+                    Object countObj = status.get("count");
+                    Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
+                    labels.add(statusName);
+                    values.add(count);
+                    colors.add(statusColorMap.getOrDefault(statusName, "#909399"));
                 }
             }
-            
-            chartData.put("labels", labels);
-            chartData.put("values", values);
-            chartData.put("colors", colors);
-            
-            // 各专业审核情况
-            List<Map<String, Object>> majorReviewStats = teacherDashboardMapper.getMajorReviewStatistics(teacherId);
-            
-            // 转换为前端期望的格式
-            List<Map<String, Object>> collegeDistribution = new ArrayList<>();
-            if (majorReviewStats != null) {
-                for (Map<String, Object> major : majorReviewStats) {
-                    if (major != null) {
-                        Map<String, Object> collegeItem = new HashMap<>();
-                        String majorName = (String) major.get("majorName");
-                        Object countObj = major.get("totalPapers");
-                        Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
-                        collegeItem.put("label", majorName != null ? majorName : "未知专业");
-                        collegeItem.put("value", count);
-                        collegeDistribution.add(collegeItem);
-                    }
-                }
-            }
-            
-            // 时间趋势数据（近30天）
-            List<Map<String, Object>> timeTrend = teacherDashboardMapper.getTimeTrendStatistics(teacherId);
-            
-            statistics.put("chartData", chartData);
-            statistics.put("collegeDistribution", collegeDistribution);
-            statistics.put("timeTrend", timeTrend);
-            statistics.put("statusDistribution", statusDistribution);
-            
-            log.debug("教师{}获取审核统计成功", teacherId);
-            return Result.success("获取审核进度统计成功", statistics);
-        } catch (Exception e) {
-            log.error("获取审核进度统计失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取审核进度统计失败: " + e.getMessage());
         }
+
+        chartData.put("labels", labels);
+        chartData.put("values", values);
+        chartData.put("colors", colors);
+
+        // 各专业审核情况
+        List<Map<String, Object>> majorReviewStats = teacherDashboardMapper.getMajorReviewStatistics(teacherId);
+
+        // 转换为前端期望的格式
+        List<Map<String, Object>> collegeDistribution = new ArrayList<>();
+        if (majorReviewStats != null) {
+            for (Map<String, Object> major : majorReviewStats) {
+                if (major != null) {
+                    Map<String, Object> collegeItem = new HashMap<>();
+                    String majorName = (String) major.get("majorName");
+                    Object countObj = major.get("totalPapers");
+                    Integer count = (countObj != null) ? ((Number) countObj).intValue() : 0;
+                    collegeItem.put("label", majorName != null ? majorName : "未知专业");
+                    collegeItem.put("value", count);
+                    collegeDistribution.add(collegeItem);
+                }
+            }
+        }
+
+        // 时间趋势数据（近30天）
+        List<Map<String, Object>> timeTrend = teacherDashboardMapper.getTimeTrendStatistics(teacherId);
+
+        statistics.put("chartData", chartData);
+        statistics.put("collegeDistribution", collegeDistribution);
+        statistics.put("timeTrend", timeTrend);
+        statistics.put("statusDistribution", statusDistribution);
+
+        log.debug("教师{}获取审核统计成功", teacherId);
+        return Result.success("获取审核进度统计成功", statistics);
     }
 
     @Override
     public Result<Object> getRecentActivities(Long teacherId, Integer page, Integer size) {
-        try {
-            Page<Map<String, Object>> activityPage = new Page<>(page, size);
-            Page<Map<String, Object>> result = teacherDashboardMapper.getRecentReviewActivities(teacherId, activityPage);
+        Page<Map<String, Object>> activityPage = new Page<>(page, size);
+        Page<Map<String, Object>> result = teacherDashboardMapper.getRecentReviewActivities(teacherId, activityPage);
 
-            log.debug("教师{}获取近期活动记录: {}条, 总数: {}", teacherId, result.getRecords().size(), result.getTotal());
-            return Result.success("获取近期活动记录成功", result);
-        } catch (Exception e) {
-            log.error("获取近期活动记录失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取近期活动记录失败: " + e.getMessage());
-        }
+        log.debug("教师{}获取近期活动记录: {}条, 总数: {}", teacherId, result.getRecords().size(), result.getTotal());
+        return Result.success("获取近期活动记录成功", result);
     }
 
     @Override
     public Result<String> exportTeacherData(Long teacherId, String startDate, String endDate) {
-
         try {
-            // 构建导出文件名
-            String fileName = String.format("teacher_%d_data_%s.xlsx", 
+            String fileName = String.format("teacher_%d_data_%s.xlsx",
                 teacherId, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")));
-            
-            // 这里应该调用实际的数据导出服务
-            // 简化实现，返回模拟的导出结果
-            log.info("教师{}导出数据: startDate={}, endDate={}, fileName={}", teacherId, startDate, endDate, fileName);
-            
-            // 模拟导出过程
-            Thread.sleep(1000); // 模拟处理时间
-            
-            return Result.success("数据导出任务已启动", fileName);
+            String filePath = uploadBasePath + File.separator + "exports" + File.separator + fileName;
+
+            File dir = new File(uploadBasePath + File.separator + "exports");
+            if (!dir.exists()) dir.mkdirs();
+
+            // 查询论文状态分布
+            List<Map<String, Object>> statusDist = teacherDashboardMapper.getPaperStatusDistribution(teacherId);
+            // 查询专业审核统计
+            List<Map<String, Object>> majorStats = teacherDashboardMapper.getMajorReviewStatistics(teacherId);
+            // 查询时间趋势
+            List<Map<String, Object>> timeTrend = teacherDashboardMapper.getTimeTrendStatistics(teacherId);
+
+            EasyExcel.write(filePath)
+                    .sheet("论文状态分布")
+                    .head(List.of(List.of("状态"), List.of("数量")))
+                    .doWrite(statusDist != null ? statusDist : Collections.emptyList());
+
+            EasyExcel.write(filePath)
+                    .sheet("专业审核统计")
+                    .head(majorStats != null && !majorStats.isEmpty()
+                            ? new ArrayList<>(majorStats.get(0).keySet()).stream().map(k -> List.of((String) k)).toList()
+                            : List.of(List.of("无数据")))
+                    .doWrite(majorStats != null ? majorStats : Collections.emptyList());
+
+            EasyExcel.write(filePath)
+                    .sheet("时间趋势")
+                    .head(timeTrend != null && !timeTrend.isEmpty()
+                            ? new ArrayList<>(timeTrend.get(0).keySet()).stream().map(k -> List.of((String) k)).toList()
+                            : List.of(List.of("无数据")))
+                    .doWrite(timeTrend != null ? timeTrend : Collections.emptyList());
+
+            log.info("教师{}导出数据完成: file={}", teacherId, filePath);
+            return Result.success("数据导出成功", fileName);
         } catch (Exception e) {
             log.error("教师数据导出失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "数据导出失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "数据导出失败: " + e.getMessage());
         }
     }
 
     @Override
     public Result<String> exportData(Long teacherId, String format, String startTime, String endTime) {
         try {
-            // 这里应该调用实际的数据导出服务
-            // 简化实现，返回模拟的导出结果
-            String exportFileName = String.format("teacher_%d_export_%s.%s", 
-                teacherId, LocalDateTime.now().toString().replace(":", "-"), format);
-            
-            log.info("教师{}导出数据: format={}, file={}", teacherId, format, exportFileName);
-            return Result.success("数据导出任务已启动", exportFileName);
-        } catch (Exception e) {
+            String ext = "csv".equalsIgnoreCase(format) ? "csv" : "xlsx";
+            String exportFileName = String.format("teacher_%d_export_%s.%s",
+                teacherId, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")), ext);
+            String filePath = uploadBasePath + File.separator + "exports" + File.separator + exportFileName;
+
+            File dir = new File(uploadBasePath + File.separator + "exports");
+            if (!dir.exists()) dir.mkdirs();
+
+            // 查询近期审核活动
+            Page<Map<String, Object>> activityPage = new Page<>(1, 1000);
+            Page<Map<String, Object>> activities = teacherDashboardMapper.getRecentReviewActivities(teacherId, activityPage);
+            List<Map<String, Object>> records = activities.getRecords();
+
+            if ("csv".equalsIgnoreCase(format)) {
+                // CSV格式导出
+                try (java.io.FileWriter writer = new java.io.FileWriter(filePath)) {
+                    if (records != null && !records.isEmpty()) {
+                        // 写表头
+                        writer.write(String.join(",", records.get(0).keySet()) + "\n");
+                        // 写数据
+                        for (Map<String, Object> row : records) {
+                            writer.write(row.values().stream()
+                                    .map(v -> v == null ? "" : v.toString())
+                                    .reduce((a, b) -> a + "," + b).orElse("") + "\n");
+                        }
+                    }
+                }
+            } else {
+                EasyExcel.write(filePath)
+                        .sheet("审核活动")
+                        .head(records != null && !records.isEmpty()
+                                ? new ArrayList<>(records.get(0).keySet()).stream().map(k -> List.of((String) k)).toList()
+                                : List.of(List.of("无数据")))
+                        .doWrite(records != null ? records : Collections.emptyList());
+            }
+
+            log.info("教师{}导出数据完成: format={}, file={}", teacherId, format, filePath);
+            return Result.success("数据导出成功", exportFileName);
+        } catch (IOException e) {
             log.error("数据导出失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "数据导出失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "数据导出失败: " + e.getMessage());
         }
     }
 
     @Override
     public Result<Object> getStudentList(Long teacherId, Integer page, Integer size) {
-        try {
-            Page<SysUser> studentPage = new Page<>(page, size);
-            LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(SysUser::getUserType, 1) // 学生类型
-                   .eq(SysUser::getStatus, 1)   // 启用状态
-                   .eq(SysUser::getIsDeleted, 0);
-            
-            // 通过论文信息关联查找该教师指导的学生
-            List<Long> studentIds = teacherDashboardMapper.getStudentIdsByTeacher(teacherId);
-            if (!studentIds.isEmpty()) {
-                wrapper.in(SysUser::getId, studentIds);
-            } else {
-                wrapper.eq(SysUser::getId, -1L); // 无结果
-            }
-            
-            Page<SysUser> resultPage = sysUserService.page(studentPage, wrapper);
-            
-            // 转换为前端需要的格式
-            Page<Map<String, Object>> responsePage = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());
-            List<Map<String, Object>> records = new ArrayList<>();
-            
-            for (SysUser student : resultPage.getRecords()) {
-                Map<String, Object> record = new HashMap<>();
-                record.put("studentId", student.getUsername());
-                record.put("studentName", student.getRealName());
-                record.put("username", student.getUsername());
-                record.put("email", student.getEmail());
-                record.put("phone", student.getPhone());
+        Page<SysUser> studentPage = new Page<>(page, size);
+        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SysUser::getUserType, 1) // 学生类型
+               .eq(SysUser::getStatus, 1)   // 启用状态
+               .eq(SysUser::getIsDeleted, 0);
 
-                // 从StudentInfo表获取学生年级、专业、学院信息
-                StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
-                if (studentInfo != null) {
-                    record.put("grade", studentInfo.getGrade());
-                    record.put("major", studentInfo.getMajor());
-                    record.put("college", studentInfo.getCollegeName());
-                }
-
-                records.add(record);
-            }
-            
-            responsePage.setRecords(records);
-            return Result.success("获取指导学生列表成功", responsePage);
-        } catch (Exception e) {
-            log.error("获取指导学生列表失败: teacherId={}", teacherId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取指导学生列表失败: " + e.getMessage());
+        // 通过论文信息关联查找该教师指导的学生
+        List<Long> studentIds = teacherDashboardMapper.getStudentIdsByTeacher(teacherId);
+        if (!studentIds.isEmpty()) {
+            wrapper.in(SysUser::getId, studentIds);
+        } else {
+            wrapper.eq(SysUser::getId, -1L); // 无结果
         }
+
+        Page<SysUser> resultPage = sysUserService.page(studentPage, wrapper);
+
+        // 转换为前端需要的格式
+        Page<Map<String, Object>> responsePage = new Page<>(resultPage.getCurrent(), resultPage.getSize(), resultPage.getTotal());
+        List<Map<String, Object>> records = new ArrayList<>();
+
+        for (SysUser student : resultPage.getRecords()) {
+            Map<String, Object> record = new HashMap<>();
+            record.put("studentId", student.getUsername());
+            record.put("studentName", student.getRealName());
+            record.put("username", student.getUsername());
+            record.put("email", student.getEmail());
+            record.put("phone", student.getPhone());
+
+            // 从StudentInfo表获取学生年级、专业、学院信息
+            StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+            if (studentInfo != null) {
+                record.put("grade", studentInfo.getGrade());
+                record.put("major", studentInfo.getMajor());
+                record.put("college", studentInfo.getCollegeName());
+            }
+
+            records.add(record);
+        }
+
+        responsePage.setRecords(records);
+        return Result.success("获取指导学生列表成功", responsePage);
     }
 
     @Override

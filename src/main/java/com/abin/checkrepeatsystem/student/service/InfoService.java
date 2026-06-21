@@ -13,6 +13,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface InfoService {
     /**
+     * 获取当前登录用户的完整信息
+     * @return 用户信息
+     */
+    Result<LoginVO> getCurrentUserInfo();
+
+    /**
      * 更新用户信息
      * @param updateReq 用户信息更新请求
      * @return 更新后的用户信息

@@ -99,10 +99,22 @@ public class FilePreviewServiceImpl implements FilePreviewService {
      * 验证文件访问权限
      */
     private boolean hasFileAccessPermission(FileInfo fileInfo) {
-        // 这里可以根据实际业务逻辑实现权限验证
-        // 例如：检查当前用户是否为文件的所有者或具有访问权限
-        // 暂时返回true，后续需要根据实际业务逻辑实现
-        return true;
+        try {
+            Long currentUserId = UserContextHolder.getUserId();
+            if (currentUserId == null) {
+                return false;
+            }
+            // 文件上传者可以访问
+            if (String.valueOf(currentUserId).equals(fileInfo.getUploadUserId())) {
+                return true;
+            }
+            // 教师、管理员可以访问
+            String userType = UserContextHolder.getUser().getUserType();
+            return "TEACHER".equals(userType) || "ADMIN".equals(userType) || "SUPER_ADMIN".equals(userType);
+        } catch (Exception e) {
+            log.debug("文件权限校验失败: {}", e.getMessage());
+            return false;
+        }
     }
 
 
@@ -153,16 +165,53 @@ public class FilePreviewServiceImpl implements FilePreviewService {
     }
 
     private boolean isInternalAddress(String host) {
-        if (host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1") || host.equals("0.0.0.0")) {
+        if (host == null || host.isEmpty()) {
             return true;
         }
-        if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.")) {
+        // 去除 IPv6 方括号
+        String h = host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
+        // 常规内部地址
+        if (h.equalsIgnoreCase("localhost") || h.equals("127.0.0.1") || h.equals("0.0.0.0")) {
             return true;
         }
-        if (host.startsWith("169.254.")) {
+        // IPv6 回环和链路本地
+        if (h.equals("::1") || h.equalsIgnoreCase("0:0:0:0:0:0:0:1")) {
             return true;
         }
-        if (host.contains(":")) {
+        if (h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd")) {
+            return true;
+        }
+        // IPv4 映射的 IPv6 地址（::ffff:127.0.0.1 等）
+        if (h.startsWith("::ffff:") || h.startsWith("0:0:0:0:0:ffff:")) {
+            String mapped = h.contains("::ffff:") ? h.substring(h.lastIndexOf("ffff:") + 5) : h;
+            if (isPrivateIpv4(mapped)) {
+                return true;
+            }
+        }
+        // 私有 IPv4
+        if (isPrivateIpv4(h)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isPrivateIpv4(String ip) {
+        if (ip.startsWith("10.") || ip.startsWith("192.168.")) {
+            return true;
+        }
+        if (ip.startsWith("172.")) {
+            String[] parts = ip.split("\\.");
+            if (parts.length >= 2) {
+                try {
+                    int second = Integer.parseInt(parts[1]);
+                    if (second >= 16 && second <= 31) {
+                        return true;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        if (ip.startsWith("169.254.")) {
             return true;
         }
         return false;
@@ -250,7 +299,8 @@ public class FilePreviewServiceImpl implements FilePreviewService {
      */
     private boolean validatePreviewAccess(Long fileId, String token) {
         if (token != null && !token.isEmpty()) {
-            Long tokenFileId = previewTokenService.validatePreviewToken(token);
+            Long currentUserId = UserContextHolder.getUserId();
+            Long tokenFileId = previewTokenService.validatePreviewToken(token, currentUserId);
             return tokenFileId != null && tokenFileId.equals(fileId);
         }
         // 无 token 时：已认证用户需校验文件所有权

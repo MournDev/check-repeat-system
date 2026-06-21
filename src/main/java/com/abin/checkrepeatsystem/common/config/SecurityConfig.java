@@ -27,11 +27,13 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 
 /**
  * Spring Security配置：权限控制、JWT集成、安全过滤
  */
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity // 启用方法级别的权限控制
@@ -45,6 +47,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     private final MaintenanceFilter maintenanceFilter;
+
+    @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:dev}")
+    private String activeProfile;
 
     /**
      * 密码编码器（BCrypt加密）
@@ -81,7 +86,17 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         // 开发环境默认允许本地前端，生产环境通过环境变量指定
-        String allowedOrigins = System.getenv().getOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173");
+        String envOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        String allowedOrigins;
+        if (envOrigins != null && !envOrigins.isBlank()) {
+            allowedOrigins = envOrigins;
+        } else {
+            allowedOrigins = "http://localhost:3000,http://localhost:5173";
+            if ("prod".equals(activeProfile)) {
+                log.warn("CORS_ALLOWED_ORIGINS 环境变量未配置，生产环境默认允许 localhost 跨域。"
+                        + "请设置环境变量 CORS_ALLOWED_ORIGINS 为实际前端域名（逗号分隔）。");
+            }
+        }
         config.setAllowedOriginPatterns(
                 java.util.Arrays.stream(allowedOrigins.split(","))
                         .map(String::trim)
@@ -127,7 +142,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/avatar/**").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
-                        .requestMatchers("/actuator/**").hasAuthority("ADMIN")
+                        .requestMatchers("/actuator/**").hasAuthority("SUPER_ADMIN")
                         // WebSocket连接路径放行
                         .requestMatchers("/ws/**").permitAll()
                         // 预览文件访问接口放行（通过临时令牌验证）
@@ -152,10 +167,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/student/check-report/**").hasAnyAuthority("STUDENT", "TEACHER", "ADMIN")
                         // 其他学生接口：仅学生角色可访问
                         .requestMatchers("/api/v1/student/**").hasAuthority("STUDENT")
-                        // 教师接口：仅教师角色可访问
-                        .requestMatchers("/api/v1/teacher/**").hasAuthority("TEACHER")
-                        // 管理员接口：仅管理员角色可访问
-                        .requestMatchers("/api/v1/admin/**").hasAuthority("ADMIN")
+                        // 教师接口：教师和超级管理员可访问
+                        .requestMatchers("/api/v1/teacher/**").hasAnyAuthority("TEACHER", "SUPER_ADMIN")
+                        // 教师分配操作接口：教师和超级管理员可访问
+                        .requestMatchers("/api/v1/assignment/**").hasAnyAuthority("TEACHER", "SUPER_ADMIN")
+                        // 管理员接口：管理员和超级管理员可访问（细粒度控制由@PreAuthorize注解处理）
+                        .requestMatchers("/api/v1/admin/**").hasAnyAuthority("ADMIN", "SUPER_ADMIN")
                         // 知识库公开接口（帮助中心，无需登录）
                         .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/categories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/knowledge/articles").permitAll()

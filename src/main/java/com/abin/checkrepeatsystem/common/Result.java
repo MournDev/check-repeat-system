@@ -11,57 +11,18 @@ import lombok.NoArgsConstructor;
  * - 成功：code=200，errorCode=null，message=操作成功，data=业务数据
  * - 失败：code=HTTP状态码（如400），errorCode=业务错误码（如40001），message=错误信息，data=额外数据
  */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class Result<T> {
     // HTTP状态码（成功=200，失败=对应HTTP状态码如400/403/404）
     private Integer code;
     // 业务错误码（成功=null，失败=ResultCode枚举的code如40001）
     private Integer errorCode;
-    // 提示信息（成功=“操作成功”，失败=具体错误描述）
+    // 提示信息（成功=”操作成功”，失败=具体错误描述）
     private String message;
     // 响应数据（成功=业务数据，失败=额外信息如错误参数列表）
     private T data;
-
-    public Result() {
-    }
-
-    public Result(Integer code, Integer errorCode, String message, T data) {
-        this.code = code;
-        this.errorCode = errorCode;
-        this.message = message;
-        this.data = data;
-    }
-
-    public Integer getCode() {
-        return code;
-    }
-
-    public void setCode(Integer code) {
-        this.code = code;
-    }
-
-    public Integer getErrorCode() {
-        return errorCode;
-    }
-
-    public void setErrorCode(Integer errorCode) {
-        this.errorCode = errorCode;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public T getData() {
-        return data;
-    }
-
-    public void setData(T data) {
-        this.data = data;
-    }
 
     // ====================== 1. 成功响应（简化构造） ======================
     /**

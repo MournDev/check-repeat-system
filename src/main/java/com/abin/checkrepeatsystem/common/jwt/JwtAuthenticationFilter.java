@@ -3,6 +3,7 @@ package com.abin.checkrepeatsystem.common.jwt;
 import com.alibaba.fastjson2.JSON;
 import com.abin.checkrepeatsystem.user.service.Impl.UserDetailsServiceImpl;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
+import com.abin.checkrepeatsystem.common.service.TokenRevocationService;
 import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import jakarta.servlet.FilterChain;
@@ -38,6 +39,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserDetailsServiceImpl userDetailsService;
 
     private final RedisTemplate<String, String> redisTemplate;
+
+    private final TokenRevocationService tokenRevocationService;
 
     // 从配置文件获取JWT请求头与前缀
     @Value("${jwt.token-header:Authorization}")
@@ -90,19 +93,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     log.debug("令牌已被注销，拒绝访问");
                 } else if (jwt != null && !jwtUtils.isTokenExpired(jwt)) {
                     // 5. 验证令牌有效性
-                    String username = jwtUtils.extractUsername(jwt);
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    // 检查 token 是否在密码修改后被吊销
+                    Long tokenUserId = jwtUtils.extractUserId(jwt);
+                    java.util.Date tokenIssuedAt = jwtUtils.extractAllClaims(jwt).getIssuedAt();
+                    if (tokenRevocationService.isTokenRevoked(tokenUserId, tokenIssuedAt)) {
+                        log.warn("令牌已被吊销（密码已修改），拒绝访问: userId={}", tokenUserId);
+                        writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, 401, "密码已修改，请重新登录");
+                        shouldContinueChain = false;
+                    } else {
+                        String username = jwtUtils.extractUsername(jwt);
+                        UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                    // 设置UserContextHolder，供业务层直接获取用户信息
-                    try {
-                        SysUser sysUser = userDetailsService.findSysUserByUsername(username);
-                        UserContextHolder.setUser(sysUser);
-                    } catch (Exception e) {
-                        log.debug("设置UserContextHolder失败: {}", e.getMessage());
+                        // 设置UserContextHolder，供业务层直接获取用户信息
+                        try {
+                            SysUser sysUser = userDetailsService.findSysUserByUsername(username);
+                            UserContextHolder.setUser(sysUser);
+                        } catch (Exception e) {
+                            log.debug("设置UserContextHolder失败: {}", e.getMessage());
+                        }
                     }
                 }
             }

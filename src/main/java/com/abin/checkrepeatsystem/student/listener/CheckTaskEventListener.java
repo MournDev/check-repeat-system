@@ -6,6 +6,7 @@ import com.abin.checkrepeatsystem.common.engine.CheckEngineManager;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.common.enums.CheckTaskStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.statemachine.CheckTaskStateMachine;
 import com.abin.checkrepeatsystem.common.utils.PdfReportGenerator;
 import com.abin.checkrepeatsystem.common.utils.SpringContextUtil;
@@ -13,6 +14,7 @@ import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.common.utils.UserContextHolder;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
+import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.vo.CheckResult;
@@ -64,6 +66,14 @@ public class CheckTaskEventListener {
     private final CheckEngineManager checkEngineManager;
 
     private final PdfReportGenerator pdfReportGenerator;
+
+    private final FileService fileService;
+
+    private final com.abin.checkrepeatsystem.notification.service.IntelligentNotificationService intelligentNotificationService;
+
+    private final com.abin.checkrepeatsystem.user.service.Impl.InternalMessageNotificationService internalMessageNotificationService;
+
+    private final com.abin.checkrepeatsystem.mapper.SysUserMapper sysUserMapper;
 
 
 
@@ -169,7 +179,7 @@ public class CheckTaskEventListener {
             
             // 3.2 提取论文内容
             sendProgressMessage(taskId, 10, "正在提取论文内容...");
-            String paperContent = extractTextFromFile(paperInfo.getFilePath());
+            String paperContent = extractTextFromFile(paperInfo.getFileId());
             if (paperContent == null || paperContent.trim().isEmpty()) {
                 log.error("论文内容为空：{}", paperInfo.getId());
                 stateMachine.transitionStatus(taskId, CheckTaskStatusEnum.FAILURE, "论文内容为空");
@@ -216,6 +226,31 @@ public class CheckTaskEventListener {
             
             // 7. 发送完成通知
             sendProgressMessage(taskId, 100, "查重完成，相似度：" + checkRate + "%");
+
+            // 8. 发送站内信通知学生查重完成
+            try {
+                SysUser student = sysUserMapper.selectById(paperInfo.getStudentId());
+                if (student != null) {
+                    intelligentNotificationService.sendCheckCompletedNotice(
+                            paperInfo.getId(), paperInfo.getPaperTitle(),
+                            paperInfo.getStudentId(), student, checkRate.doubleValue());
+                }
+            } catch (Exception notifyEx) {
+                log.warn("发送查重完成站内信通知失败: paperId={}", paperInfo.getId(), notifyEx);
+            }
+
+            // 9. 发送站内信通知导师论文已进入待审核
+            if (paperInfo.getTeacherId() != null) {
+                try {
+                    String teacherTitle = "论文待审核";
+                    String teacherContent = String.format("学生提交的论文《%s》查重已完成，相似度 %.2f%%，已进入待审核队列，请及时审核。",
+                            paperInfo.getPaperTitle(), checkRate.doubleValue());
+                    internalMessageNotificationService.sendSimpleNotice(
+                            paperInfo.getTeacherId(), teacherTitle, teacherContent);
+                } catch (Exception notifyEx) {
+                    log.warn("发送待审核站内信通知导师失败: paperId={}", paperInfo.getId(), notifyEx);
+                }
+            }
             
             long endTime = System.currentTimeMillis();
             log.info("查重任务完成 - 任务ID: {}, 耗时: {}秒, 相似度: {}", 
@@ -266,28 +301,22 @@ public class CheckTaskEventListener {
 
     /**
      * 从文件中提取文本内容
+     * 支持从MinIO或本地文件系统读取
      */
-    private String extractTextFromFile(String filePath) throws Exception {
-        // 规范化文件路径：统一分隔符并去除开头的路径分隔符，确保跨平台兼容
-        String normalizedFilePath = filePath.replace('\\', '/').replaceAll("^/+", "");
-        Path fullPathObj = Paths.get(basePath, normalizedFilePath);
-        String fullPath = fullPathObj.toString();
-        
-        // 打印完整文件路径，方便调试
-        log.info("尝试读取论文文件：{}", fullPath);
-        
-        File file = new File(fullPath);
-        if (!file.exists() || !file.isFile()) {
-            // 检查目录是否存在
-            File parentDir = file.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                log.warn("论文文件目录不存在：{}", parentDir.getAbsolutePath());
-            }
-            throw new RuntimeException("论文文件不存在：" + fullPath);
+    private String extractTextFromFile(Long fileId) throws Exception {
+        log.info("开始从文件提取文本内容，fileId: {}", fileId);
+
+        // 使用FileService从MinIO或本地读取文件内容
+        byte[] fileContent = fileService.getFileContent(fileId);
+        if (fileContent == null || fileContent.length == 0) {
+            throw new RuntimeException("文件内容为空，fileId: " + fileId);
         }
-        
-        try (InputStream inputStream = new FileInputStream(file)) {
-            return tika.parseToString(inputStream);
+
+        // 使用Tika提取文本
+        try (InputStream inputStream = new java.io.ByteArrayInputStream(fileContent)) {
+            String content = tika.parseToString(inputStream);
+            log.info("文本提取成功，fileId: {}, 内容长度: {}", fileId, content != null ? content.length() : 0);
+            return content;
         }
     }
 
@@ -461,7 +490,7 @@ public class CheckTaskEventListener {
         if (paperInfo != null) {
             try {
                 // 提取论文文本内容
-                String paperText = extractTextFromFile(paperInfo.getFilePath());
+                String paperText = extractTextFromFile(paperInfo.getFileId());
                 if (paperText != null && !paperText.trim().isEmpty()) {
                     // 简单分割段落（按换行符）
                     String[] textParagraphs = paperText.split("\\n\\s*\\n");
@@ -517,6 +546,22 @@ public class CheckTaskEventListener {
      * 更新论文状态为成功
      */
     private void updatePaperSuccess(PaperInfo paperInfo, BigDecimal similarity) {
+        // 如果论文已处于终态（已通过/已驳回），不再更新状态，避免覆盖教师审核结果
+        PaperStatusEnum currentStatus = PaperStatusEnum.fromCode(paperInfo.getPaperStatus());
+        if (currentStatus != null && currentStatus.isTerminalStatus()) {
+            log.info("论文已处于终态（{}），跳过状态更新，仅更新查重结果字段: paperId={}",
+                    currentStatus.getDescription(), paperInfo.getId());
+            PaperInfo updatePaper = new PaperInfo();
+            updatePaper.setId(paperInfo.getId());
+            updatePaper.setCheckCompleted(1);
+            updatePaper.setCheckEngineType("local");
+            updatePaper.setCheckSource("school");
+            updatePaper.setSimilarityRate(similarity);
+            updatePaper.setUpdateTime(LocalDateTime.now());
+            paperInfoMapper.updateById(updatePaper);
+            return;
+        }
+
         PaperInfo updatePaper = new PaperInfo();
         updatePaper.setId(paperInfo.getId());
         updatePaper.setCheckCompleted(1);

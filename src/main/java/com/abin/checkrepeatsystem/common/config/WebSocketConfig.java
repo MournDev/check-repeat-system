@@ -14,11 +14,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 
 /**
  * WebSocket配置类
  */
+@Slf4j
 @RequiredArgsConstructor
 @Configuration
 @EnableWebSocketMessageBroker
@@ -33,7 +35,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         List<String> allowedOrigins;
         if (allowedOriginsConfig == null || allowedOriginsConfig.isBlank()) {
-            allowedOrigins = List.of("*");
+            log.warn("STOMP WebSocket允许来源未配置(websocket.allowed-origins)，默认允许localhost:3000和localhost:5173");
+            allowedOrigins = List.of("http://localhost:3000", "http://localhost:5173");
         } else {
             allowedOrigins = Arrays.stream(allowedOriginsConfig.split(","))
                     .map(String::trim)

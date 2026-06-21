@@ -1,3 +1,10 @@
+# SpringDoc（生产环境禁用 Swagger UI）
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 # 服务基础配置
 server:
   address: 0.0.0.0
@@ -115,7 +122,7 @@ check:
     hamming-threshold: 3
   text:
     segment:
-      type: ik
+      type: jieba
       dic-path: classpath:dic/
   local:
     enabled: true

@@ -2,8 +2,14 @@ package com.abin.checkrepeatsystem.common.aspect;
 
 import com.abin.checkrepeatsystem.admin.service.SysOperationLogService;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
+import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
+import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
+import com.abin.checkrepeatsystem.pojo.dto.LoginReq;
+import com.abin.checkrepeatsystem.pojo.dto.RegisterReq;
 import com.abin.checkrepeatsystem.pojo.entity.SysOperationLog;
+import com.abin.checkrepeatsystem.common.utils.HttpIpUtils;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
 import com.abin.checkrepeatsystem.admin.mapper.SysOperationLogMapper;
 import com.alibaba.fastjson2.JSON;
@@ -61,14 +67,15 @@ public class OperationLogAspect {
             final long finalStartTime = startTime;
             final Object finalResult = result;
             final String finalErrorMsg = errorMsg;
-            // 在主线程捕获 SecurityContext 和 RequestContext，传递给异步线程
+            // 在主线程捕获 SecurityContext、RequestContext 和客户端IP，传递给异步线程
             final SecurityContext securityContext = SecurityContextHolder.getContext();
             final ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            final String clientIp = requestAttributes != null ? HttpIpUtils.getRealIp(requestAttributes.getRequest()) : "unknown";
             CompletableFuture.runAsync(() -> {
                 try {
                     SecurityContextHolder.setContext(securityContext);
                     RequestContextHolder.setRequestAttributes(requestAttributes, true);
-                    recordLog(joinPoint, operationLog, finalResult, finalErrorMsg, System.currentTimeMillis() - finalStartTime);
+                    recordLog(joinPoint, operationLog, finalResult, finalErrorMsg, System.currentTimeMillis() - finalStartTime, clientIp);
                 } catch (Exception e) {
                     log.error("记录操作日志失败: {}", e.getMessage(), e);
                 } finally {
@@ -79,8 +86,8 @@ public class OperationLogAspect {
         }
     }
 
-    private void recordLog(ProceedingJoinPoint joinPoint, OperationLog operationLog, 
-                          Object result, String errorMsg, long executeTime) {
+    private void recordLog(ProceedingJoinPoint joinPoint, OperationLog operationLog,
+                          Object result, String errorMsg, long executeTime, String clientIp) {
         try {
             SysOperationLog logEntity = new SysOperationLog();
             
@@ -88,6 +95,22 @@ public class OperationLogAspect {
             String username = getCurrentUsername();
             Long userId = getCurrentUserId();
             String userType = getCurrentUserType();
+
+            // 登录/注册时无JWT token，从请求参数中提取用户名
+            if ("anonymous".equals(username)) {
+                String paramUsername = getUsernameFromArgs(joinPoint);
+                if (paramUsername != null) {
+                    username = paramUsername;
+                }
+            }
+
+            // 登录成功时从返回结果中提取用户类型
+            if ("unknown".equals(userType) && result != null) {
+                String resultUserType = getUserTypeFromResult(result);
+                if (resultUserType != null) {
+                    userType = resultUserType;
+                }
+            }
             
             logEntity.setUserId(userId);
             logEntity.setUserName(username);
@@ -112,17 +135,27 @@ public class OperationLogAspect {
             String details = buildDetails(result, errorMsg, executeTime);
             logEntity.setDetails(details);
             
-            // 记录IP地址
-            logEntity.setIpAddress(getClientIpAddress());
-            
+            // 记录IP地址（主线程已提前捕获）
+            logEntity.setIpAddress(clientIp);
+
+            // 记录TraceId（从MDC获取，用于关联请求链路）
+            String traceId = org.slf4j.MDC.get("traceId");
+            logEntity.setTraceId(traceId);
+
             // 记录执行时间
             logEntity.setOperationTime(LocalDateTime.now());
             
             // 保存到数据库
             sysOperationLogMapper.insert(logEntity);
             
-            log.info("操作日志记录成功: 用户={}, 类型={}, 操作={}, 状态={}, 耗时={}ms", 
-                    username, userType, operationLog.type(), errorMsg == null ? "成功" : "失败", executeTime);
+            String userTypeName;
+            try {
+                userTypeName = UserTypeEnum.getByRoleCode(userType).getDesc();
+            } catch (Exception e) {
+                userTypeName = userType;
+            }
+            log.info("操作日志记录成功: 用户={}, 类型={}, 操作={}, 状态={}, 耗时={}ms",
+                    username, userTypeName, operationLog.type(), errorMsg == null ? "成功" : "失败", executeTime);
                     
         } catch (Exception e) {
             log.error("保存操作日志到数据库失败: {}", e.getMessage(), e);
@@ -216,30 +249,6 @@ public class OperationLogAspect {
         return 0L;
     }
 
-    private String getClientIpAddress() {
-        try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                HttpServletRequest request = attributes.getRequest();
-                String ip = request.getHeader("X-Forwarded-For");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("X-Real-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getRemoteAddr();
-                }
-                // 处理多个IP的情况
-                if (ip != null && ip.contains(",")) {
-                    ip = ip.split(",")[0].trim();
-                }
-                return ip;
-            }
-        } catch (Exception e) {
-            log.warn("获取客户端IP失败: {}", e.getMessage());
-        }
-        return "unknown";
-    }
-
     private String getMethodParams(ProceedingJoinPoint joinPoint) {
         try {
             MethodSignature signature = (MethodSignature) joinPoint.getSignature();
@@ -278,6 +287,39 @@ public class OperationLogAspect {
             log.warn("获取方法参数失败: {}", e.getMessage());
             return "{}";
         }
+    }
+
+    /**
+     * 从方法参数中提取用户名（用于登录/注册等无JWT token的场景）
+     */
+    private String getUsernameFromArgs(ProceedingJoinPoint joinPoint) {
+        try {
+            Object[] args = joinPoint.getArgs();
+            for (Object arg : args) {
+                if (arg instanceof LoginReq loginReq) {
+                    return loginReq.getUsername();
+                } else if (arg instanceof RegisterReq registerReq) {
+                    return registerReq.getUsername();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("从参数中提取用户名失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 从登录/注册返回结果中提取用户类型（用于无JWT token的场景）
+     */
+    private String getUserTypeFromResult(Object result) {
+        try {
+            if (result instanceof Result<?> r && r.getData() instanceof LoginVO loginVO) {
+                return loginVO.getRoleCode();
+            }
+        } catch (Exception e) {
+            log.warn("从返回结果中提取用户类型失败: {}", e.getMessage());
+        }
+        return null;
     }
 
     private String buildDescription(OperationLog operationLog, ProceedingJoinPoint joinPoint) {

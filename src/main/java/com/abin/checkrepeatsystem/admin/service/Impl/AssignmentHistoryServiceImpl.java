@@ -2,8 +2,10 @@ package com.abin.checkrepeatsystem.admin.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.service.AssignmentHistoryService;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.admin.vo.AssignmentRecordExcelVO;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.admin.dto.*;
 import com.abin.checkrepeatsystem.pojo.entity.TeacherAllocationRecord;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
@@ -296,7 +298,7 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             
             // 验证新教师
             SysUser newTeacher = sysUserMapper.selectById(newTeacherId);
-            if (newTeacher == null || !"teacher".equals(newTeacher.getUserType())) {
+            if (newTeacher == null || !"TEACHER".equals(newTeacher.getUserType())) {
                 return Result.error(ResultCode.PARAM_ERROR, "指定的新教师不存在或不是教师");
             }
             
@@ -305,8 +307,8 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             if (paperInfo != null) {
                 paperInfo.setTeacherId(newTeacherId);
                 paperInfo.setTeacherName(newTeacher.getRealName());
-                paperInfo.setAllocationType("REASSIGN");
-                paperInfo.setAllocationStatus("assigned");
+                paperInfo.setAllocationType(DictConstants.AllocationType.MANUAL);
+                paperInfo.setAllocationStatus(DictConstants.AllocationStatus.PENDING);
                 paperInfo.setUpdateTime(LocalDateTime.now());
                 paperInfoMapper.updateById(paperInfo);
             }
@@ -428,7 +430,7 @@ public class AssignmentHistoryServiceImpl implements AssignmentHistoryService {
             
         } catch (Exception e) {
             log.error("导出分配记录失败: {}", e.getMessage(), e);
-            throw new RuntimeException("导出失败: " + e.getMessage(), e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "导出失败: " + e.getMessage());
         }
     }
 

@@ -23,8 +23,8 @@
             INNER JOIN sys_user_major sum ON su.id = sum.user_id
         </if>
         WHERE
-        <!-- 1. 固定筛选：仅查询教师（user_type=2）、未删除（is_deleted=0） -->
-        su.user_type = 2
+        <!-- 1. 固定筛选：仅查询教师（user_type='TEACHER'）、未删除（is_deleted=0） -->
+        su.user_type = 'TEACHER'
         AND su.is_deleted = 0
 
         <!-- 2. 动态筛选：若传了 teacherId，优先筛选该教师（单独统计用） -->
@@ -48,7 +48,7 @@
         sys_user su
         WHERE
         <!-- 1. 固定条件：仅统计“学生”且“未删除” -->
-        su.user_type = 1  <!-- user_type=1 约定为学生 -->
+        su.user_type = 'STUDENT'  <!-- user_type 存储角色编码字符串 -->
         AND su.is_deleted = 0  <!-- 排除软删除学生 -->
 
         <!-- 2. 动态条件：若传了 majorId，筛选该专业的学生 -->

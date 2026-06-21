@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.common.utils;
 
 import com.abin.checkrepeatsystem.pojo.entity.*;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.student.dto.ReportPreviewDTO;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
@@ -9,9 +10,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -27,6 +30,9 @@ public class ReportContentProcessor {
 
     private final PaperInfoMapper paperInfoMapper;
     private final PaperContentMinioService paperContentMinioService;
+    private final FileService fileService;
+
+    private final Tika tika = new Tika();
     
     @Value("${report.preview.max-paragraph-length:500}")
     private int maxParagraphLength;
@@ -437,17 +443,17 @@ public class ReportContentProcessor {
     }
 
     /**
-     * 提取论文文本
+     * 提取论文文本（从MinIO读取）
      */
     public String extractPaperText(Long fileId) {
         try {
-            // 1. 优先从Minio读取
+            // 1. 优先从Minio读取已提取的内容
             PaperInfo paperInfo = paperInfoMapper.selectList(
                     new LambdaQueryWrapper<PaperInfo>()
                             .eq(PaperInfo::getFileId, fileId)
                             .orderByDesc(PaperInfo::getCreateTime)
             ).stream().findFirst().orElse(null);
-            
+
             if (paperInfo != null && paperInfo.getContentPath() != null && !paperInfo.getContentPath().isEmpty()) {
                 try {
                     String minioContent = paperContentMinioService.readPaperContent(paperInfo.getContentPath());
@@ -459,21 +465,21 @@ public class ReportContentProcessor {
                     log.warn("从Minio读取论文内容失败: {}", e.getMessage());
                 }
             }
-            
-            // 2. 从本地文件系统读取
-            if (paperInfo != null && paperInfo.getFilePath() != null) {
-                String filePath = paperInfo.getFilePath();
-                if (!filePath.startsWith("/")) {
-                    filePath = "/" + filePath;
-                }
-                String fullPath = "/data/upload" + filePath;
-                String content = TikaTextExtractor.extractTextFromFile(fullPath);
-                log.info("从本地文件系统获取论文内容成功: {}", fullPath);
-                return content;
+
+            // 2. 从MinIO读取原始文件并提取文本
+            log.info("从MinIO读取原始文件提取文本, fileId={}", fileId);
+            byte[] fileContent = fileService.getFileContent(fileId);
+            if (fileContent == null || fileContent.length == 0) {
+                log.warn("文件内容为空: fileId={}", fileId);
+                return "";
             }
-            
-            log.warn("未找到论文文件: fileId={}", fileId);
-            return "";
+
+            // 使用Tika提取文本
+            try (InputStream inputStream = new java.io.ByteArrayInputStream(fileContent)) {
+                String content = tika.parseToString(inputStream);
+                log.info("从MinIO提取论文文本成功: fileId={}, length={}", fileId, content != null ? content.length() : 0);
+                return content != null ? content : "";
+            }
         } catch (Exception e) {
             log.error("提取论文文本失败: {}", e.getMessage(), e);
             return "";

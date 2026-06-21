@@ -5,10 +5,12 @@ import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
 import com.abin.checkrepeatsystem.student.dto.*;
 import com.abin.checkrepeatsystem.student.service.Impl.StudentDashboardService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.List;
 
 @RestController
@@ -106,5 +108,22 @@ public class StudentDashboardController {
         Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
         ProgressTrackingDTO progress = dashboardService.getProgressTracking(studentId);
         return Result.success(progress);
+    }
+
+    // 导出仪表盘数据为Excel
+    @GetMapping("/export")
+    public void exportDashboardData(HttpServletResponse response) {
+        try {
+            Long studentId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
+            dashboardService.exportDashboardData(studentId, response);
+        } catch (Exception e) {
+            log.error("导出仪表盘数据失败", e);
+            try {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.getWriter().write("导出失败: " + e.getMessage());
+            } catch (IOException ioException) {
+                log.error("发送错误响应失败", ioException);
+            }
+        }
     }
 }

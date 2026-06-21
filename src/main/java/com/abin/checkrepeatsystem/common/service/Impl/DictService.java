@@ -6,6 +6,7 @@ import com.abin.checkrepeatsystem.student.vo.DictTreeVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,6 +23,7 @@ public class DictService {
     /**
      * 根据字典类型获取字典数据列表
      */
+    @Cacheable(cacheNames = "dictData", key = "#dictType", sync = true)
     public List<SysDictData> getDictDataByType(String dictType) {
         return sysDictDataMapper.selectList(new LambdaQueryWrapper<SysDictData>()
                 .eq(SysDictData::getDictType, dictType)
@@ -41,6 +43,7 @@ public class DictService {
     /**
      * 根据字典类型和字典值获取字典标签
      */
+    @Cacheable(cacheNames = "dictLabel", key = "#dictType + ':' + #dictValue", sync = true)
     public String getDictLabel(String dictType, String dictValue) {
         SysDictData dictData = sysDictDataMapper.selectOne(new LambdaQueryWrapper<SysDictData>()
                 .eq(SysDictData::getDictType, dictType)
@@ -52,6 +55,7 @@ public class DictService {
     /**
      * 获取学科领域树形结构
      */
+    @Cacheable(cacheNames = "subjectTree", sync = true)
     public List<DictTreeVO> getSubjectFieldTree() {
         // 1. 先查询所有学科领域字典数据（状态正常）
         List<SysDictData> allSubjectData = getDictDataByType("subject_field");
@@ -93,6 +97,7 @@ public class DictService {
     /**
      * 获取论文相关的所有字典数据
      */
+    @Cacheable(cacheNames = "paperDict", sync = true)
     public Map<String, List<SysDictData>> getPaperDictData() {
         return Map.of(
                 "paperStatus", getDictDataByType("paper_status"),

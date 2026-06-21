@@ -26,7 +26,7 @@ public class AutoAllocationHistoryController {
      */
     @PostMapping("/create")
     @OperationLog(type = "auto_allocation_create", description = "创建自动分配历史记录", recordResult = true)
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<AutoAllocationHistory> createHistory(@RequestBody AutoAllocationHistory history) {
         boolean success = autoAllocationHistoryService.createHistory(history);
         if (success) {
@@ -40,7 +40,7 @@ public class AutoAllocationHistoryController {
      * 获取分配历史列表
      */
     @GetMapping("/list")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<AutoAllocationHistory>> getHistoryList(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -54,7 +54,7 @@ public class AutoAllocationHistoryController {
      * 获取分配历史详情
      */
     @GetMapping("/detail/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<AutoAllocationHistory> getHistoryById(@PathVariable Long id) {
         AutoAllocationHistory history = autoAllocationHistoryService.getHistoryById(id);
         if (history == null) {
@@ -67,7 +67,7 @@ public class AutoAllocationHistoryController {
      * 获取分配统计信息
      */
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<Map<String, Object>> getHistoryStats(
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
@@ -79,7 +79,7 @@ public class AutoAllocationHistoryController {
      * 获取最新的分配历史记录
      */
     @GetMapping("/latest")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<AutoAllocationHistory>> getLatestHistory(@RequestParam(defaultValue = "5") int limit) {
         List<AutoAllocationHistory> histories = autoAllocationHistoryService.getLatestHistory(limit);
         return Result.success(histories);
@@ -90,7 +90,7 @@ public class AutoAllocationHistoryController {
      */
     @DeleteMapping("/clean")
     @OperationLog(type = "auto_allocation_clean", description = "清理过期分配历史记录", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> cleanExpiredHistory(@RequestParam(defaultValue = "30") int days) {
         boolean success = autoAllocationHistoryService.cleanExpiredHistory(days);
         if (success) {

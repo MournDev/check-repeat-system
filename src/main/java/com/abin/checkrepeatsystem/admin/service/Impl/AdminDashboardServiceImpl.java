@@ -345,19 +345,6 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return majorStats;
     }
 
-    /**
-     * 创建活动记录
-     */
-    private Map<String, Object> createActivity(Long id, String type, String description, 
-                                             LocalDateTime time, String user) {
-        Map<String, Object> activity = new HashMap<>();
-        activity.put("id", id);
-        activity.put("type", type);
-        activity.put("description", description);
-        activity.put("time", time);
-        activity.put("user", user);
-        return activity;
-    }
 
     /**
      * 创建快捷操作
@@ -599,106 +586,6 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         }
         
         return metrics;
-    }
-    
-    // ===== 辅助方法 =====
-    
-    private double getCpuUsage() {
-        // 获取真实的CPU使用率
-        try {
-            var systemStatus = systemMonitorService.getSystemStatus();
-            if (systemStatus.isSuccess()) {
-                Map<String, Object> statusData = (Map<String, Object>) systemStatus.getData();
-                Map<String, Object> cpuInfo = (Map<String, Object>) statusData.get("cpu");
-                if (cpuInfo != null) {
-                    Double cpuUsage = (Double) cpuInfo.get("processCpuUsage");
-                    if (cpuUsage != null && cpuUsage >= 0) {
-                        return cpuUsage;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("获取真实CPU使用率失败: {}", e.getMessage());
-        }
-        return 0.0; // 失败时返回0
-    }
-    
-    private double getMemoryUsage() {
-        // 获取真实的内存使用率
-        try {
-            var systemStatus = systemMonitorService.getSystemStatus();
-            if (systemStatus.isSuccess()) {
-                Map<String, Object> statusData = (Map<String, Object>) systemStatus.getData();
-                Map<String, Object> memoryInfo = (Map<String, Object>) statusData.get("memory");
-                if (memoryInfo != null) {
-                    Double heapUsage = (Double) memoryInfo.get("heapUsagePercent");
-                    if (heapUsage != null) {
-                        return heapUsage;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("获取真实内存使用率失败: {}", e.getMessage());
-        }
-        return 0.0; // 失败时返回0
-    }
-    
-    private double getDiskUsage() {
-        try {
-            Map<String, Object> diskInfo = systemMonitorService.getDiskInfo();
-            if (diskInfo != null && diskInfo.get("usagePercent") != null) {
-                return ((Number) diskInfo.get("usagePercent")).doubleValue();
-            }
-        } catch (Exception e) {
-            log.warn("获取磁盘使用率失败: {}", e.getMessage());
-        }
-        return 0.0;
-    }
-    
-    private Integer getActiveConnections() {
-        // 获取真实的活跃连接数
-        try {
-            var systemStatus = systemMonitorService.getSystemStatus();
-            if (systemStatus.isSuccess()) {
-                Map<String, Object> statusData = (Map<String, Object>) systemStatus.getData();
-                Map<String, Object> threadInfo = (Map<String, Object>) statusData.get("threads");
-                if (threadInfo != null) {
-                    Integer threadCount = (Integer) threadInfo.get("threadCount");
-                    if (threadCount != null) {
-                        return threadCount;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("获取真实活跃连接数失败: {}", e.getMessage());
-        }
-        return 0; // 失败时返回0
-    }
-    
-    private String getSystemUptime() {
-        // 获取真实的系统运行时间
-        try {
-            var systemStatus = systemMonitorService.getSystemStatus();
-            if (systemStatus.isSuccess()) {
-                Map<String, Object> statusData = (Map<String, Object>) systemStatus.getData();
-                Map<String, Object> runtimeInfo = (Map<String, Object>) statusData.get("runtime");
-                if (runtimeInfo != null) {
-                    String uptime = (String) runtimeInfo.get("uptime");
-                    if (uptime != null) {
-                        return uptime;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("获取真实系统运行时间失败: {}", e.getMessage());
-        }
-        return "未知"; // 失败时返回默认值
-    }
-    
-    private Integer calculateSystemHealth(double cpu, double memory, double disk) {
-        // 简单的健康度计算公式
-        double score = 100 - (cpu * 0.4 + memory * 0.4 + disk * 0.2) / 3;
-        return Math.max(0, (int) Math.round(score));
     }
     
     /**

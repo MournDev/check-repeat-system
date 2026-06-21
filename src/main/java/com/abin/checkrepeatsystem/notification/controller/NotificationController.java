@@ -173,7 +173,7 @@ public class NotificationController {
      * 发送系统公告（管理员端）
      */
     @PostMapping("/announcement")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @Operation(summary = "发布公告", description = "管理员发布系统公告")
     public Result<Boolean> sendAnnouncement(
             @RequestHeader("Authorization") String token,
@@ -191,7 +191,7 @@ public class NotificationController {
      * 发送紧急通知（管理员端）
      */
     @PostMapping("/emergency")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @Operation(summary = "发送紧急通知", description = "管理员发送紧急系统通知")
     public Result<Boolean> sendEmergencyNotification(
             @RequestHeader("Authorization") String token,

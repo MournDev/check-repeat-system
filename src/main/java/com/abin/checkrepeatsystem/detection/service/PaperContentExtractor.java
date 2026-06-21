@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.detection.service;
 
 import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.common.utils.IKAnalyzerUtils;
 import com.abin.checkrepeatsystem.common.utils.TikaTextExtractor;
@@ -36,6 +37,8 @@ public class PaperContentExtractor {
     private final FileInfoMapper fileInfoMapper;
 
     private final PaperContentMinioService paperContentMinioService;
+
+    private final FileService fileService;
 
     @Value("${file.upload.base-path:/data/upload/}")
     private String uploadBasePath;
@@ -205,12 +208,12 @@ public class PaperContentExtractor {
     }
 
     /**
-     * 从原始文件提取内容
+     * 从原始文件提取内容（从MinIO读取）
      */
     private String extractFromOriginalFile(PaperInfo paperInfo) {
         Long fileId = paperInfo.getFileId();
         log.info("开始从原始文件提取内容: paperId={}, fileId={}", paperInfo.getId(), fileId);
-        
+
         if (fileId == null) {
             log.error("论文未上传文件: paperId={}", paperInfo.getId());
             throw new BusinessException(ResultCode.PARAM_ERROR, "论文未上传文件");
@@ -222,41 +225,28 @@ public class PaperContentExtractor {
             log.error("文件信息不存在: fileId={}", fileId);
             throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "文件信息不存在: " + fileId);
         }
-        
-        log.info("获取文件信息成功: fileId={}, storagePath={}, originalFilename={}", 
+
+        log.info("获取文件信息成功: fileId={}, storagePath={}, originalFilename={}",
                 fileId, fileInfo.getStoragePath(), fileInfo.getOriginalFilename());
 
-        // 从本地存储路径读取（使用完整路径）
-        String storagePath = fileInfo.getStoragePath();
-        if (storagePath != null && !storagePath.isEmpty()) {
-            // 规范化存储路径：统一分隔符并去除开头的路径分隔符
-            // storagePath在数据库中可能以 / 开头（Unix风格），在Windows上Paths.get()会将其解析为绝对路径
-            // 导致basePath.resolve()丢弃basePath，因此需要先去除开头分隔符
-            String normalizedPath = storagePath.replace('\\', '/').replaceAll("^/+", "");
-            Path fullPath = Paths.get(uploadBasePath, normalizedPath);
-            String fullPathStr = fullPath.toString();
-            
-            log.info("从本地存储路径读取: basePath={}, storagePath={}, fullPath={}", 
-                    uploadBasePath, storagePath, fullPathStr);
-            
-            // 检查目录是否存在
-            Path parentDir = fullPath.getParent();
-            if (parentDir != null && !Files.exists(parentDir)) {
-                log.error("父目录不存在: {}", parentDir);
-            } else if (parentDir != null) {
-                log.info("父目录存在: {}", parentDir);
+        // 从MinIO读取文件内容
+        try {
+            byte[] fileContent = fileService.getFileContent(fileId);
+            if (fileContent == null || fileContent.length == 0) {
+                log.error("文件内容为空: fileId={}", fileId);
+                throw new BusinessException(ResultCode.SYSTEM_ERROR, "文件内容为空");
             }
-            
-            String content = extractFromFilePath(fullPathStr);
-            if (content != null && !content.isEmpty()) {
-                log.info("从本地存储路径读取成功: length={}", content.length());
+
+            // 使用Tika提取文本
+            try (InputStream inputStream = new java.io.ByteArrayInputStream(fileContent)) {
+                String content = tika.parseToString(inputStream);
+                log.info("从MinIO提取内容成功: fileId={}, length={}", fileId, content != null ? content.length() : 0);
                 return content;
             }
-            log.error("从本地存储路径读取失败: path={}", fullPathStr);
+        } catch (Exception e) {
+            log.error("从MinIO提取内容失败: fileId={}", fileId, e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "无法读取论文文件内容: " + e.getMessage());
         }
-
-        log.error("无法读取论文文件内容: paperId={}, fileId={}", paperInfo.getId(), fileId);
-        throw new BusinessException(ResultCode.SYSTEM_ERROR, "无法读取论文文件内容");
     }
 
     /**

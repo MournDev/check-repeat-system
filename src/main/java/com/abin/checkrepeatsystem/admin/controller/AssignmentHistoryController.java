@@ -23,7 +23,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/admin/assignment/history")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
 @RequiredArgsConstructor
 @Slf4j
 public class AssignmentHistoryController {
@@ -121,7 +121,7 @@ public class AssignmentHistoryController {
             try {
                 response.reset();
                 response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"code\":500,\"message\":\"导出失败：" + e.getMessage() + "\"}");
+                response.getWriter().write("{\"code\":500,\"message\":\"导出失败，请查看服务器日志\"}");
             } catch (Exception ex) {
                 log.error("设置错误响应失败", ex);
             }

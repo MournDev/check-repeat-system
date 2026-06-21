@@ -1,0 +1,5 @@
+-- Flyway baseline migration
+-- Existing database schema was created before Flyway was introduced.
+-- This file marks version 1 as the baseline. It will not be executed on existing databases
+-- because baseline-on-migrate=true in application.yml.
+-- Add new migrations as V2__xxx.sql, V3__xxx.sql, etc.

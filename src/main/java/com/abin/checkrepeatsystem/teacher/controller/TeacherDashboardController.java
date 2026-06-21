@@ -154,19 +154,6 @@ public class TeacherDashboardController {
     }
     
     /**
-     * 5. 论文下载接口
-     * GET /api/teacher/papers/{paperId}/download
-     */
-    @GetMapping("/papers/{paperId}/download")
-    @Operation(summary = "下载论文文件", description = "下载指定论文的文件")
-    public Result<String> downloadPaper(
-            @Parameter(description = "论文ID") @PathVariable Long paperId) {
-        Long teacherId = UserBusinessInfoUtils.getCurrentUserId();
-        log.info("教师{}请求下载论文{}", teacherId, paperId);
-        return teacherDashboardService.downloadPaper(teacherId, paperId);
-    }
-
-    /**
      * 6. 审核进度统计接口
      * GET /api/teacher/review/statistics
      */

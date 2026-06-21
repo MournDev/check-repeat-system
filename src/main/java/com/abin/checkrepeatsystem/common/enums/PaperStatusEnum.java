@@ -7,7 +7,8 @@ import lombok.Getter;
  *
  * 状态流转：
  *   PENDING → ASSIGNED → CHECKING → AUDITING → COMPLETED
- *                                            → REJECTED → (resubmit) → AUDITING
+ *                                            → REJECTED (终态驳回)
+ *                                            → REVISION_NEEDED → ASSIGNED (修改后重提)
  *           → WITHDRAWN
  */
 @Getter
@@ -19,6 +20,7 @@ public enum PaperStatusEnum {
     AUDITING("auditing", "待审核"),
     COMPLETED("completed", "审核通过"),
     REJECTED("rejected", "审核不通过"),
+    REVISION_NEEDED("revision_needed", "需要修改"),
     WITHDRAWN("withdrawn", "已撤回");
 
     private final String value;

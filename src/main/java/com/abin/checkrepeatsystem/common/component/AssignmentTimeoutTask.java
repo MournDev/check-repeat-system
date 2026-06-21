@@ -23,8 +23,6 @@ public class AssignmentTimeoutTask {
 
     private final PaperInfoMapper paperInfoMapper;
 
-    private final com.abin.checkrepeatsystem.user.service.AdvisorAssignService advisorAssignService;
-
     /**
      * 每天凌晨2点处理超时未确认的分配
      */
@@ -44,7 +42,7 @@ public class AssignmentTimeoutTask {
             int processedCount = 0;
             for (PaperInfo paper : timeoutPapers) {
                 try {
-                    // 自动拒绝超时未确认的分配
+                    // 自动拒绝超时未确认的分配（rejectAssignment 内部已触发重新分配）
                     Result<Boolean> result = teacherAssignmentService.rejectAssignment(
                             paper.getId(),
                             paper.getTeacherId()
@@ -52,12 +50,6 @@ public class AssignmentTimeoutTask {
 
                     if (result.isSuccess()) {
                         processedCount++;
-                        // 自动重新分配（排除超时未确认的教师）
-                        try {
-                            advisorAssignService.reassignAfterRejection(paper.getId(), paper.getTeacherId());
-                        } catch (Exception reassignEx) {
-                            log.error("超时拒绝后重新分配失败 - 论文ID: {}", paper.getId(), reassignEx);
-                        }
                         log.info("自动拒绝超时论文成功 - 论文ID: {}, 老师ID: {}", paper.getId(), paper.getTeacherId());
                     } else {
                         log.error("自动拒绝超时论文失败 - 论文ID: {}, 错误: {}", paper.getId(), result.getMessage());

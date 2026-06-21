@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/v1/admin/operation-logs")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
 @RequiredArgsConstructor
 @Slf4j
 public class SysOperationLogController {
@@ -217,7 +217,7 @@ public class SysOperationLogController {
         } catch (Exception e) {
             log.error("导出操作日志失败: {}", e.getMessage(), e);
             try {
-                response.getWriter().write("{\"code\":500,\"message\":\"导出失败：" + e.getMessage() + "\"}");
+                response.getWriter().write("{\"code\":500,\"message\":\"导出失败，请查看服务器日志\"}");
             } catch (Exception ex) {
                 log.error("设置错误响应失败", ex);
             }

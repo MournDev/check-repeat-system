@@ -1,9 +1,10 @@
 package com.abin.checkrepeatsystem.admin.service;
 
-import com.abin.checkrepeatsystem.admin.mapper.SystemParamMapper;
+import com.abin.checkrepeatsystem.admin.service.SystemConfigService;
 import com.abin.checkrepeatsystem.mapper.SysBackupLogMapper;
 import com.abin.checkrepeatsystem.pojo.entity.SysBackupLog;
-import com.abin.checkrepeatsystem.pojo.entity.SystemParam;
+import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPOutputStream;
@@ -30,7 +32,9 @@ public class DatabaseBackupService {
 
     private final SysBackupLogMapper backupLogMapper;
 
-    private final SystemParamMapper systemParamMapper;
+    private final SystemConfigService systemConfigService;
+
+    private static final String BACKUP_CONFIG_KEY = "backup_config";
 
     @Value("${backup.db.enabled:true}")
     private boolean backupEnabled;
@@ -50,49 +54,48 @@ public class DatabaseBackupService {
     @Value("${spring.datasource.password:}")
     private String datasourcePassword;
 
-    private SystemParam loadSystemParam() {
-        return systemParamMapper.selectOne(
-            new LambdaQueryWrapper<SystemParam>()
-                .eq(SystemParam::getIsDeleted, 0)
-                .last("LIMIT 1"));
+    private Map<String, Object> loadBackupConfig() {
+        SystemConfig config = systemConfigService.getConfigByKey(BACKUP_CONFIG_KEY);
+        if (config != null && config.getConfigValue() != null) {
+            return JSON.parseObject(config.getConfigValue(), Map.class);
+        }
+        return null;
     }
 
     public boolean isBackupEnabled() {
-        SystemParam sp = loadSystemParam();
-        if (sp != null && sp.getBackupEnabled() != null) {
-            return sp.getBackupEnabled() == 1;
+        Map<String, Object> config = loadBackupConfig();
+        if (config != null && config.containsKey("enabled")) {
+            Object val = config.get("enabled");
+            return val instanceof Number ? ((Number) val).intValue() == 1 : Boolean.TRUE.equals(val);
         }
         return backupEnabled;
     }
 
     public int getEffectiveRetentionDays() {
-        SystemParam sp = loadSystemParam();
-        if (sp != null && sp.getBackupRetentionDays() != null) {
-            return sp.getBackupRetentionDays();
+        Map<String, Object> config = loadBackupConfig();
+        if (config != null && config.containsKey("retentionDays")) {
+            return ((Number) config.get("retentionDays")).intValue();
         }
         return retentionDays;
     }
 
     public Map<String, Object> getBackupSettings() {
-        SystemParam sp = loadSystemParam();
+        Map<String, Object> config = loadBackupConfig();
         return Map.of(
-            "enabled", sp != null && sp.getBackupEnabled() != null ? sp.getBackupEnabled() == 1 : backupEnabled,
-            "retentionDays", sp != null && sp.getBackupRetentionDays() != null ? sp.getBackupRetentionDays() : retentionDays
+            "enabled", config != null && config.containsKey("enabled")
+                ? (config.get("enabled") instanceof Number ? ((Number) config.get("enabled")).intValue() == 1 : Boolean.TRUE.equals(config.get("enabled")))
+                : backupEnabled,
+            "retentionDays", config != null && config.containsKey("retentionDays")
+                ? ((Number) config.get("retentionDays")).intValue()
+                : retentionDays
         );
     }
 
     public void updateBackupSettings(boolean enabled, int retentionDays) {
-        SystemParam sp = loadSystemParam();
-        if (sp == null) {
-            sp = new SystemParam();
-            sp.setBackupEnabled(enabled ? 1 : 0);
-            sp.setBackupRetentionDays(retentionDays);
-            systemParamMapper.insert(sp);
-        } else {
-            sp.setBackupEnabled(enabled ? 1 : 0);
-            sp.setBackupRetentionDays(retentionDays);
-            systemParamMapper.updateById(sp);
-        }
+        Map<String, Object> config = new HashMap<>();
+        config.put("enabled", enabled ? 1 : 0);
+        config.put("retentionDays", retentionDays);
+        systemConfigService.saveConfig(BACKUP_CONFIG_KEY, JSON.toJSONString(config), "数据库备份配置");
     }
 
     public Map<String, Object> performBackup(String backupType) {

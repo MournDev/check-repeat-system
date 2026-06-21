@@ -155,7 +155,7 @@ public class SysNoticeController {
      * 发送测试通知
      */
     @PostMapping("/test")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> sendTestNotice() {
         Long userId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
         sysNoticeService.sendNotice(
@@ -172,7 +172,7 @@ public class SysNoticeController {
      * 发送带优先级的测试通知
      */
     @PostMapping("/test-priority")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> sendTestNoticeWithPriority() {
         Long userId = com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils.getCurrentUserId();
         sysNoticeService.sendNoticeWithPriority(

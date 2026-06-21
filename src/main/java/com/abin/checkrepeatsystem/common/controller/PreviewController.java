@@ -39,7 +39,7 @@ public class PreviewController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("获取预览URL失败 - paperId: {}", paperId, e);
-            return ResponseEntity.ok(PreviewResponse.failure("获取预览URL失败: " + e.getMessage()));
+            return ResponseEntity.ok(PreviewResponse.failure("获取预览URL失败，请稍后重试"));
         }
     }
 
@@ -56,7 +56,7 @@ public class PreviewController {
             return ResponseEntity.ok(info);
         } catch (Exception e) {
             log.error("获取预览信息失败 - paperId: {}", paperId, e);
-            return ResponseEntity.ok(FilePreviewInfoDTO.failure("获取预览信息失败: " + e.getMessage()));
+            return ResponseEntity.ok(FilePreviewInfoDTO.failure("获取预览信息失败，请稍后重试"));
         }
     }
 
@@ -73,7 +73,7 @@ public class PreviewController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("获取KKFileView预览URL失败 - paperId: {}", paperId, e);
-            return ResponseEntity.ok(PreviewResponse.failure("获取预览URL失败: " + e.getMessage()));
+            return ResponseEntity.ok(PreviewResponse.failure("获取预览URL失败，请稍后重试"));
         }
     }
 
@@ -92,7 +92,7 @@ public class PreviewController {
             }
         } catch (Exception e) {
             log.error("检查服务状态失败", e);
-            return ResponseEntity.ok(PreviewResponse.failure("检查服务状态失败: " + e.getMessage()));
+            return ResponseEntity.ok(PreviewResponse.failure("检查服务状态失败，请稍后重试"));
         }
     }
 }

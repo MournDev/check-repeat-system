@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.common.config;
 
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
 import com.abin.checkrepeatsystem.common.websocket.handler.CheckProgressWebSocketHandler;
+import com.abin.checkrepeatsystem.common.websocket.handler.JwtHandshakeInterceptor;
 import com.abin.checkrepeatsystem.common.websocket.handler.NativeWebSocketHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -14,18 +15,21 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 
 /**
  * 原生 WebSocket 配置类
  * 配置原生 WebSocket 连接，支持实时消息推送和查重进度监控
  */
+@Slf4j
 @RequiredArgsConstructor
 @Configuration
 @EnableWebSocket
 public class NativeWebSocketConfig implements WebSocketConfigurer {
 
     private final JwtUtils jwtUtils;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
     @Value("${websocket.allowed-origins:}")
     private String allowedOriginsConfig;
@@ -42,7 +46,8 @@ public class NativeWebSocketConfig implements WebSocketConfigurer {
 
     private String[] getAllowedOrigins() {
         if (allowedOriginsConfig == null || allowedOriginsConfig.isBlank()) {
-            return new String[]{"*"};
+            log.warn("WebSocket允许来源未配置(websocket.allowed-origins)，开发环境默认允许localhost:3000和localhost:5173");
+            return new String[]{"http://localhost:3000", "http://localhost:5173"};
         }
         return Arrays.stream(allowedOriginsConfig.split(","))
                 .map(String::trim)
@@ -55,10 +60,12 @@ public class NativeWebSocketConfig implements WebSocketConfigurer {
         String[] origins = getAllowedOrigins();
         // 注册原生 WebSocket 处理器，处理路径为 /ws/messages/{userId}
         registry.addHandler(nativeWebSocketHandler(), "/ws/messages/**")
+                .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOrigins(origins);
 
         // 注册查重进度 WebSocket 处理器，处理路径为 /ws/check-progress/{taskId}
         registry.addHandler(checkProgressWebSocketHandler(), "/ws/check-progress/**")
+                .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOrigins(origins);
     }
 }

@@ -1,49 +1,48 @@
 package com.abin.checkrepeatsystem.student.vo;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 /**
  *师信息VO
  */
 @Data
-@ApiModel("导师信息")
+@Schema(description = "导师信息")
 public class AdvisorInfoVO {
 
-    @ApiModelProperty("导师ID")
+    @Schema(description = "导师ID")
     private String id;
 
-    @ApiModelProperty("导师姓名")
+    @Schema(description = "导师姓名")
     private String name;
 
-    @ApiModelProperty("导师职称")
+    @Schema(description = "导师职称")
     private String title;
 
-    @ApiModelProperty("研究领域")
+    @Schema(description = "研究领域")
     private String researchField;
 
-    @ApiModelProperty("邮箱")
+    @Schema(description = "邮箱")
     private String email;
 
-    @ApiModelProperty("电话")
+    @Schema(description = "电话")
     private String phone;
 
-    @ApiModelProperty("办公室")
+    @Schema(description = "办公室")
     private String office;
 
-    @ApiModelProperty("办公时间")
+    @Schema(description = "办公时间")
     private String officeHours;
 
-    @ApiModelProperty("头像")
+    @Schema(description = "头像")
     private String avatar;
 
-    @ApiModelProperty("个人简介")
+    @Schema(description = "个人简介")
     private String bio;
 
-    @ApiModelProperty("指导学生数")
+    @Schema(description = "指导学生数")
     private Integer studentCount;
 
-    @ApiModelProperty("所属学院")
+    @Schema(description = "所属学院")
     private String college;
 }

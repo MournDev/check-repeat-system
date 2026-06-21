@@ -45,7 +45,7 @@ public class SystemParam extends BaseEntity{
     private Double defaultThreshold;
     
     /**
-     * 文件存储类型（非空，LOCAL-本地存储，MINIO-MinIO存储）
+     * 文件存储类型（非空，MINIO-MinIO存储）
      * 对应表字段：storage_type
      */
     @TableField("storage_type")
@@ -78,20 +78,5 @@ public class SystemParam extends BaseEntity{
      */
     @TableField("maintenance_notice")
     private String maintenanceNotice;
-
-    /**
-     * 是否启用自动备份（非空，0-禁用，1-启用，默认1）
-     * 对应表字段：backup_enabled
-     */
-    @TableField("backup_enabled")
-    private Integer backupEnabled;
-
-    /**
-     * 备份文件保留天数（非空，默认30）
-     * 对应表字段：backup_retention_days
-     */
-    @TableField("backup_retention_days")
-    private Integer backupRetentionDays;
-
 
 }

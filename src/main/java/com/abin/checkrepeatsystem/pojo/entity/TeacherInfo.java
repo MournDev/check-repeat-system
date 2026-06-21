@@ -61,7 +61,7 @@ public class TeacherInfo extends BaseEntity {
     private Integer reviewDeadline;
 
     /**
-     * 学院名称
+     * 学院名称（冗余字段，应通过college_id关联查询，后续迁移）
      */
     @TableField("college_name")
     private String collegeName;

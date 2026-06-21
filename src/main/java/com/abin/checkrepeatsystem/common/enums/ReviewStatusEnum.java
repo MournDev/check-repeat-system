@@ -10,7 +10,8 @@ import lombok.Getter;
 public enum ReviewStatusEnum {
     // 审核状态定义
     PASS("completed", "审核通过"),       // 审核通过
-    REJECT("rejected", "审核不通过");     // 审核不通过
+    REJECT("rejected", "审核不通过"),     // 审核不通过（终态驳回）
+    REVISION_NEEDED("revision_needed", "需要修改");  // 需要修改（学生可修改后重提）
 
     /**
      * 状态值（存储在数据库中）

@@ -68,6 +68,7 @@ public class DictConstants {
         public static final String AUDITING  = PaperStatusEnum.AUDITING.getValue();
         public static final String COMPLETED = PaperStatusEnum.COMPLETED.getValue();
         public static final String REJECTED  = PaperStatusEnum.REJECTED.getValue();
+        public static final String REVISION_NEEDED = PaperStatusEnum.REVISION_NEEDED.getValue();
         public static final String WITHDRAWN = PaperStatusEnum.WITHDRAWN.getValue();
     }
 

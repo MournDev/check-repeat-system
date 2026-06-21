@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.common.service;
 
 import com.abin.checkrepeatsystem.common.exception.PermissionDeniedException;
 import com.abin.checkrepeatsystem.pojo.entity.CheckReport;
+import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 
@@ -12,10 +13,16 @@ import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 public interface AuthService {
 
     /**
-     * 校验当前用户是否为管理员
+     * 校验当前用户是否为管理员（含超级管理员）
      * @return true=管理员，false=非管理员
      */
     boolean isAdmin();
+
+    /**
+     * 校验当前用户是否为超级管理员
+     * @return true=超级管理员，false=非超级管理员
+     */
+    boolean isSuperAdmin();
 
     /**
      * 校验当前用户是否为学生
@@ -73,7 +80,7 @@ public interface AuthService {
      * @return 有权限返回true，无权限抛异常
      * @throws PermissionDeniedException 权限拒绝异常
      */
-    boolean checkFileAccess(Object fileInfo) throws PermissionDeniedException;
+    boolean checkFileAccess(FileInfo fileInfo) throws PermissionDeniedException;
 
     /**
      * 校验当前用户是否有权限执行操作

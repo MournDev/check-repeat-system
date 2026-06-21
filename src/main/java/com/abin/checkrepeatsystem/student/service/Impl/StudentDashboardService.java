@@ -2,6 +2,8 @@ package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.mapper.SystemConfigMapper;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
+import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
@@ -14,18 +16,27 @@ import com.abin.checkrepeatsystem.pojo.entity.TeacherInfo;
 import com.abin.checkrepeatsystem.student.dto.*;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
+import com.abin.checkrepeatsystem.student.vo.StudentDashboardExcelVO;
+import com.abin.checkrepeatsystem.student.vo.StudentPaperExcelVO;
 import com.abin.checkrepeatsystem.user.service.TeacherInfoDataService;
+import com.alibaba.excel.EasyExcel;
+import com.alibaba.excel.write.metadata.WriteSheet;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import jakarta.servlet.http.HttpServletResponse;
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -209,16 +220,23 @@ public class StudentDashboardService {
     }
     
     /**
-     * 根据论文状态获取进度
+     * 根据论文状态获取进度步骤
+     * 0-未开始 1-已提交 2-审核中 3-需修改 4-已完成
      */
     private Integer getProgressFromStatus(String status) {
+        if (status == null) {
+            return 0;
+        }
         switch (status) {
-            case "pending": return 1;      // 已提交
-            case "checking": return 2;     // 查重中
-            case "auditing": return 3;     // 审核中
+            case "draft": return 0;        // 草稿，未提交
+            case "submitted": return 1;    // 已提交
+            case "pending": return 1;      // 待处理，等同已提交
+            case "auditing": return 2;     // 审核中
+            case "reviewed": return 2;     // 已评审，仍在审核阶段
+            case "rejected": return 3;     // 需修改
+            case "revised": return 3;      // 修改中，仍需修改
             case "completed": return 4;    // 已完成
-            case "rejected": return 3;     // 需修改（回到审核阶段）
-            default: return 1;
+            default: return 0;
         }
     }
     
@@ -229,15 +247,26 @@ public class StudentDashboardService {
         LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PaperInfo::getStudentId, studentId)
                .eq(PaperInfo::getIsDeleted, 0);
-        
+
         List<PaperInfo> papers = paperInfoMapper.selectList(wrapper);
         if (papers == null || papers.isEmpty()) {
             return 0;
         }
-        
+
+        // 批量查询文件信息，避免N+1
+        List<Long> fileIds = papers.stream()
+                .map(PaperInfo::getFileId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, FileInfo> fileInfoMap = fileIds.isEmpty() ? new java.util.HashMap<>() :
+                fileInfoMapper.selectBatchIds(fileIds).stream()
+                        .collect(Collectors.toMap(FileInfo::getId, f -> f, (a, b) -> a));
+
         return papers.stream()
                 .mapToInt(paper -> {
-                    FileInfo fileInfo = fileInfoMapper.selectById(paper.getFileId());
+                    if (paper.getFileId() == null) return 0;
+                    FileInfo fileInfo = fileInfoMap.get(paper.getFileId());
                     return fileInfo != null && fileInfo.getWordCount() != null ? fileInfo.getWordCount() : 0;
                 })
                 .sum();
@@ -337,10 +366,30 @@ public class StudentDashboardService {
         );
         
         if (!papers.isEmpty()) {
+            // 批量查询查重任务，避免N+1
+            List<Long> paperIds = papers.stream().map(PaperInfo::getId).collect(Collectors.toList());
+            List<CheckTask> allTasks = checkTaskMapper.selectList(
+                new LambdaQueryWrapper<CheckTask>()
+                    .in(CheckTask::getPaperId, paperIds)
+                    .eq(CheckTask::getIsDeleted, 0)
+                    .eq(CheckTask::getCheckStatus, "completed")
+                    .isNotNull(CheckTask::getCheckRate)
+            );
+            // 按论文ID分组，取最新任务
+            Map<Long, CheckTask> taskMap = new HashMap<>();
+            allTasks.stream()
+                .collect(Collectors.groupingBy(CheckTask::getPaperId))
+                .forEach((pid, tasks) -> {
+                    CheckTask latest = tasks.stream()
+                        .max(Comparator.comparing(CheckTask::getCreateTime))
+                        .orElse(null);
+                    taskMap.put(pid, latest);
+                });
+
             double avgSimilarity = papers.stream()
                 .mapToDouble(paper -> {
-                    CheckTask task = checkTaskMapper.selectLatestByPaperId(paper.getId());
-                    return task != null && task.getCheckRate() != null ? 
+                    CheckTask task = taskMap.get(paper.getId());
+                    return task != null && task.getCheckRate() != null ?
                         task.getCheckRate().doubleValue() : 0.0;
                 })
                 .average()
@@ -609,27 +658,239 @@ public class StudentDashboardService {
      */
     public ProgressTrackingDTO getProgressTracking(Long studentId) {
         ProgressTrackingDTO progress = new ProgressTrackingDTO();
-        
+
         // 获取最新论文状态确定当前步骤
         LatestPaperDTO latestPaper = getLatestPaper(studentId);
+        int currentStep = 0;
+        String status = null;
+
         if (latestPaper != null) {
-            progress.setCurrentStep(getProgressFromStatus(latestPaper.getStatus()));
-        } else {
-            progress.setCurrentStep(0); // 未开始
+            status = latestPaper.getStatus();
+            currentStep = getProgressFromStatus(status);
         }
-        
-        // 从数据库获取预计完成时间
-        // 暂时设置为空，后续从数据库获取
-        progress.setEstimatedCompletion("");
-        
-        // 从数据库获取处理速度评价
-        // 暂时设置为空，后续从数据库获取
-        progress.setProcessingSpeed("");
-        
-        // 从数据库获取步骤详情
-        // 暂时返回空列表，后续从数据库获取
-        progress.setSteps(new ArrayList<>());
-        
+        progress.setCurrentStep(currentStep);
+
+        // 根据当前状态设置预计完成时间
+        progress.setEstimatedCompletion(calculateEstimatedCompletion(currentStep));
+
+        // 根据当前状态设置处理速度评价
+        progress.setProcessingSpeed(calculateProcessingSpeed(currentStep));
+
+        // 构建步骤详情列表
+        progress.setSteps(buildProgressSteps(currentStep, status, latestPaper));
+
         return progress;
+    }
+
+    /**
+     * 根据当前步骤计算预计完成时间
+     */
+    private String calculateEstimatedCompletion(int currentStep) {
+        LocalDate now = LocalDate.now();
+        switch (currentStep) {
+            case 0: // 未开始
+                return now.plusDays(30).toString();
+            case 1: // 已提交
+                return now.plusDays(14).toString();
+            case 2: // 审核中
+                return now.plusDays(7).toString();
+            case 3: // 需修改
+                return now.plusDays(21).toString();
+            case 4: // 已完成
+                return "已完成";
+            default:
+                return now.plusDays(14).toString();
+        }
+    }
+
+    /**
+     * 根据当前步骤计算处理速度评价
+     */
+    private String calculateProcessingSpeed(int currentStep) {
+        switch (currentStep) {
+            case 0:
+                return "未开始";
+            case 1:
+                return "等待审核";
+            case 2:
+                return "正常处理中";
+            case 3:
+                return "需修改后重新提交";
+            case 4:
+                return "已完成";
+            default:
+                return "未知";
+        }
+    }
+
+    /**
+     * 构建进度步骤详情
+     */
+    private List<ProgressTrackingDTO.ProgressStepDTO> buildProgressSteps(
+            int currentStep, String status, LatestPaperDTO latestPaper) {
+        List<ProgressTrackingDTO.ProgressStepDTO> steps = new ArrayList<>();
+
+        // 步骤1: 论文提交
+        ProgressTrackingDTO.ProgressStepDTO step1 = new ProgressTrackingDTO.ProgressStepDTO();
+        step1.setStep(1);
+        step1.setName("论文提交");
+        if (currentStep >= 1) {
+            step1.setStatus("finish");
+            step1.setDescription("论文已提交");
+            step1.setCompletedTime(latestPaper != null && latestPaper.getSubmitTime() != null 
+                ? Date.from(latestPaper.getSubmitTime().atZone(ZoneId.systemDefault()).toInstant()) 
+                : null);
+        } else {
+            step1.setStatus("wait");
+            step1.setDescription("等待提交论文");
+        }
+        steps.add(step1);
+
+        // 步骤2: 查重检测
+        ProgressTrackingDTO.ProgressStepDTO step2 = new ProgressTrackingDTO.ProgressStepDTO();
+        step2.setStep(2);
+        step2.setName("查重检测");
+        if (currentStep >= 2) {
+            step2.setStatus("finish");
+            step2.setDescription("查重检测已完成");
+        } else if (currentStep == 1) {
+            step2.setStatus("process");
+            step2.setDescription("正在进行查重检测");
+        } else {
+            step2.setStatus("wait");
+            step2.setDescription("等待查重检测");
+        }
+        steps.add(step2);
+
+        // 步骤3: 导师审核
+        ProgressTrackingDTO.ProgressStepDTO step3 = new ProgressTrackingDTO.ProgressStepDTO();
+        step3.setStep(3);
+        step3.setName("导师审核");
+        if (currentStep >= 4) {
+            step3.setStatus("finish");
+            step3.setDescription("导师审核通过");
+        } else if (currentStep == 3) {
+            step3.setStatus("error");
+            step3.setDescription("审核未通过，需修改");
+        } else if (currentStep == 2) {
+            step3.setStatus("process");
+            step3.setDescription("导师审核中，请耐心等待");
+        } else {
+            step3.setStatus("wait");
+            step3.setDescription("等待导师审核");
+        }
+        steps.add(step3);
+
+        // 步骤4: 审核通过
+        ProgressTrackingDTO.ProgressStepDTO step4 = new ProgressTrackingDTO.ProgressStepDTO();
+        step4.setStep(4);
+        step4.setName("审核通过");
+        if (currentStep >= 4) {
+            step4.setStatus("finish");
+            step4.setDescription("恭喜，论文审核通过");
+        } else {
+            step4.setStatus("wait");
+            step4.setDescription("等待审核完成");
+        }
+        steps.add(step4);
+
+        return steps;
+    }
+
+    /**
+     * 导出学生仪表盘数据为Excel
+     */
+    public void exportDashboardData(Long studentId, HttpServletResponse response) {
+        try {
+            // 设置响应头
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            response.setCharacterEncoding("utf-8");
+            String fileName = URLEncoder.encode("工作台数据_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")), StandardCharsets.UTF_8);
+            response.setHeader("Content-disposition", "attachment;filename=" + fileName + ".xlsx");
+
+            // 获取统计数据
+            StudentDashboardStatsDTO stats = getDashboardStats(studentId);
+
+            // 构建统计数据
+            List<StudentDashboardExcelVO> statsData = new ArrayList<>();
+            statsData.add(createStatRow("总提交数", String.valueOf(stats.getSubmittedCount())));
+            statsData.add(createStatRow("待审核", String.valueOf(stats.getPendingCount())));
+            statsData.add(createStatRow("已通过", String.valueOf(stats.getApprovedCount())));
+            statsData.add(createStatRow("需修改", String.valueOf(stats.getRevisionCount())));
+            statsData.add(createStatRow("未通过", String.valueOf(stats.getFailedCount())));
+            statsData.add(createStatRow("完成度", stats.getCompletionRate() + "%"));
+            statsData.add(createStatRow("本周提交", String.valueOf(stats.getThisWeekSubmitted())));
+            statsData.add(createStatRow("本周通过", String.valueOf(stats.getThisWeekApproved())));
+            statsData.add(createStatRow("总字数", String.valueOf(stats.getTotalWordCount())));
+
+            // 获取论文列表
+            LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(PaperInfo::getStudentId, studentId)
+                   .eq(PaperInfo::getIsDeleted, 0)
+                   .orderByDesc(PaperInfo::getSubmitTime);
+            List<PaperInfo> papers = paperInfoMapper.selectList(wrapper);
+
+            List<StudentPaperExcelVO> paperData = papers.stream().map(paper -> {
+                StudentPaperExcelVO vo = new StudentPaperExcelVO();
+                vo.setPaperTitle(paper.getPaperTitle());
+                vo.setPaperType(getPaperTypeText(paper.getPaperType()));
+                vo.setStatus(getStatusText(paper.getPaperStatus()));
+                vo.setSimilarityRate(paper.getSimilarityRate() != null ? paper.getSimilarityRate().toString() : "未检测");
+                vo.setSubmitTime(paper.getSubmitTime() != null ? paper.getSubmitTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "-");
+                vo.setReviewTime(paper.getCheckTime() != null ? paper.getCheckTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "-");
+                vo.setReviewOpinion(paper.getCheckResult() != null ? paper.getCheckResult() : "-");
+                return vo;
+            }).collect(Collectors.toList());
+
+            // 使用ExcelWriter写入多个Sheet
+            try (com.alibaba.excel.ExcelWriter excelWriter = EasyExcel.write(response.getOutputStream()).build()) {
+                // Sheet1: 统计数据
+                WriteSheet statsSheet = EasyExcel.writerSheet(0, "统计数据")
+                        .head(StudentDashboardExcelVO.class).build();
+                excelWriter.write(statsData, statsSheet);
+
+                // Sheet2: 论文列表
+                WriteSheet paperSheet = EasyExcel.writerSheet(1, "论文列表")
+                        .head(StudentPaperExcelVO.class).build();
+                excelWriter.write(paperData, paperSheet);
+            }
+
+        } catch (Exception e) {
+            log.error("导出学生仪表盘数据失败", e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "导出失败: " + e.getMessage());
+        }
+    }
+
+    private StudentDashboardExcelVO createStatRow(String metric, String value) {
+        StudentDashboardExcelVO vo = new StudentDashboardExcelVO();
+        vo.setMetric(metric);
+        vo.setValue(value);
+        return vo;
+    }
+
+    private String getPaperTypeText(String type) {
+        if (type == null) return "未知";
+        return switch (type) {
+            case "THESIS" -> "学位论文";
+            case "JOURNAL" -> "期刊论文";
+            case "CONFERENCE" -> "会议论文";
+            default -> type;
+        };
+    }
+
+    private String getStatusText(String status) {
+        if (status == null) return "未知";
+        return switch (status) {
+            case "draft" -> "草稿";
+            case "pending" -> "待分配";
+            case "submitted" -> "已提交";
+            case "checking" -> "待查重";
+            case "auditing" -> "待审核";
+            case "completed" -> "审核通过";
+            case "rejected" -> "审核驳回";
+            case "revised" -> "需修改";
+            case "reviewed" -> "已审核";
+            default -> status;
+        };
     }
 }

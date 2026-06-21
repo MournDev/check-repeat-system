@@ -1,7 +1,6 @@
 package com.abin.checkrepeatsystem.student.dto;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import jakarta.validation.constraints.NotNull;
@@ -13,37 +12,37 @@ import java.util.Map;
  * 查重历史记录DTO
  */
 @Data
-@ApiModel(description = "查重历史记录DTO")
+@Schema(description = "查重历史记录DTO")
 public class CheckHistoryDTO {
     
-    @ApiModelProperty(value = "版本号（展示序号）")
+    @Schema(description = "版本号（展示序号）")
     private Integer version;
 
-    @ApiModelProperty(value = "实际提交版本号（对应paper_submit.submit_version）")
+    @Schema(description = "实际提交版本号（对应paper_submit.submit_version）")
     private Integer submitVersion;
     
-    @ApiModelProperty(value = "报告ID")
+    @Schema(description = "报告ID")
     private String reportId;
     
-    @ApiModelProperty(value = "查重时间")
+    @Schema(description = "查重时间")
     private LocalDateTime checkTime;
     
-    @ApiModelProperty(value = "相似度")
+    @Schema(description = "相似度")
     private BigDecimal similarity;
     
-    @ApiModelProperty(value = "评级")
+    @Schema(description = "评级")
     private String rating;
     
-    @ApiModelProperty(value = "是否为当前版本")
+    @Schema(description = "是否为当前版本")
     private Boolean isCurrent;
     
-    @ApiModelProperty(value = "修改说明")
+    @Schema(description = "修改说明")
     private String changes;
     
-    @ApiModelProperty(value = "相比上一版本的改进")
+    @Schema(description = "相比上一版本的改进")
     private BigDecimal improvementFromPrevious;
     
-    @ApiModelProperty(value = "各章节变化情况")
+    @Schema(description = "各章节变化情况")
     private Map<String, SectionChangeDTO> sectionChanges;
     
     /**
@@ -51,13 +50,13 @@ public class CheckHistoryDTO {
      */
     @Data
     public static class SectionChangeDTO {
-        @ApiModelProperty(value = "前一个版本的相似度")
+        @Schema(description = "前一个版本的相似度")
         private BigDecimal from;
         
-        @ApiModelProperty(value = "当前版本的相似度")
+        @Schema(description = "当前版本的相似度")
         private BigDecimal to;
         
-        @ApiModelProperty(value = "变化值")
+        @Schema(description = "变化值")
         private BigDecimal change;
     }
 }

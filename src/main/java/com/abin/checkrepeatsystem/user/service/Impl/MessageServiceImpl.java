@@ -3,6 +3,7 @@ package com.abin.checkrepeatsystem.user.service.Impl;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.websocket.WebSocketSender;
 import com.abin.checkrepeatsystem.pojo.entity.MessageTemplate;
 import com.abin.checkrepeatsystem.pojo.entity.SystemMessage;
 import com.abin.checkrepeatsystem.user.dto.MessageSendDTO;
@@ -10,6 +11,7 @@ import com.abin.checkrepeatsystem.user.mapper.MessageTemplateMapper;
 import com.abin.checkrepeatsystem.user.mapper.SystemMessageMapper;
 import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.abin.checkrepeatsystem.user.vo.PageResultVO;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,8 @@ public class MessageServiceImpl implements MessageService {
     private final SystemMessageMapper systemMessageMapper;
 
     private final MessageTemplateMapper messageTemplateMapper;
+
+    private final WebSocketSender webSocketSender;
 
     @Override
     public Result<PageResultVO<SystemMessage>> getMessageList(Long userId, String messageType,
@@ -135,7 +139,27 @@ public class MessageServiceImpl implements MessageService {
             message.setUpdateTime(LocalDateTime.now());
 
             int result = systemMessageMapper.insert(message);
-            return result > 0 ? Result.success( "消息发送成功", true) : Result.error(ResultCode.SYSTEM_ERROR,"消息发送失败");
+            if (result > 0) {
+                // 通过WebSocket实时推送通知给用户
+                try {
+                    JSONObject pushMsg = new JSONObject();
+                    pushMsg.put("type", "notification");
+                    JSONObject data = new JSONObject();
+                    data.put("id", message.getId());
+                    data.put("title", message.getTitle());
+                    data.put("content", message.getContent());
+                    data.put("messageType", message.getMessageType());
+                    data.put("relatedId", message.getRelatedId());
+                    data.put("relatedType", message.getRelatedType());
+                    data.put("createTime", message.getCreateTime().toString());
+                    pushMsg.put("data", data);
+                    webSocketSender.sendToUser(message.getReceiverId(), pushMsg);
+                } catch (Exception wsEx) {
+                    log.warn("WebSocket推送通知失败: userId={}, error={}", message.getReceiverId(), wsEx.getMessage());
+                }
+                return Result.success("消息发送成功", true);
+            }
+            return Result.error(ResultCode.SYSTEM_ERROR, "消息发送失败");
 
         } catch (Exception e) {
             log.error("发送站内信失败 - 接收者: {}, 标题: {}", message.getReceiverId(), message.getTitle(), e);

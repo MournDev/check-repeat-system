@@ -135,8 +135,8 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
                 }
 
                 PaperAdvisorTaskVO bestAdvisor = sortedAdvisors.get(0);
+                // 使用条件更新防止并发分配（CAS：仅当 teacherId IS NULL 时更新）
                 PaperInfo updatePaper = new PaperInfo();
-                updatePaper.setId(paperId);
                 updatePaper.setTeacherId(bestAdvisor.getAdvisorId());
                 updatePaper.setTeacherName(bestAdvisor.getAdvisorName());
                 updatePaper.setAllocationType(DictConstants.AllocationType.AUTO);
@@ -145,10 +145,13 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
                 updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
                 updatePaper.setUpdateTime(LocalDateTime.now());
 
-                int updateResult = paperInfoMapper.updateById(updatePaper);
+                int updateResult = paperInfoMapper.update(updatePaper,
+                        new LambdaQueryWrapper<PaperInfo>()
+                                .eq(PaperInfo::getId, paperId)
+                                .isNull(PaperInfo::getTeacherId));
                 if (updateResult <= 0) {
-                    log.error("更新论文指导老师信息失败 - 论文ID: {}", paperId);
-                    continue;
+                    log.warn("论文已被其他线程分配老师或不存在 - 论文ID: {}", paperId);
+                    return Result.error(ResultCode.BUSINESS_TASK_ASSIGNED, "论文已被分配指导老师");
                 }
 
                 TeacherInfo teacherInfo = teacherInfoService.getByUserId(bestAdvisor.getAdvisorId());
@@ -191,15 +194,26 @@ public class AdvisorAssignServiceImpl implements AdvisorAssignService {
             throw new BusinessException(ResultCode.BUSINESS_NO_TASK_MAX, "老师任务数已达上限");
         }
 
-        // 更新论文信息
+        // 使用条件更新防止并发分配（CAS：仅当 teacherId IS NULL 时更新）
+        PaperInfo updatePaper = new PaperInfo();
+        updatePaper.setTeacherId(teacherId);
+        updatePaper.setTeacherName(advisor.getRealName());
+        updatePaper.setAllocationType(DictConstants.AllocationType.MANUAL);
+        updatePaper.setAllocationStatus(DictConstants.AllocationStatus.PENDING);
+        updatePaper.setAllocationTime(LocalDateTime.now());
+        updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
+        updatePaper.setUpdateTime(LocalDateTime.now());
+
+        int updateResult = paperInfoMapper.update(updatePaper,
+                new LambdaQueryWrapper<PaperInfo>()
+                        .eq(PaperInfo::getId, paperId)
+                        .isNull(PaperInfo::getTeacherId));
+        if (updateResult <= 0) {
+            throw new BusinessException(ResultCode.BUSINESS_TASK_ASSIGNED, "论文已被分配指导老师或不存在");
+        }
+
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-        paperInfo.setTeacherId(teacherId);
-        paperInfo.setTeacherName(advisor.getRealName());//指导老师姓名
-        paperInfo.setAllocationType(DictConstants.AllocationType.MANUAL);//手动指定
-        paperInfo.setAllocationStatus(DictConstants.AllocationStatus.PENDING);//待确认
-        paperInfo.setAllocationTime(LocalDateTime.now());
-        paperInfo.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);//已分配，等待学生确认
-        
+
         // 更新老师任务数
         teacherInfo.setCurrentAdvisorCount(teacherInfo.getCurrentAdvisorCount() + 1);
         teacherInfoService.saveOrUpdate(teacherInfo);

@@ -24,7 +24,7 @@ public class CheckRuleController {
      * 获取所有查重规则
      */
     @GetMapping("/list")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<CheckRule>> getRuleList() {
         List<CheckRule> rules = checkRuleService.getAllRules();
         return Result.success(rules);
@@ -47,7 +47,7 @@ public class CheckRuleController {
      * 根据规则编码获取规则
      */
     @GetMapping("/code/{ruleCode}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<CheckRule> getRuleByCode(@PathVariable String ruleCode) {
         CheckRule rule = checkRuleService.getRuleByCode(ruleCode);
         if (rule == null) {
@@ -61,7 +61,7 @@ public class CheckRuleController {
      */
     @PostMapping("/create")
     @OperationLog(type = "check_rule_create", description = "创建查重规则", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<CheckRule> createRule(@RequestBody CheckRule rule) {
         boolean success = checkRuleService.createRule(rule);
         if (success) {
@@ -76,7 +76,7 @@ public class CheckRuleController {
      */
     @PutMapping("/update")
     @OperationLog(type = "check_rule_update", description = "更新查重规则", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<CheckRule> updateRule(@RequestBody CheckRule rule) {
         boolean success = checkRuleService.updateRule(rule);
         if (success) {
@@ -91,7 +91,7 @@ public class CheckRuleController {
      */
     @DeleteMapping("/delete/{id}")
     @OperationLog(type = "check_rule_delete", description = "删除查重规则", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> deleteRule(@PathVariable Long id) {
         boolean success = checkRuleService.deleteRule(id);
         if (success) {
@@ -106,7 +106,7 @@ public class CheckRuleController {
      */
     @PutMapping("/set-default/{id}")
     @OperationLog(type = "check_rule_set_default", description = "设置默认查重规则", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> setDefaultRule(@PathVariable Long id) {
         boolean success = checkRuleService.setDefaultRule(id);
         if (success) {
@@ -121,7 +121,7 @@ public class CheckRuleController {
      */
     @PutMapping("/status/{id}")
     @OperationLog(type = "check_rule_status", description = "启用/禁用查重规则", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> toggleRuleStatus(@PathVariable Long id, @RequestParam Integer enabled) {
         boolean success = checkRuleService.toggleRuleStatus(id, enabled);
         if (success) {

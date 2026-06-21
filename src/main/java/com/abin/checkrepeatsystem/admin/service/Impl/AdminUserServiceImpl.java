@@ -6,8 +6,10 @@ import com.abin.checkrepeatsystem.admin.vo.UserCreateReq;
 import com.abin.checkrepeatsystem.admin.vo.UserUpdateReq;
 import com.abin.checkrepeatsystem.admin.vo.BatchDeleteReq;
 import com.abin.checkrepeatsystem.admin.vo.ResetPasswordReq;
+import com.abin.checkrepeatsystem.common.service.TokenRevocationService;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
 import com.abin.checkrepeatsystem.pojo.entity.SysUser;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
@@ -62,6 +64,8 @@ public class AdminUserServiceImpl implements AdminUserService {
     
     private final PasswordEncoder passwordEncoder;
 
+    private final TokenRevocationService tokenRevocationService;
+
     @Override
     public Result<Page<UserInfoDTO>> getUserList(Integer page, Integer size, String userType, 
                                                Integer status, String keyword) {
@@ -107,8 +111,8 @@ public class AdminUserServiceImpl implements AdminUserService {
             if (createReq.getUsername() == null || createReq.getUsername().trim().isEmpty()) {
                 return Result.error(ResultCode.PARAM_ERROR,"用户名不能为空");
             }
-            if (createReq.getPassword() == null || createReq.getPassword().length() < 6) {
-                return Result.error(ResultCode.PARAM_ERROR,"密码长度不能少于6位");
+            if (createReq.getPassword() == null || createReq.getPassword().length() < 8) {
+                return Result.error(ResultCode.PARAM_ERROR,"密码长度不能少于8位");
             }
             
             // 检查用户名是否已存在
@@ -148,7 +152,8 @@ public class AdminUserServiceImpl implements AdminUserService {
                 studentInfo.setGrade(createReq.getGrade());
                 studentInfo.setClassName(createReq.getClassName());
                 studentInfoService.save(studentInfo);
-            } else if (UserTypeEnum.ROLE_ADMIN.equals(createReq.getUserType())) {
+            } else if (UserTypeEnum.ROLE_ADMIN.equals(createReq.getUserType())
+                    || UserTypeEnum.ROLE_SUPER_ADMIN.equals(createReq.getUserType())) {
                 AdminInfo adminInfo = new AdminInfo();
                 adminInfo.setUserId(newUser.getId());
                 adminInfoService.save(adminInfo);
@@ -163,7 +168,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             return Result.success("用户创建成功", result);
         } catch (Exception e) {
             log.error("创建用户失败: {}", e.getMessage(), e);
-            throw new RuntimeException("创建用户失败: " + e.getMessage(), e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "创建用户失败: " + e.getMessage());
         }
     }
 
@@ -208,7 +213,8 @@ public class AdminUserServiceImpl implements AdminUserService {
             studentInfo.setGrade(updateReq.getGrade());
             studentInfo.setClassName(updateReq.getClassName());
             studentInfoService.saveOrUpdateByUserId(studentInfo);
-        } else if (UserTypeEnum.ROLE_ADMIN.equals(user.getUserType())) {
+        } else if (UserTypeEnum.ROLE_ADMIN.equals(user.getUserType())
+                || UserTypeEnum.ROLE_SUPER_ADMIN.equals(user.getUserType())) {
             AdminInfo adminInfo = adminInfoService.getByUserId(userId);
             if (adminInfo == null) {
                 adminInfo = new AdminInfo();
@@ -294,7 +300,8 @@ public class AdminUserServiceImpl implements AdminUserService {
         // 重置密码
         user.setPassword(passwordEncoder.encode(resetReq.getNewPassword()));
         sysUserService.updateById(user);
-        
+        // 吊销该用户的所有旧 token
+        tokenRevocationService.revokeAllTokensForUser(userId);
         log.info("管理员重置用户密码成功: userId={}", userId);
         return Result.success("密码重置成功");
     }
@@ -340,13 +347,13 @@ public class AdminUserServiceImpl implements AdminUserService {
         
         // 各类型用户统计
         Long adminCount = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getUserType, 0)
+                .eq(SysUser::getUserType, UserTypeEnum.ROLE_ADMIN)
                 .eq(SysUser::getIsDeleted, 0));
         Long studentCount = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getUserType, 1)
+                .eq(SysUser::getUserType, UserTypeEnum.ROLE_STUDENT)
                 .eq(SysUser::getIsDeleted, 0));
         Long teacherCount = sysUserService.count(new LambdaQueryWrapper<SysUser>()
-                .eq(SysUser::getUserType, 2)
+                .eq(SysUser::getUserType, UserTypeEnum.ROLE_TEACHER)
                 .eq(SysUser::getIsDeleted, 0));
         
         stats.put("admins", adminCount);

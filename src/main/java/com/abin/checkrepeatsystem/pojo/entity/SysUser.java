@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.pojo.entity;
 
+import com.abin.checkrepeatsystem.common.annotation.Sensitive;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -69,6 +70,7 @@ public class SysUser extends BaseEntity {
     @NotBlank(message = "邮箱不能为空")
     @Email(message = "邮箱格式不正确")
     @Size(max = 100, message = "邮箱长度不能超过100字符")
+    @Sensitive.Email
     private String email;
 
     /**
@@ -81,6 +83,7 @@ public class SysUser extends BaseEntity {
      * 手机号（可为空）
      */
     @TableField("phone")
+    @Sensitive.Phone
     private String phone;
 
     /**

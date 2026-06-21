@@ -221,6 +221,13 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
         // 基础信息（复用原论文的标题、教师ID等）
         revisedPaper.setPaperTitle(originalPaper.getPaperTitle() + "(修改版_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")) + ")");
         revisedPaper.setStudentId(currentStudentId);
+        revisedPaper.setParentPaperId(originalPaperId);
+        // 继承原论文的教师分配信息
+        revisedPaper.setTeacherId(originalPaper.getTeacherId());
+        revisedPaper.setTeacherName(originalPaper.getTeacherName());
+        revisedPaper.setAuthor(originalPaper.getAuthor());
+        revisedPaper.setWordCount(originalPaper.getWordCount());
+        revisedPaper.setPaperType(originalPaper.getPaperType());
         // 计算文件MD5（防重复上传）
         String fileMd5;
         try {
@@ -230,9 +237,11 @@ public class StudentReviewServiceImpl extends ServiceImpl<PaperInfoMapper, Paper
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "文件校验失败，请重试");
         }
         revisedPaper.setFileMd5(fileMd5);
-        // 状态：0-待查重，提交时间：当前时间
+        // 状态：已分配（继承原论文的教师，跳过待分配阶段）
         revisedPaper.setSubmitTime(LocalDateTime.now());
-        revisedPaper.setPaperStatus(DictConstants.PaperStatus.PENDING);
+        revisedPaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
+        revisedPaper.setAllocationType(originalPaper.getAllocationType());
+        revisedPaper.setAllocationStatus(DictConstants.AllocationStatus.CONFIRMED);
         // 填充审计字段（创建人=当前学生）
         UserBusinessInfoUtils.setAuditField(revisedPaper, true);
         baseMapper.insert(revisedPaper);

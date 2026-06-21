@@ -1,8 +1,8 @@
 package com.abin.checkrepeatsystem.pojo.dto;
 
+import com.abin.checkrepeatsystem.common.annotation.ValidPassword;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
@@ -19,6 +19,6 @@ public class ForgotPasswordReq {
     private String verificationCode;
 
     @NotBlank(message = "新密码不能为空")
-    @Size(min = 8, max = 50, message = "密码长度必须在8-50位之间")
+    @ValidPassword
     private String newPassword;
 }

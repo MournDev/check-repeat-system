@@ -5,6 +5,7 @@ import com.abin.checkrepeatsystem.admin.mapper.SystemConfigMapper;
 import com.abin.checkrepeatsystem.admin.service.SystemConfigService;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.abin.checkrepeatsystem.student.service.Impl.StudentDashboardService;
 import com.alibaba.fastjson2.JSON;
@@ -36,65 +37,53 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<Void> updatePerformanceConfig(PerformanceConfigDTO performanceConfig) {
-        try {
-            log.info("开始更新性能配置: {}", performanceConfig);
-            
-            // 参数验证
-            validatePerformanceConfig(performanceConfig);
-            
-            // 序列化配置为JSON
-            String configJson = JSON.toJSONString(performanceConfig);
-            
-            // 查找现有配置
-            SystemConfig configEntity = systemConfigMapper.selectByConfigKey(PERFORMANCE_CONFIG_KEY);
-            
-            if (configEntity != null) {
-                // 更新现有配置
-                configEntity.setConfigValue(configJson);
-                configEntity.setUpdateTime(LocalDateTime.now());
-                systemConfigMapper.updateById(configEntity);
-            } else {
-                // 创建新配置
-                configEntity = new SystemConfig();
-                configEntity.setConfigKey(PERFORMANCE_CONFIG_KEY);
-                configEntity.setConfigValue(configJson);
-                configEntity.setDescription("系统性能配置");
-                configEntity.setCreateTime(LocalDateTime.now());
-                configEntity.setUpdateTime(LocalDateTime.now());
-                configEntity.setIsDeleted(0);
-                systemConfigMapper.insert(configEntity);
-            }
-            
-            // 应用新的配置到系统
-            applyPerformanceConfig(performanceConfig);
-            
-            log.info("性能配置更新成功");
-            return Result.success("性能配置更新成功");
-            
-        } catch (Exception e) {
-            log.error("更新性能配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "性能配置更新失败: " + e.getMessage());
+        log.info("开始更新性能配置: {}", performanceConfig);
+
+        // 参数验证
+        validatePerformanceConfig(performanceConfig);
+
+        // 序列化配置为JSON
+        String configJson = JSON.toJSONString(performanceConfig);
+
+        // 查找现有配置
+        SystemConfig configEntity = systemConfigMapper.selectByConfigKey(PERFORMANCE_CONFIG_KEY);
+
+        if (configEntity != null) {
+            // 更新现有配置
+            configEntity.setConfigValue(configJson);
+            configEntity.setUpdateTime(LocalDateTime.now());
+            systemConfigMapper.updateById(configEntity);
+        } else {
+            // 创建新配置
+            configEntity = new SystemConfig();
+            configEntity.setConfigKey(PERFORMANCE_CONFIG_KEY);
+            configEntity.setConfigValue(configJson);
+            configEntity.setDescription("系统性能配置");
+            configEntity.setCreateTime(LocalDateTime.now());
+            configEntity.setUpdateTime(LocalDateTime.now());
+            configEntity.setIsDeleted(0);
+            systemConfigMapper.insert(configEntity);
         }
+
+        // 应用新的配置到系统
+        applyPerformanceConfig(performanceConfig);
+
+        log.info("性能配置更新成功");
+        return Result.success("性能配置更新成功");
     }
     
     @Override
     public Result<PerformanceConfigDTO> getPerformanceConfig() {
-        try {
-            SystemConfig configEntity = systemConfigMapper.selectByConfigKey(PERFORMANCE_CONFIG_KEY);
-            
-            if (configEntity != null) {
-                PerformanceConfigDTO config = JSON.parseObject(configEntity.getConfigValue(), PerformanceConfigDTO.class);
-                return Result.success("获取性能配置成功", config);
-            }
-            
-            // 返回默认配置
-            PerformanceConfigDTO defaultConfig = getDefaultPerformanceConfig();
-            return Result.success("获取默认性能配置", defaultConfig);
-            
-        } catch (Exception e) {
-            log.error("获取性能配置失败: {}", e.getMessage(), e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取性能配置失败: " + e.getMessage());
+        SystemConfig configEntity = systemConfigMapper.selectByConfigKey(PERFORMANCE_CONFIG_KEY);
+
+        if (configEntity != null) {
+            PerformanceConfigDTO config = JSON.parseObject(configEntity.getConfigValue(), PerformanceConfigDTO.class);
+            return Result.success("获取性能配置成功", config);
         }
+
+        // 返回默认配置
+        PerformanceConfigDTO defaultConfig = getDefaultPerformanceConfig();
+        return Result.success("获取默认性能配置", defaultConfig);
     }
     
     @Override
@@ -139,33 +128,33 @@ public class SystemConfigServiceImpl implements SystemConfigService {
      * 参数验证
      */
     private void validatePerformanceConfig(PerformanceConfigDTO config) {
-        if (config.getMaxConcurrent() == null || 
-            config.getMaxConcurrent() < 1 || 
+        if (config.getMaxConcurrent() == null ||
+            config.getMaxConcurrent() < 1 ||
             config.getMaxConcurrent() > 100) {
-            throw new IllegalArgumentException("最大并发数必须在1-100之间");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "最大并发数必须在1-100之间");
         }
-        
-        if (config.getQueueSize() == null || 
-            config.getQueueSize() < 10 || 
+
+        if (config.getQueueSize() == null ||
+            config.getQueueSize() < 10 ||
             config.getQueueSize() > 1000) {
-            throw new IllegalArgumentException("队列大小必须在10-1000之间");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "队列大小必须在10-1000之间");
         }
-        
-        if (config.getCacheStrategy() == null || 
+
+        if (config.getCacheStrategy() == null ||
             !Arrays.asList("lru", "fifo", "ttl").contains(config.getCacheStrategy())) {
-            throw new IllegalArgumentException("缓存策略只能是lru、fifo或ttl");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "缓存策略只能是lru、fifo或ttl");
         }
-        
-        if (config.getCacheSize() == null || 
-            config.getCacheSize() < 100 || 
+
+        if (config.getCacheSize() == null ||
+            config.getCacheSize() < 100 ||
             config.getCacheSize() > 10000) {
-            throw new IllegalArgumentException("缓存大小必须在100-10000MB之间");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "缓存大小必须在100-10000MB之间");
         }
-        
-        if (config.getCleanupInterval() == null || 
-            config.getCleanupInterval() < 1 || 
+
+        if (config.getCleanupInterval() == null ||
+            config.getCleanupInterval() < 1 ||
             config.getCleanupInterval() > 168) {
-            throw new IllegalArgumentException("清理周期必须在1-168小时之间");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "清理周期必须在1-168小时之间");
         }
     }
     
@@ -216,82 +205,67 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveConfig(String configKey, String configValue, String description) {
-        try {
-            SystemConfig existingConfig = systemConfigMapper.selectByConfigKey(configKey);
-            
-            if (existingConfig != null) {
-                // 更新现有配置
-                existingConfig.setConfigValue(configValue);
-                existingConfig.setDescription(description);
-                existingConfig.setUpdateTime(LocalDateTime.now());
-                systemConfigMapper.updateById(existingConfig);
-            } else {
-                // 创建新配置
-                SystemConfig newConfig = new SystemConfig();
-                newConfig.setConfigKey(configKey);
-                newConfig.setConfigValue(configValue);
-                newConfig.setDescription(description);
-                newConfig.setCreateTime(LocalDateTime.now());
-                newConfig.setUpdateTime(LocalDateTime.now());
-                newConfig.setIsDeleted(0);
-                systemConfigMapper.insert(newConfig);
-            }
-            
-            log.info("配置保存成功: configKey={}", configKey);
-        } catch (Exception e) {
-            log.error("保存配置失败: configKey={}, error={}", configKey, e.getMessage(), e);
-            throw new RuntimeException("保存配置失败: " + e.getMessage(), e);
+        SystemConfig existingConfig = systemConfigMapper.selectByConfigKey(configKey);
+
+        if (existingConfig != null) {
+            // 更新现有配置
+            existingConfig.setConfigValue(configValue);
+            existingConfig.setDescription(description);
+            existingConfig.setUpdateTime(LocalDateTime.now());
+            systemConfigMapper.updateById(existingConfig);
+        } else {
+            // 创建新配置
+            SystemConfig newConfig = new SystemConfig();
+            newConfig.setConfigKey(configKey);
+            newConfig.setConfigValue(configValue);
+            newConfig.setDescription(description);
+            newConfig.setCreateTime(LocalDateTime.now());
+            newConfig.setUpdateTime(LocalDateTime.now());
+            newConfig.setIsDeleted(0);
+            systemConfigMapper.insert(newConfig);
         }
+
+        log.info("配置保存成功: configKey={}", configKey);
     }
     
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteAllConfigs() {
-        try {
-            // 软删除所有配置
-            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<SystemConfig> wrapper = 
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-            wrapper.eq(SystemConfig::getIsDeleted, 0);
-            
-            List<SystemConfig> configs = systemConfigMapper.selectList(wrapper);
-            for (SystemConfig config : configs) {
-                config.setIsDeleted(1);
-                config.setUpdateTime(LocalDateTime.now());
-                systemConfigMapper.updateById(config);
-            }
-            
-            log.info("所有配置删除成功，共{}条记录", configs.size());
-        } catch (Exception e) {
-            log.error("删除所有配置失败: {}", e.getMessage(), e);
-            throw new RuntimeException("删除所有配置失败: " + e.getMessage(), e);
+        // 软删除所有配置
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<SystemConfig> wrapper =
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        wrapper.eq(SystemConfig::getIsDeleted, 0);
+
+        List<SystemConfig> configs = systemConfigMapper.selectList(wrapper);
+        for (SystemConfig config : configs) {
+            config.setIsDeleted(1);
+            config.setUpdateTime(LocalDateTime.now());
+            systemConfigMapper.updateById(config);
         }
+
+        log.info("所有配置删除成功，共{}条记录", configs.size());
     }
     
     @Override
     public void refreshConfigCache() {
-        try {
-            log.info("开始刷新系统配置缓存");
-                
-            // 1. 清除配置缓存
-            clearConfigurationCache();
-                
-            // 2. 重新加载数据库配置
-            reloadDatabaseConfigurations();
-                
-            // 3. 刷新应用上下文中的配置
-            refreshApplicationContext();
-                
-            // 4. 重新初始化相关服务
-            reinitializeServices();
-                
-            // 5. 更新系统监控配置
-            updateMonitoringConfig();
-                
-            log.info("配置缓存刷新成功");
-        } catch (Exception e) {
-            log.error("刷新配置缓存失败：{}", e.getMessage(), e);
-            throw new RuntimeException("刷新配置缓存失败：" + e.getMessage(), e);
-        }
+        log.info("开始刷新系统配置缓存");
+
+        // 1. 清除配置缓存
+        clearConfigurationCache();
+
+        // 2. 重新加载数据库配置
+        reloadDatabaseConfigurations();
+
+        // 3. 刷新应用上下文中的配置
+        refreshApplicationContext();
+
+        // 4. 重新初始化相关服务
+        reinitializeServices();
+
+        // 5. 更新系统监控配置
+        updateMonitoringConfig();
+
+        log.info("配置缓存刷新成功");
     }
         
     @Override
@@ -303,34 +277,29 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         
     @Override
     public void updateDeadlines(com.abin.checkrepeatsystem.student.dto.DeadlinesDTO deadlines) {
-        try {
-            log.info("开始更新时间节点配置");
-                
-            // 更新提交截止日期
-            if (deadlines.getSubmissionDeadline() != null) {
-                saveConfig("submission_deadline", deadlines.getSubmissionDeadline(), "论文提交截止日期");
-            }
-                
-            // 更新审核截止日期
-            if (deadlines.getReviewDeadline() != null) {
-                saveConfig("review_deadline", deadlines.getReviewDeadline(), "审核截止日期");
-            }
-                
-            // 更新答辩时间
-            if (deadlines.getDefenseDate() != null) {
-                saveConfig("defense_date", deadlines.getDefenseDate(), "答辩时间");
-            }
-                
-            // 更新预计毕业时间
-            if (deadlines.getGraduationDate() != null) {
-                saveConfig("graduation_date", deadlines.getGraduationDate(), "预计毕业时间");
-            }
-                
-            log.info("时间节点配置更新成功");
-        } catch (Exception e) {
-            log.error("更新时间节点配置失败", e);
-            throw new RuntimeException("更新时间节点配置失败：" + e.getMessage(), e);
+        log.info("开始更新时间节点配置");
+
+        // 更新提交截止日期
+        if (deadlines.getSubmissionDeadline() != null) {
+            saveConfig("submission_deadline", deadlines.getSubmissionDeadline(), "论文提交截止日期");
         }
+
+        // 更新审核截止日期
+        if (deadlines.getReviewDeadline() != null) {
+            saveConfig("review_deadline", deadlines.getReviewDeadline(), "审核截止日期");
+        }
+
+        // 更新答辩时间
+        if (deadlines.getDefenseDate() != null) {
+            saveConfig("defense_date", deadlines.getDefenseDate(), "答辩时间");
+        }
+
+        // 更新预计毕业时间
+        if (deadlines.getGraduationDate() != null) {
+            saveConfig("graduation_date", deadlines.getGraduationDate(), "预计毕业时间");
+        }
+
+        log.info("时间节点配置更新成功");
     }
     
     /**

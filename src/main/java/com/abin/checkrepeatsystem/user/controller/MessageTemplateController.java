@@ -25,7 +25,7 @@ public class MessageTemplateController {
      * 获取消息模板列表
      */
     @GetMapping("/list")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<Page<MessageTemplate>> getTemplateList(
             @RequestParam(required = false) String templateType,
             @RequestParam(defaultValue = "1") Integer pageNum,
@@ -39,7 +39,7 @@ public class MessageTemplateController {
      * 根据模板代码获取模板
      */
     @GetMapping("/code/{templateCode}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<MessageTemplate> getTemplateByCode(@PathVariable String templateCode) {
         MessageTemplate template = messageTemplateService.getByCode(templateCode);
         if (template == null) {
@@ -52,7 +52,7 @@ public class MessageTemplateController {
      * 根据模板类型获取模板列表
      */
     @GetMapping("/type/{templateType}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<MessageTemplate>> getTemplatesByType(@PathVariable String templateType) {
         List<MessageTemplate> templates = messageTemplateService.getByType(templateType);
         return Result.success(templates);
@@ -63,7 +63,7 @@ public class MessageTemplateController {
      */
     @PostMapping("/create")
     @OperationLog(type = "message_template_create", description = "创建消息模板", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<MessageTemplate> createTemplate(@RequestBody MessageTemplate template) {
         boolean success = messageTemplateService.createTemplate(template);
         if (success) {
@@ -78,7 +78,7 @@ public class MessageTemplateController {
      */
     @PutMapping("/update")
     @OperationLog(type = "message_template_update", description = "更新消息模板", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<MessageTemplate> updateTemplate(@RequestBody MessageTemplate template) {
         boolean success = messageTemplateService.updateTemplate(template);
         if (success) {
@@ -93,7 +93,7 @@ public class MessageTemplateController {
      */
     @DeleteMapping("/delete/{id}")
     @OperationLog(type = "message_template_delete", description = "删除消息模板", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> deleteTemplate(@PathVariable Long id) {
         boolean success = messageTemplateService.deleteTemplate(id);
         if (success) {
@@ -108,7 +108,7 @@ public class MessageTemplateController {
      */
     @PutMapping("/status/{id}")
     @OperationLog(type = "message_template_status", description = "切换消息模板状态", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> toggleTemplateStatus(@PathVariable Long id, @RequestParam Integer isActive) {
         boolean success = messageTemplateService.toggleTemplateStatus(id, isActive);
         if (success) {
@@ -122,7 +122,7 @@ public class MessageTemplateController {
      * 渲染模板
      */
     @PostMapping("/render/{templateCode}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<String> renderTemplate(@PathVariable String templateCode, @RequestBody java.util.Map<String, Object> variables) {
         String renderedContent = messageTemplateService.renderTemplate(templateCode, variables);
         return Result.success(renderedContent);

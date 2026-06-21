@@ -25,7 +25,7 @@ public class TeacherAllocationRecordController {
      * 获取论文的分配记录
      */
     @GetMapping("/paper/{paperId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<TeacherAllocationRecord>> getByPaperId(@PathVariable Long paperId) {
         List<TeacherAllocationRecord> records = teacherAllocationRecordService.getByPaperId(paperId);
         return Result.success(records);
@@ -35,7 +35,7 @@ public class TeacherAllocationRecordController {
      * 获取教师的分配记录
      */
     @GetMapping("/teacher/{teacherId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<TeacherAllocationRecord>> getByTeacherId(@PathVariable Long teacherId) {
         List<TeacherAllocationRecord> records = teacherAllocationRecordService.getByTeacherId(teacherId);
         return Result.success(records);
@@ -45,7 +45,7 @@ public class TeacherAllocationRecordController {
      * 获取学生的分配记录
      */
     @GetMapping("/student/{studentId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<List<TeacherAllocationRecord>> getByStudentId(@PathVariable Long studentId) {
         List<TeacherAllocationRecord> records = teacherAllocationRecordService.getByStudentId(studentId);
         return Result.success(records);
@@ -55,7 +55,7 @@ public class TeacherAllocationRecordController {
      * 获取论文的当前有效分配
      */
     @GetMapping("/current/{paperId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<TeacherAllocationRecord> getCurrentAllocation(@PathVariable Long paperId) {
         TeacherAllocationRecord record = teacherAllocationRecordService.getCurrentAllocation(paperId);
         if (record == null) {
@@ -69,7 +69,7 @@ public class TeacherAllocationRecordController {
      */
     @PostMapping("/create")
     @OperationLog(type = "teacher_allocation_create", description = "创建教师分配记录", recordResult = true)
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<TeacherAllocationRecord> createRecord(@RequestBody TeacherAllocationRecord record) {
         boolean success = teacherAllocationRecordService.createRecord(record);
         if (success) {
@@ -84,7 +84,7 @@ public class TeacherAllocationRecordController {
      */
     @PutMapping("/revoke/{id}")
     @OperationLog(type = "teacher_allocation_revoke", description = "撤销教师分配记录", recordResult = true)
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<String> revokeRecord(@PathVariable Long id, @RequestParam String reason) {
         boolean success = teacherAllocationRecordService.revokeRecord(id, reason);
         if (success) {
@@ -99,7 +99,7 @@ public class TeacherAllocationRecordController {
      */
     @PostMapping("/batch-create")
     @OperationLog(type = "teacher_allocation_batch_create", description = "批量创建教师分配记录", recordResult = true)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     public Result<String> batchCreateRecords(@RequestBody List<TeacherAllocationRecord> records) {
         boolean success = teacherAllocationRecordService.batchCreateRecords(records);
         if (success) {
@@ -113,7 +113,7 @@ public class TeacherAllocationRecordController {
      * 获取分配统计信息
      */
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN', 'TEACHER')")
     public Result<Map<String, Object>> getAllocationStats(
             @RequestParam(required = false) Long teacherId,
             @RequestParam(required = false) String startDate,

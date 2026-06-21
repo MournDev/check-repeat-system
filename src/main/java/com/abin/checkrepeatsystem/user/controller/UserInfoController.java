@@ -1,4 +1,4 @@
-package com.abin.checkrepeatsystem.student.controller;
+package com.abin.checkrepeatsystem.user.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
@@ -18,14 +18,26 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * 用户信息控制器（通用，所有角色可用）
+ */
 @RestController
 @Slf4j
 @RequestMapping("/api/v1/user/info")
 @PreAuthorize("isAuthenticated()")
 @RequiredArgsConstructor
-public class StudentInfoController {
+public class UserInfoController {
 
     private final InfoService infoService;
+
+    /**
+     * 获取当前登录用户的完整信息
+     */
+    @GetMapping("/get")
+    public Result<LoginVO> getCurrentUserInfo() {
+        return infoService.getCurrentUserInfo();
+    }
+
     /**
      * 更新用户信息接口
      * @param updateReq 用户信息更新请求

@@ -9,13 +9,16 @@ import com.abin.checkrepeatsystem.admin.vo.SystemParamReq;
 import com.abin.checkrepeatsystem.admin.service.AdminRuleConfigService;
 import com.abin.checkrepeatsystem.admin.service.SystemConfigService;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.constant.DefaultConfigConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.pojo.entity.CheckRule;
 import com.abin.checkrepeatsystem.pojo.entity.CompareLib;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.abin.checkrepeatsystem.pojo.entity.SystemParam;
 import com.abin.checkrepeatsystem.student.dto.DeadlinesDTO;
+import com.abin.checkrepeatsystem.user.service.Impl.OptimizedEmailService;
 import com.alibaba.fastjson2.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -34,17 +37,18 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/v1/admin/config")
-@PreAuthorize("hasAuthority('ADMIN')") // 权限控制：仅管理员可访问
 @RequiredArgsConstructor
 public class AdminRuleConfigController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminRuleConfigController.class);
 
     private final AdminRuleConfigService adminRuleConfigService;
-    
+
     private final SystemConfigService systemConfigService;
 
     private final SystemParamMapper systemParamMapper;
+
+    private final OptimizedEmailService optimizedEmailService;
 
     @Value("${spring.mail.host:localhost}")
     private String mailHost;
@@ -59,6 +63,7 @@ public class AdminRuleConfigController {
     /**
      * 1. 管理员查询查重规则列表
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/check-rule/list")
     public Result<Page<CheckRule>> getCheckRuleList(
             @RequestParam(value = "ruleName", required = false) String ruleName,
@@ -71,6 +76,7 @@ public class AdminRuleConfigController {
     /**
      * 2. 管理员新增/编辑查重规则
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @PostMapping("/check-rule/save-or-update")
     public Result<Map<String, Object>> saveOrUpdateCheckRule(
             @Valid @RequestBody CheckRuleOperateReq operateReq) {
@@ -80,6 +86,7 @@ public class AdminRuleConfigController {
     /**
      * 3. 管理员删除查重规则
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @PostMapping("/check-rule/delete")
     public Result<String> deleteCheckRule(
             @RequestParam("ruleId") Long ruleId) {
@@ -89,6 +96,7 @@ public class AdminRuleConfigController {
     /**
      * 4. 管理员查询规则关联的比对库
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/check-rule/related-libs")
     public Result<RuleLibRelationDTO> getRuleRelatedLibs(
             @RequestParam("ruleId") Long ruleId) {
@@ -99,6 +107,7 @@ public class AdminRuleConfigController {
     /**
      * 5. 管理员查询比对库列表
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/compare-lib/list")
     public Result<Page<CompareLib>> getCompareLibList(
             @RequestParam(value = "libName", required = false) String libName,
@@ -112,6 +121,7 @@ public class AdminRuleConfigController {
     /**
      * 6. 管理员新增/编辑比对库
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @PostMapping("/compare-lib/save-or-update")
     public Result<Map<String, Object>> saveOrUpdateCompareLib(
             @Valid @RequestBody CompareLibOperateReq operateReq) {
@@ -121,6 +131,7 @@ public class AdminRuleConfigController {
     /**
      * 7. 管理员启用/禁用比对库
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @PostMapping("/compare-lib/toggle-enabled")
     public Result<String> toggleLibEnabled(
             @RequestParam("libId") Long libId,
@@ -132,6 +143,7 @@ public class AdminRuleConfigController {
     /**
      * 8. 管理员查询当前系统参数
      */
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/system-param/current")
     public Result<SystemParam> getCurrentSystemParam() {
         return adminRuleConfigService.getCurrentSystemParam();
@@ -141,6 +153,7 @@ public class AdminRuleConfigController {
      * 获取所有系统配置
      * 确保所有数据都来自真实数据库
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @GetMapping("/system")
     public Result<Map<String, Object>> getAllConfig() {
         log.info("接收获取所有系统配置请求（真实数据）");
@@ -184,124 +197,38 @@ public class AdminRuleConfigController {
 
     }
 
-    /**
-     * 从数据库获取基础配置
-     */
+    private Map<String, Object> getConfigFromDB(String configKey, Map<String, Object> defaultConfig) {
+        try {
+            SystemConfig config = systemConfigService.getConfigByKey(configKey);
+            if (config != null) {
+                return JSON.parseObject(config.getConfigValue(), Map.class);
+            }
+        } catch (Exception e) {
+            log.warn("获取配置失败: key={}, error={}", configKey, e.getMessage());
+        }
+        return defaultConfig;
+    }
+
     private Map<String, Object> getBasicConfigFromDB() {
-        try {
-            SystemConfig config = systemConfigService.getConfigByKey("system_basic");
-            if (config != null) {
-                return JSON.parseObject(config.getConfigValue(), Map.class);
-            }
-        } catch (Exception e) {
-            log.warn("获取基础配置失败: {}", e.getMessage());
-        }
-        
-        // 返回默认配置
-        Map<String, Object> defaultConfig = new HashMap<>();
-        defaultConfig.put("systemName", "论文查重管理系统");
-        defaultConfig.put("version", "v2.1.0");
-        defaultConfig.put("defaultLanguage", "zh-CN");
-        defaultConfig.put("timezone", "Asia/Shanghai");
-        defaultConfig.put("maintenanceMode", false);
-        defaultConfig.put("maintenanceNotice", "系统维护中，请稍后再试...");
-        return defaultConfig;
+        return getConfigFromDB("system_basic", DefaultConfigConstants.defaultBasicConfig());
     }
-    
-    /**
-     * 从数据库获取查重配置
-     */
+
     private Map<String, Object> getPlagiarismConfigFromDB() {
-        try {
-            SystemConfig config = systemConfigService.getConfigByKey("plagiarism_config");
-            if (config != null) {
-                return JSON.parseObject(config.getConfigValue(), Map.class);
-            }
-        } catch (Exception e) {
-            log.warn("获取查重配置失败: {}", e.getMessage());
-        }
-        
-        // 返回默认配置
-        Map<String, Object> defaultConfig = new HashMap<>();
-        defaultConfig.put("internalThreshold", 25);
-        defaultConfig.put("thirdPartyThreshold", 20);
-        defaultConfig.put("algorithm", "combined");
-        defaultConfig.put("minMatchLength", 15);
-        defaultConfig.put("cacheHours", 48);
-        return defaultConfig;
+        return getConfigFromDB("plagiarism_config", DefaultConfigConstants.defaultPlagiarismConfig());
     }
-    
-    /**
-     * 从数据库获取安全配置
-     */
+
     private Map<String, Object> getSecurityConfigFromDB() {
-        try {
-            SystemConfig config = systemConfigService.getConfigByKey("security_config");
-            if (config != null) {
-                return JSON.parseObject(config.getConfigValue(), Map.class);
-            }
-        } catch (Exception e) {
-            log.warn("获取安全配置失败: {}", e.getMessage());
-        }
-        
-        // 返回默认配置
-        Map<String, Object> defaultConfig = new HashMap<>();
-        defaultConfig.put("passwordMinLength", 8);
-        defaultConfig.put("passwordRequirements", new String[]{"uppercase", "lowercase", "numbers"});
-        defaultConfig.put("loginLockEnabled", true);
-        defaultConfig.put("maxFailedAttempts", 5);
-        defaultConfig.put("lockDuration", 30);
-        defaultConfig.put("sessionTimeout", 60);
-        defaultConfig.put("ipRestriction", false);
-        return defaultConfig;
+        return getConfigFromDB("security_config", DefaultConfigConstants.defaultSecurityConfig());
     }
-    
-    /**
-     * 从数据库获取邮件配置
-     */
+
     private Map<String, Object> getEmailConfigFromDB() {
-        try {
-            SystemConfig config = systemConfigService.getConfigByKey("email_config");
-            if (config != null) {
-                return JSON.parseObject(config.getConfigValue(), Map.class);
-            }
-        } catch (Exception e) {
-            log.warn("获取邮件配置失败: {}", e.getMessage());
-        }
-        
-        // 返回默认配置
-        Map<String, Object> defaultConfig = new HashMap<>();
-        defaultConfig.put("smtpServer", "smtp.example.com");
-        defaultConfig.put("smtpPort", 587);
-        defaultConfig.put("encryption", "tls");
-        defaultConfig.put("senderEmail", "noreply@example.com");
-        defaultConfig.put("senderName", "论文查重系统");
-        return defaultConfig;
+        return getConfigFromDB("email_config", DefaultConfigConstants.defaultEmailConfig());
     }
-    
-    /**
-     * 从数据库获取性能配置
-     */
+
     private Map<String, Object> getPerformanceConfigFromDB() {
-        try {
-            SystemConfig config = systemConfigService.getConfigByKey("performance");
-            if (config != null) {
-                return JSON.parseObject(config.getConfigValue(), Map.class);
-            }
-        } catch (Exception e) {
-            log.warn("获取性能配置失败: {}", e.getMessage());
-        }
-        
-        // 返回默认配置
-        Map<String, Object> defaultConfig = new HashMap<>();
-        defaultConfig.put("maxConcurrent", 20);
-        defaultConfig.put("queueSize", 100);
-        defaultConfig.put("cacheStrategy", "lru");
-        defaultConfig.put("cacheSize", 1024);
-        defaultConfig.put("autoCleanup", true);
-        defaultConfig.put("cleanupInterval", 24);
-        return defaultConfig;
+        return getConfigFromDB("performance", DefaultConfigConstants.defaultPerformanceConfig());
     }
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/basic")
     public Result<String> updateBasicConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新基础配置请求: {}", config);
@@ -314,6 +241,7 @@ public class AdminRuleConfigController {
     /**
      * 更新查重配置
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/plagiarism")
     public Result<String> updatePlagiarismConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新查重配置请求: {}", config);
@@ -325,6 +253,7 @@ public class AdminRuleConfigController {
     /**
      * 更新安全配置
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/security")
     public Result<String> updateSecurityConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新安全配置请求: {}", config);
@@ -336,6 +265,7 @@ public class AdminRuleConfigController {
     /**
      * 更新邮件配置
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/email")
     public Result<String> updateEmailConfig(@RequestBody Map<String, Object> config) {
         log.info("接收更新邮件配置请求: {}", config);
@@ -347,33 +277,32 @@ public class AdminRuleConfigController {
     /**
      * 测试邮件配置
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/test-email")
-    public Result<String> testEmailConfig(@RequestBody(required = false) Map<String, String> testRequest) {
-        log.info("接收测试邮件配置请求");
-        
-        // 检查请求体是否存在
-        if (testRequest == null) {
-            log.warn("邮件测试请求体为空");
-            return Result.error(ResultCode.PARAM_ERROR, "请求体不能为空，请提供测试邮箱地址");
-        }
-        
-        String testEmail = testRequest.get("testEmail");
-        if (testEmail == null || testEmail.isEmpty()) {
-            log.warn("测试邮箱地址为空");
+    public Result<String> testEmailConfig(@RequestBody Map<String, String> body) {
+        String testEmail = body.get("testEmail");
+        if (testEmail == null || testEmail.isBlank()) {
             return Result.error(ResultCode.PARAM_ERROR, "测试邮箱地址不能为空");
         }
-        
-        log.info("开始测试邮件发送至: {}", testEmail);
-        
-        // 实际的邮件发送逻辑
-        // 这里应该调用邮件服务进行测试
-        log.info("邮件测试发送成功");
-        return Result.success("测试邮件发送成功，请检查邮箱: " + testEmail);
+        log.info("接收测试邮件配置请求: 目标邮箱={}", testEmail);
+        try {
+            optimizedEmailService.sendNoticeEmail(
+                    testEmail,
+                    "论文查重系统 - 邮件配置测试",
+                    "<p>这是一封测试邮件，如果您收到此邮件，说明邮件配置正确。</p>"
+            );
+            log.info("测试邮件发送成功: {}", testEmail);
+            return Result.success("测试邮件发送成功，请检查收件箱");
+        } catch (Exception e) {
+            log.error("测试邮件发送失败: {}", testEmail, e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "测试邮件发送失败，请查看服务器日志");
+        }
     }
 
     /**
      * 保存所有配置
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/save-all")
     public Result<String> saveAllConfig(@RequestBody(required = false) Map<String, Object> allConfig) {
         log.info("接收保存所有配置请求");
@@ -425,6 +354,7 @@ public class AdminRuleConfigController {
     /**
      * 恢复默认配置
      */
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/reset-default")
     public Result<String> resetDefaultConfig() {
         log.info("接收恢复默认配置请求");
@@ -444,7 +374,7 @@ public class AdminRuleConfigController {
         }
         try {
             SystemParam sp = systemParamMapper.selectOne(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<SystemParam>()
+                    new LambdaQueryWrapper<SystemParam>()
                             .eq(SystemParam::getIsDeleted, 0)
                             .last("LIMIT 1"));
             if (sp == null) {
@@ -481,7 +411,7 @@ public class AdminRuleConfigController {
             log.info("配置保存成功: {} = {}", configKey, configJson);
         } catch (Exception e) {
             log.error("保存配置失败: configKey={}, error={}", configKey, e.getMessage(), e);
-            throw new RuntimeException("保存配置失败: " + e.getMessage(), e);
+            throw new RuntimeException("保存配置失败", e);
         }
     }
     
@@ -490,64 +420,21 @@ public class AdminRuleConfigController {
      */
     private void insertDefaultConfigs() {
         try {
-            // 基础配置
-            Map<String, Object> basicConfig = new HashMap<>();
-            basicConfig.put("systemName", "论文查重管理系统");
-            basicConfig.put("version", "v2.1.0");
-            basicConfig.put("defaultLanguage", "zh-CN");
-            basicConfig.put("timezone", "Asia/Shanghai");
-            basicConfig.put("maintenanceMode", false);
-            basicConfig.put("maintenanceNotice", "系统维护中，请稍后再试...");
-            saveConfig("system_basic", basicConfig, "系统基础配置");
-            
-            // 查重配置
-            Map<String, Object> plagiarismConfig = new HashMap<>();
-            plagiarismConfig.put("internalThreshold", 25);
-            plagiarismConfig.put("thirdPartyThreshold", 20);
-            plagiarismConfig.put("algorithm", "combined");
-            plagiarismConfig.put("minMatchLength", 15);
-            plagiarismConfig.put("cacheHours", 48);
-            saveConfig("plagiarism_config", plagiarismConfig, "查重配置");
-            
-            // 安全配置
-            Map<String, Object> securityConfig = new HashMap<>();
-            securityConfig.put("passwordMinLength", 8);
-            securityConfig.put("passwordRequirements", new String[]{"uppercase", "lowercase", "numbers"});
-            securityConfig.put("loginLockEnabled", true);
-            securityConfig.put("maxFailedAttempts", 5);
-            securityConfig.put("lockDuration", 30);
-            securityConfig.put("sessionTimeout", 60);
-            securityConfig.put("ipRestriction", false);
-            saveConfig("security_config", securityConfig, "安全配置");
-            
-            // 邮件配置
-            Map<String, Object> emailConfig = new HashMap<>();
-            emailConfig.put("smtpServer", "smtp.example.com");
-            emailConfig.put("smtpPort", 587);
-            emailConfig.put("encryption", "tls");
-            emailConfig.put("senderEmail", "noreply@example.com");
-            emailConfig.put("senderName", "论文查重系统");
-            saveConfig("email_config", emailConfig, "邮件配置");
-            
-            // 性能配置
-            Map<String, Object> performanceConfig = new HashMap<>();
-            performanceConfig.put("maxConcurrent", 20);
-            performanceConfig.put("queueSize", 100);
-            performanceConfig.put("cacheStrategy", "lru");
-            performanceConfig.put("cacheSize", 1024);
-            performanceConfig.put("autoCleanup", true);
-            performanceConfig.put("cleanupInterval", 24);
-            saveConfig("performance", performanceConfig, "性能配置");
-            
+            saveConfig("system_basic", DefaultConfigConstants.defaultBasicConfig(), "系统基础配置");
+            saveConfig("plagiarism_config", DefaultConfigConstants.defaultPlagiarismConfig(), "查重配置");
+            saveConfig("security_config", DefaultConfigConstants.defaultSecurityConfig(), "安全配置");
+            saveConfig("email_config", DefaultConfigConstants.defaultEmailConfig(), "邮件配置");
+            saveConfig("performance", DefaultConfigConstants.defaultPerformanceConfig(), "性能配置");
             log.info("默认配置插入成功");
         } catch (Exception e) {
             log.error("插入默认配置失败: {}", e.getMessage(), e);
-            throw new RuntimeException("插入默认配置失败: " + e.getMessage(), e);
+            throw new RuntimeException("插入默认配置失败", e);
         }
     }
 
     // ========================== 性能配置（合并自 SystemConfigController） ==========================
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/performance")
     public Result<Void> updatePerformanceConfig(@Valid @RequestBody PerformanceConfigDTO performanceConfig) {
         log.info("接收更新性能配置请求: maxConcurrent={}, queueSize={}, cacheStrategy={}",
@@ -557,12 +444,14 @@ public class AdminRuleConfigController {
         return systemConfigService.updatePerformanceConfig(performanceConfig);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @GetMapping("/performance")
     public Result<PerformanceConfigDTO> getPerformanceConfig() {
         log.info("接收获取性能配置请求");
         return systemConfigService.getPerformanceConfig();
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/performance/reset")
     public Result<Void> resetPerformanceConfig() {
         log.info("接收重置性能配置请求");
@@ -570,6 +459,7 @@ public class AdminRuleConfigController {
         return systemConfigService.updatePerformanceConfig(defaultConfig);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/performance/test")
     public Result<Void> testPerformanceConfig(@Valid @RequestBody PerformanceConfigDTO performanceConfig) {
         log.info("接收测试性能配置请求: {}", performanceConfig);
@@ -577,14 +467,15 @@ public class AdminRuleConfigController {
         return Result.success("性能配置测试应用成功");
     }
 
-    // ========================== 时间节点配置（合并自 DeadlinesConfigController） ==========================
 
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/deadlines")
     public Result<DeadlinesDTO> getDeadlinesConfig() {
         DeadlinesDTO deadlines = systemConfigService.getDeadlines();
         return Result.success(deadlines);
     }
 
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @PutMapping("/deadlines")
     public Result<Void> updateDeadlinesConfig(@RequestBody DeadlinesDTO deadlines) {
         log.info("更新时间节点配置：{}", deadlines);

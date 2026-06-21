@@ -6,7 +6,9 @@ import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.enums.CheckStatusFilterEnum;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
+import com.abin.checkrepeatsystem.student.service.PaperInfoService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,13 +27,14 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/v1/admin/papers")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
 @RequiredArgsConstructor
 public class AdminPaperController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminPaperController.class);
 
     private final AdminPaperService adminPaperService;
+    private final PaperInfoService paperInfoService;
 
     /**
      * 获取论文列表（分页）
@@ -166,7 +169,7 @@ public class AdminPaperController {
      * 导出论文列表
      */
     @GetMapping("/export")
-    public void exportPaperList(@RequestParam Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response) {
+    public void exportPaperList(@RequestParam Map<String, Object> params, HttpServletResponse response) {
         log.info("接收导出论文列表请求: params={}", params);
         try {
             adminPaperService.exportPaperList(params, response);
@@ -179,15 +182,36 @@ public class AdminPaperController {
      * 下载论文文件
      */
     @GetMapping("/{paperId:[0-9]+}/download")
-    public Result<String> downloadPaper(@PathVariable Long paperId) {
-        log.info("接收下载论文文件请求: paperId={}", paperId);
-        return adminPaperService.downloadPaper(paperId);
+    public void downloadPaper(@PathVariable Long paperId, HttpServletResponse response) {
+        try {
+            PaperInfo paperInfo = paperInfoService.getById(paperId);
+            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.getWriter().write("论文不存在");
+                return;
+            }
+            if (paperInfo.getFileId() == null) {
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.getWriter().write("论文文件不存在");
+                return;
+            }
+            paperInfoService.downloadPaper(paperId, paperInfo.getStudentId(), response);
+        } catch (Exception e) {
+            log.error("管理员下载论文失败: paperId={}", paperId, e);
+            try {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.getWriter().write("论文下载失败，请查看服务器日志");
+            } catch (Exception ex) {
+                log.error("设置错误响应失败", ex);
+            }
+        }
     }
     
     /**
      * 内部查重检测
      */
     @PostMapping("/{paperId:[0-9]+}/internal-check")
+    @OperationLog(type = "admin_paper_internal_check", description = "管理员发起内部查重")
     public Result<String> internalCheckPaper(@PathVariable Long paperId) {
         log.info("接收内部查重检测请求：paperId={}", paperId);
         return adminPaperService.schoolInternalCheckPaper(paperId);
@@ -197,6 +221,7 @@ public class AdminPaperController {
      * 批量内部查重检测
      */
     @PostMapping("/batch-internal-check")
+    @OperationLog(type = "admin_paper_batch_internal_check", description = "管理员批量内部查重")
     public Result<String> batchInternalCheckPaper(@RequestBody List<Long> paperIds) {
         log.info("接收批量内部查重检测请求：paperIds={}", paperIds);
         return adminPaperService.batchSchoolInternalCheckPaper(paperIds);
@@ -206,6 +231,7 @@ public class AdminPaperController {
      * 批量第三方查重检测
      */
     @PostMapping("/batch-third-party-check")
+    @OperationLog(type = "admin_paper_batch_third_party_check", description = "管理员批量第三方查重")
     public Result<String> batchThirdPartyCheckPaper(@RequestBody List<Long> paperIds) {
         log.info("接收批量第三方查重检测请求：paperIds={}", paperIds);
         return adminPaperService.batchThirdPartyCheckPaper(paperIds);

@@ -4,6 +4,7 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.user.mapper.StudentInfoMapper;
@@ -178,32 +179,27 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteStudent(Long studentId) {
-        try {
-            // 检查学生是否存在且未被删除
-            LambdaQueryWrapper<SysUser> userWrapper = new LambdaQueryWrapper<>();
-            userWrapper.eq(SysUser::getId, studentId)
-                      .eq(SysUser::getIsDeleted, 0);
-            
-            SysUser student = sysUserMapper.selectOne(userWrapper);
-            if (student == null) {
-                log.warn("学生不存在或已被删除: studentId={}", studentId);
-                return false;
-            }
+        // 检查学生是否存在且未被删除
+        LambdaQueryWrapper<SysUser> userWrapper = new LambdaQueryWrapper<>();
+        userWrapper.eq(SysUser::getId, studentId)
+                  .eq(SysUser::getIsDeleted, 0);
 
-            // 软删除学生
-            student.setIsDeleted(1);
-            student.setUpdateTime(LocalDateTime.now());
-            int result = sysUserMapper.updateById(student);
-            
-            if (result > 0) {
-                log.info("成功删除学生: studentId={}", studentId);
-                return true;
-            }
-            return false;
-        } catch (Exception e) {
-            log.error("删除学生失败: studentId={}", studentId, e);
-            throw new RuntimeException("删除学生失败", e);
+        SysUser student = sysUserMapper.selectOne(userWrapper);
+        if (student == null) {
+            log.warn("学生不存在或已被删除: studentId={}", studentId);
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "学生不存在或已被删除");
         }
+
+        // 软删除学生
+        student.setIsDeleted(1);
+        student.setUpdateTime(LocalDateTime.now());
+        int result = sysUserMapper.updateById(student);
+
+        if (result > 0) {
+            log.info("成功删除学生: studentId={}", studentId);
+            return true;
+        }
+        throw new BusinessException(ResultCode.SYSTEM_ERROR, "删除学生失败");
     }
 
     @Override
@@ -260,41 +256,35 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean assignAdvisor(Long studentId, AssignAdvisorDTO assignAdvisorDTO) {
-        try {
-            // 更新论文信息中的导师信息
-            LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
-            paperWrapper.eq(PaperInfo::getStudentId, studentId)
-                       .eq(PaperInfo::getIsDeleted, 0);
+        // 更新论文信息中的导师信息
+        LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
+        paperWrapper.eq(PaperInfo::getStudentId, studentId)
+                   .eq(PaperInfo::getIsDeleted, 0);
 
-            List<PaperInfo> papers = paperInfoMapper.selectList(paperWrapper);
-            
-            if (papers.isEmpty()) {
-                log.warn("学生没有论文信息: studentId={}", studentId);
-                return false;
-            }
+        List<PaperInfo> papers = paperInfoMapper.selectList(paperWrapper);
 
-            boolean success = true;
-            for (PaperInfo paper : papers) {
-                paper.setTeacherId(assignAdvisorDTO.getAdvisorId());
-                paper.setTeacherName(assignAdvisorDTO.getAdvisorName());
-                paper.setUpdateTime(LocalDateTime.now());
-                
-                int result = paperInfoMapper.updateById(paper);
-                if (result <= 0) {
-                    success = false;
-                    log.warn("更新论文导师信息失败: paperId={}", paper.getId());
-                }
-            }
-
-            if (success) {
-                log.info("成功分配导师: studentId={}, advisorId={}", studentId, assignAdvisorDTO.getAdvisorId());
-            }
-            return success;
-        } catch (Exception e) {
-            log.error("分配导师失败: studentId={}, advisorId={}", 
-                     studentId, assignAdvisorDTO.getAdvisorId(), e);
-            throw new RuntimeException("分配导师失败", e);
+        if (papers.isEmpty()) {
+            log.warn("学生没有论文信息: studentId={}", studentId);
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "学生没有论文信息");
         }
+
+        boolean success = true;
+        for (PaperInfo paper : papers) {
+            paper.setTeacherId(assignAdvisorDTO.getAdvisorId());
+            paper.setTeacherName(assignAdvisorDTO.getAdvisorName());
+            paper.setUpdateTime(LocalDateTime.now());
+
+            int result = paperInfoMapper.updateById(paper);
+            if (result <= 0) {
+                success = false;
+                log.warn("更新论文导师信息失败: paperId={}", paper.getId());
+            }
+        }
+
+        if (success) {
+            log.info("成功分配导师: studentId={}, advisorId={}", studentId, assignAdvisorDTO.getAdvisorId());
+        }
+        return success;
     }
 
     @Override
@@ -439,52 +429,47 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
 
     @Override
     public String exportStudents(ExportRequestDTO exportRequest) {
-        try {
-            // 获取学生数据
-            StudentListRequestDTO listRequest = new StudentListRequestDTO();
-            listRequest.setTeacherId(exportRequest.getTeacherId());
-            listRequest.setPage(1);
-            listRequest.setPageSize(10000); // 导出最大数量
-            listRequest.setSearch(exportRequest.getSearch());
-            listRequest.setStatus(exportRequest.getStatus());
-            listRequest.setCollege(exportRequest.getCollege());
+        // 获取学生数据
+        StudentListRequestDTO listRequest = new StudentListRequestDTO();
+        listRequest.setTeacherId(exportRequest.getTeacherId());
+        listRequest.setPage(1);
+        listRequest.setPageSize(10000); // 导出最大数量
+        listRequest.setSearch(exportRequest.getSearch());
+        listRequest.setStatus(exportRequest.getStatus());
+        listRequest.setCollege(exportRequest.getCollege());
 
-            Result<Object> result = getStudentList(listRequest);
-            if (!result.isSuccess()) {
-                throw new RuntimeException("获取学生数据失败: " + result.getMessage());
-            }
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = (Map<String, Object>) result.getData();
-            @SuppressWarnings("unchecked")
-            List<StudentListDTO> studentList = (List<StudentListDTO>) data.get("list");
-
-            // 准备导出数据
-            List<Map<String, Object>> exportData = studentList.stream().map(student -> {
-                Map<String, Object> row = new HashMap<>();
-                row.put("学号", student.getUsername());
-                row.put("姓名", student.getStudentName());
-                row.put("学院", student.getCollegeName());
-                row.put("专业", student.getMajor());
-                row.put("年级", student.getGrade());
-                row.put("论文状态", student.getPaperStatus());
-                row.put("指导老师", student.getAdvisorName());
-                row.put("提交时间", student.getSubmitTime());
-                row.put("相似度", student.getSimilarity());
-                return row;
-            }).collect(Collectors.toList());
-
-            // 生成Excel文件
-            String fileName = "学生列表_" + System.currentTimeMillis() + ".xlsx";
-            String filePath = exportToExcel(exportData, fileName);
-            
-            log.info("导出学生数据成功: teacherId={}, count={}", 
-                    exportRequest.getTeacherId(), studentList.size());
-            return filePath;
-        } catch (Exception e) {
-            log.error("导出学生数据失败: teacherId={}", exportRequest.getTeacherId(), e);
-            throw new RuntimeException("导出失败: " + e.getMessage());
+        Result<Object> result = getStudentList(listRequest);
+        if (!result.isSuccess()) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "获取学生数据失败: " + result.getMessage());
         }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        @SuppressWarnings("unchecked")
+        List<StudentListDTO> studentList = (List<StudentListDTO>) data.get("list");
+
+        // 准备导出数据
+        List<Map<String, Object>> exportData = studentList.stream().map(student -> {
+            Map<String, Object> row = new HashMap<>();
+            row.put("学号", student.getUsername());
+            row.put("姓名", student.getStudentName());
+            row.put("学院", student.getCollegeName());
+            row.put("专业", student.getMajor());
+            row.put("年级", student.getGrade());
+            row.put("论文状态", student.getPaperStatus());
+            row.put("指导老师", student.getAdvisorName());
+            row.put("提交时间", student.getSubmitTime());
+            row.put("相似度", student.getSimilarity());
+            return row;
+        }).collect(Collectors.toList());
+
+        // 生成Excel文件
+        String fileName = "学生列表_" + System.currentTimeMillis() + ".xlsx";
+        String filePath = exportToExcel(exportData, fileName);
+
+        log.info("导出学生数据成功: teacherId={}, count={}",
+                exportRequest.getTeacherId(), studentList.size());
+        return filePath;
     }
 
     @Override
@@ -663,7 +648,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             return result;
         } catch (IOException e) {
             log.error("解析Excel文件失败", e);
-            throw new RuntimeException("文件解析失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "文件解析失败: " + e.getMessage());
         }
     }
 
@@ -769,7 +754,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             return filePath;
         } catch (Exception e) {
             log.error("导出Excel失败", e);
-            throw new RuntimeException("导出Excel失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "导出Excel失败: " + e.getMessage());
         }
     }
 
@@ -827,7 +812,7 @@ public class TeacherStudentManagementServiceImpl implements TeacherStudentManage
             return result;
         } catch (Exception e) {
             log.error("解析Excel失败", e);
-            throw new RuntimeException("解析Excel失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "解析Excel失败: " + e.getMessage());
         }
     }
 

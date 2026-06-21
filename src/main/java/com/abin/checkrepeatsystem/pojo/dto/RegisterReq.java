@@ -1,5 +1,6 @@
 package com.abin.checkrepeatsystem.pojo.dto;
 
+import com.abin.checkrepeatsystem.common.annotation.ValidPassword;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -12,7 +13,7 @@ public class RegisterReq {
     private String username;
 
     @NotBlank(message = "密码不能为空")
-    @Size(min = 8, max = 50, message = "密码长度必须在8-50位之间")
+    @ValidPassword
     private String password;
 
     @NotBlank(message = "真实姓名不能为空")

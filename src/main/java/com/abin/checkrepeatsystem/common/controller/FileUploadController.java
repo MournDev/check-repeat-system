@@ -80,37 +80,18 @@ public class FileUploadController {
     @PostConstruct
     private void init() {
         try {
-            // 如果是 Windows 环境且路径为 Unix 风格，转换为 Windows 路径
-            if (System.getProperty("os.name").toLowerCase().contains("win") && 
-                (uploadBasePath.startsWith("/") || uploadBasePath.startsWith("data"))) {
-                // 使用用户主目录下的临时上传目录
-                String userHome = System.getProperty("user.home");
-                uploadBasePath = Paths.get(userHome, "check-repeat-system", "upload").toString();
-                log.info("检测到 Windows 环境，使用上传路径：{}", uploadBasePath);
+            Path uploadPath = Paths.get(uploadBasePath).toAbsolutePath();
+            uploadBasePath = uploadPath.toString();
+            Files.createDirectories(uploadPath);
+
+            if (!Files.isWritable(uploadPath)) {
+                throw new IllegalStateException("上传目录不可写：" + uploadBasePath);
             }
-            
-            // 创建上传根目录
-            File uploadDir = new File(uploadBasePath);
-            if (!uploadDir.exists()) {
-                boolean created = uploadDir.mkdirs();
-                if (created) {
-                    log.info("创建上传目录成功：{}", uploadBasePath);
-                } else {
-                    log.warn("创建上传目录失败：{}", uploadBasePath);
-                }
-            } else {
-                log.info("上传目录已存在：{}", uploadBasePath);
-            }
-            
-            // 验证目录是否可写
-            if (!uploadDir.canWrite()) {
-                log.error("上传目录不可写：{}", uploadBasePath);
-                throw new RuntimeException("上传目录不可写：" + uploadBasePath);
-            }
-            
+
+            log.info("上传目录初始化成功：{}", uploadBasePath);
         } catch (Exception e) {
             log.error("初始化上传路径失败", e);
-            throw new RuntimeException("初始化上传路径失败：" + e.getMessage());
+            throw new IllegalStateException("初始化上传路径失败：" + e.getMessage());
         }
     }
 
@@ -282,7 +263,7 @@ public class FileUploadController {
             // 1. 验证预览令牌
             Long fileId = previewTokenService.validatePreviewToken(token);
             if (fileId == null) {
-                log.warn("预览令牌无效或已过期 - token: {}", token);
+                log.warn("预览令牌无效或已过期");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
             }
             
@@ -340,7 +321,7 @@ public class FileUploadController {
                     .body(resource);
 
         } catch (Exception e) {
-            log.error("预览文件异常 - token: {}", token, e);
+            log.error("预览文件异常", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
@@ -553,7 +534,7 @@ public class FileUploadController {
             log.error("下载导出文件失败 - filePath: {}", filePath, e);
             try {
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                response.getWriter().write("文件下载失败: " + e.getMessage());
+                response.getWriter().write("文件下载失败，请查看服务器日志");
             } catch (IOException ioException) {
                 log.error("发送错误响应失败", ioException);
             }

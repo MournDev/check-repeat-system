@@ -86,7 +86,7 @@ public class MaintenanceFilter extends OncePerRequestFilter {
         if (token != null) {
             try {
                 String roleCode = jwtUtils.extractRoleCode(token);
-                if ("ADMIN".equals(roleCode) && !jwtUtils.isTokenExpired(token)) {
+                if (("ADMIN".equals(roleCode) || "SUPER_ADMIN".equals(roleCode)) && !jwtUtils.isTokenExpired(token)) {
                     try {
                         filterChain.doFilter(request, response);
                     } catch (jakarta.servlet.ServletException e) {

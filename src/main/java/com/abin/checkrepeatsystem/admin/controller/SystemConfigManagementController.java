@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.admin.controller;
 
 import com.abin.checkrepeatsystem.admin.service.SystemConfigService;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
+import com.abin.checkrepeatsystem.common.constant.DefaultConfigConstants;
 import com.abin.checkrepeatsystem.pojo.entity.SystemConfig;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
@@ -24,7 +25,7 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/admin/system/config")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAuthority('SUPER_ADMIN')")
 @RequiredArgsConstructor
 public class SystemConfigManagementController {
 
@@ -80,56 +81,22 @@ public class SystemConfigManagementController {
     }
 
     private Map<String, Object> getDefaultBasicConfig() {
-        Map<String, Object> config = new HashMap<>();
-        config.put("systemName", "论文查重管理系统");
-        config.put("version", "v2.1.0");
-        config.put("defaultLanguage", "zh-CN");
-        config.put("timezone", "Asia/Shanghai");
-        config.put("maintenanceMode", false);
-        config.put("maintenanceNotice", "系统维护中，请稍后再试...");
-        return config;
+        return DefaultConfigConstants.defaultBasicConfig();
     }
 
     private Map<String, Object> getDefaultPlagiarismConfig() {
-        Map<String, Object> config = new HashMap<>();
-        config.put("internalThreshold", 25);
-        config.put("thirdPartyThreshold", 20);
-        config.put("algorithm", "combined");
-        config.put("minMatchLength", 15);
-        config.put("cacheHours", 48);
-        return config;
+        return DefaultConfigConstants.defaultPlagiarismConfig();
     }
 
     private Map<String, Object> getDefaultSecurityConfig() {
-        Map<String, Object> config = new HashMap<>();
-        config.put("passwordMinLength", 8);
-        config.put("passwordRequirements", List.of("uppercase", "lowercase", "numbers"));
-        config.put("loginLockEnabled", true);
-        config.put("maxFailedAttempts", 5);
-        config.put("lockDuration", 30);
-        config.put("sessionTimeout", 60);
-        config.put("ipRestriction", false);
-        return config;
+        return DefaultConfigConstants.defaultSecurityConfig();
     }
 
     private Map<String, Object> getDefaultEmailConfig() {
-        Map<String, Object> config = new HashMap<>();
-        config.put("smtpServer", "smtp.example.com");
-        config.put("smtpPort", 587);
-        config.put("encryption", "tls");
-        config.put("senderEmail", "noreply@example.com");
-        config.put("senderName", "论文查重系统");
-        return config;
+        return DefaultConfigConstants.defaultEmailConfig();
     }
 
     private Map<String, Object> getDefaultPerformanceConfig() {
-        Map<String, Object> config = new HashMap<>();
-        config.put("maxConcurrent", 20);
-        config.put("queueSize", 100);
-        config.put("cacheStrategy", "lru");
-        config.put("cacheSize", 1024);
-        config.put("autoCleanup", true);
-        config.put("cleanupInterval", 24);
-        return config;
+        return DefaultConfigConstants.defaultPerformanceConfig();
     }
 }

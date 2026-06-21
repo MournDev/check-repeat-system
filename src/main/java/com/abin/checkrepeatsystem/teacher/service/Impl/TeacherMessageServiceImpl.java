@@ -1,5 +1,7 @@
 package com.abin.checkrepeatsystem.teacher.service.Impl;
 
+import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.common.websocket.WebSocketMessage;
@@ -77,8 +79,7 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
     @Override
     public List<MessageSessionVO> getMessageSessions(Long teacherId) {
-        try {
-            log.info("获取教师消息会话列表 - 教师 ID: {}", teacherId);
+        log.info("获取教师消息会话列表 - 教师 ID: {}", teacherId);
 
             // 1. 获取教师的所有学生 ID（通过论文关联）
             LambdaQueryWrapper<PaperInfo> paperWrapper = new LambdaQueryWrapper<>();
@@ -243,18 +244,12 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
             log.info("获取消息会话列表成功 - 教师 ID: {}, 会话数量：{}", teacherId, sessions.size());
             return sessions;
-
-        } catch (Exception e) {
-            log.error("获取消息会话列表失败 - 教师 ID: {}", teacherId, e);
-            throw new RuntimeException("获取会话列表失败: " + e.getMessage());
-        }
     }
 
     @Override
     public Page<MessageVO> getMessageList(Long teacherId, Long sessionId, Integer pageNum, Integer pageSize) {
-        try {
-            log.info("获取消息列表 - 教师 ID: {}, 会话 ID: {}, 页码: {}, 页大小: {}",
-                    teacherId, sessionId, pageNum, pageSize);
+        log.info("获取消息列表 - 教师 ID: {}, 会话 ID: {}, 页码: {}, 页大小: {}",
+                teacherId, sessionId, pageNum, pageSize);
 
             // 使用 MyBatis-Plus 的标准方法获取会话消息历史
             Page<InstantMessage> page = new Page<>(pageNum, pageSize);
@@ -278,19 +273,13 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
             log.info("获取消息列表成功");
             return pageVO;
-
-        } catch (Exception e) {
-            log.error("获取消息列表失败", e);
-            throw new RuntimeException("获取消息列表失败: " + e.getMessage());
-        }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public MessageVO sendMessage(Long teacherId, MessageSendDTO sendDTO) {
-        try {
-            // 使用当前登录用户 ID
-            Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
+        // 使用当前登录用户 ID
+        Long currentUserId = UserBusinessInfoUtils.getCurrentUserId();
             
             // 如果会话ID为空，自动创建或查找教师与学生的会话
             Long sessionId = sendDTO.getSessionId();
@@ -389,20 +378,14 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
                 log.info("消息发送成功 - 消息 ID: {}, 发送者：{}", message.getId(), realSenderName);
                 return messageVO;
             } else {
-                throw new RuntimeException("消息发送失败: 数据库插入返回值为 " + result);
+                throw new BusinessException(ResultCode.SYSTEM_ERROR, "消息发送失败: 数据库插入返回值为 " + result);
             }
-
-        } catch (Exception e) {
-            log.error("发送消息失败", e);
-            throw new RuntimeException("消息发送失败: " + e.getMessage());
-        }
     }
 
     @Override
     public com.abin.checkrepeatsystem.student.dto.FileUploadVO uploadFile(MultipartFile file, Long teacherId, Long sessionId) {
-        try {
-            log.info("上传文件 - 教师 ID: {}, 文件名: {}, 文件大小: {}, 会话ID: {}",
-                    teacherId, file.getOriginalFilename(), file.getSize(), sessionId);
+        log.info("上传文件 - 教师 ID: {}, 文件名: {}, 文件大小: {}, 会话ID: {}",
+                teacherId, file.getOriginalFilename(), file.getSize(), sessionId);
 
             // 使用文件服务上传文件
             Long fileId = fileService.uploadFile(file, teacherId);
@@ -457,123 +440,96 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
             log.info("文件上传成功 - 文件 ID: {}", fileId);
             return fileVO;
-
-        } catch (Exception e) {
-            log.error("文件上传失败", e);
-            throw new RuntimeException("文件上传失败: " + e.getMessage());
-        }
     }
 
     @Override
     public void downloadAttachment(Long attachmentId, Long teacherId, HttpServletResponse response) {
-        try {
-            log.info("下载附件 - 教师 ID: {}, 附件 ID: {}", teacherId, attachmentId);
+        log.info("下载附件 - 教师 ID: {}, 附件 ID: {}", teacherId, attachmentId);
 
-            // 获取文件信息
-            FileInfo fileInfo = fileService.getById(attachmentId);
-            if (fileInfo != null && StringUtils.hasText(fileInfo.getStoragePath())) {
-                String fullPath = Paths.get(uploadBasePath, fileInfo.getStoragePath()).toString();
-                File file = new File(fullPath);
-
-                if (file.exists()) {
-                    // 设置响应头
-                    String fileName = fileInfo.getOriginalFilename() != null ?
-                        fileInfo.getOriginalFilename() : "attachment_" + attachmentId;
-                    response.setContentType(FileMimeTypeUtils.getContentType(fileName));
-                    response.setHeader("Content-Disposition",
-                        "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
-                    response.setContentLengthLong(file.length());
-
-                    // 写入文件内容
-                    try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
-                        byte[] buffer = new byte[1024];
-                        int len;
-                        while ((len = fis.read(buffer)) > 0) {
-                            response.getOutputStream().write(buffer, 0, len);
-                        }
-                        response.getOutputStream().flush();
-                    }
-
-                    log.info("附件下载成功 - 文件名: {}", fileName);
-                } else {
-                    throw new RuntimeException("附件文件不存在");
-                }
-            } else {
-                throw new RuntimeException("附件信息不存在");
-            }
-
-        } catch (Exception e) {
-            log.error("下载附件失败 - 附件 ID: {}", attachmentId, e);
-            throw new RuntimeException("附件下载失败: " + e.getMessage());
+        FileInfo fileInfo = fileService.getById(attachmentId);
+        if (fileInfo == null || !StringUtils.hasText(fileInfo.getStoragePath())) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "附件信息不存在");
         }
+
+        String fullPath = Paths.get(uploadBasePath, fileInfo.getStoragePath()).toString();
+        File file = new File(fullPath);
+        if (!file.exists()) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "附件文件不存在");
+        }
+
+        String fileName = fileInfo.getOriginalFilename() != null ?
+            fileInfo.getOriginalFilename() : "attachment_" + attachmentId;
+        response.setContentType(FileMimeTypeUtils.getContentType(fileName));
+        response.setHeader("Content-Disposition",
+            "attachment; filename=\"" + URLEncoder.encode(fileName, StandardCharsets.UTF_8) + "\"");
+        response.setContentLengthLong(file.length());
+
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = fis.read(buffer)) > 0) {
+                response.getOutputStream().write(buffer, 0, len);
+            }
+            response.getOutputStream().flush();
+        } catch (java.io.IOException e) {
+            log.error("下载附件IO异常 - 附件ID: {}", attachmentId, e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "附件下载失败: " + e.getMessage());
+        }
+
+        log.info("附件下载成功 - 文件名: {}", fileName);
     }
 
     @Override
     public void clearMessages(Long teacherId, Long sessionId) {
-        try {
-            log.info("清空消息 - 教师 ID: {}, 会话 ID: {}", teacherId, sessionId);
+        log.info("清空消息 - 教师 ID: {}, 会话 ID: {}", teacherId, sessionId);
 
-            // 将会话中所有消息标记为已删除
-            LambdaQueryWrapper<InstantMessage> deleteWrapper = new LambdaQueryWrapper<>();
-            deleteWrapper
-                .eq(InstantMessage::getConversationId, sessionId)
-                .eq(InstantMessage::getIsDeleted, 0);
+        LambdaQueryWrapper<InstantMessage> deleteWrapper = new LambdaQueryWrapper<>();
+        deleteWrapper
+            .eq(InstantMessage::getConversationId, sessionId)
+            .eq(InstantMessage::getIsDeleted, 0);
 
-            // 更新删除状态
-            InstantMessage updateMessage = new InstantMessage();
-            updateMessage.setIsDeleted(1);
-            updateMessage.setUpdateTime(LocalDateTime.now());
+        InstantMessage updateMessage = new InstantMessage();
+        updateMessage.setIsDeleted(1);
+        updateMessage.setUpdateTime(LocalDateTime.now());
 
-            int deletedCount = instantMessageMapper.update(updateMessage, deleteWrapper);
-            log.info("消息清空成功 - 删除消息数: {}", deletedCount);
-
-        } catch (Exception e) {
-            log.error("清空消息失败", e);
-            throw new RuntimeException("清空消息失败: " + e.getMessage());
-        }
+        int deletedCount = instantMessageMapper.update(updateMessage, deleteWrapper);
+        log.info("消息清空成功 - 删除消息数: {}", deletedCount);
     }
 
     @Override
     public void exportChatRecords(Long teacherId, ChatExportDTO exportDTO, HttpServletResponse response) {
+        log.info("导出聊天记录 - 教师 ID: {}, 会话 ID: {}, 格式: {}",
+                teacherId, exportDTO.getSessionId(), exportDTO.getFormat());
+
+        LambdaQueryWrapper<InstantMessage> messageWrapper = new LambdaQueryWrapper<>();
+        messageWrapper
+            .eq(InstantMessage::getConversationId, exportDTO.getSessionId())
+            .eq(InstantMessage::getIsDeleted, 0)
+            .orderByAsc(InstantMessage::getSentTime);
+
+        List<InstantMessage> messages = instantMessageMapper.selectList(messageWrapper);
+
+        String exportContent = MessageUtils.generateChatExportContent(messages, exportDTO.getFormat());
+
+        String fileName = "chat_export_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) +
+                         "." + exportDTO.getFormat();
+        response.setContentType("application/octet-stream");
+        response.setHeader("Content-Disposition", "attachment; filename=" + fileName);
+
         try {
-            log.info("导出聊天记录 - 教师 ID: {}, 会话 ID: {}, 格式: {}",
-                    teacherId, exportDTO.getSessionId(), exportDTO.getFormat());
-
-            // 查询会话中的所有消息
-            LambdaQueryWrapper<InstantMessage> messageWrapper = new LambdaQueryWrapper<>();
-            messageWrapper
-                .eq(InstantMessage::getConversationId, exportDTO.getSessionId())
-                .eq(InstantMessage::getIsDeleted, 0)
-                .orderByAsc(InstantMessage::getSentTime);
-
-            List<InstantMessage> messages = instantMessageMapper.selectList(messageWrapper);
-
-            // 根据格式生成导出内容
-            String exportContent = MessageUtils.generateChatExportContent(messages, exportDTO.getFormat());
-
-            // 设置响应头
-            String fileName = "chat_export_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) +
-                             "." + exportDTO.getFormat();
-            response.setContentType("application/octet-stream");
-            String headerValue = "attachment; filename=" + fileName;
-            response.setHeader("Content-Disposition", headerValue);
-
-            // 写入导出内容
             response.getWriter().write(exportContent);
             response.getWriter().flush();
-
-            log.info("聊天记录导出成功 - 消息数量: {}, 格式: {}", messages.size(), exportDTO.getFormat());
-
-        } catch (Exception e) {
-            log.error("导出聊天记录失败", e);
-            throw new RuntimeException("导出聊天记录失败: " + e.getMessage());
+        } catch (java.io.IOException e) {
+            log.error("导出聊天记录IO异常", e);
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "导出聊天记录失败: " + e.getMessage());
         }
+
+        log.info("聊天记录导出成功 - 消息数量: {}, 格式: {}", messages.size(), exportDTO.getFormat());
     }
 
     @Override
     public List<SharedFileVO> getSharedFiles(Long teacherId, Long sessionId) {
-        try {
-            log.info("获取共享文件列表 - 教师 ID: {}, 会话 ID: {}", teacherId, sessionId);
+        log.info("获取共享文件列表 - 教师 ID: {}, 会话 ID: {}", teacherId, sessionId);
 
             // 查询会话中的共享文件（通过附件消息）
             LambdaQueryWrapper<InstantMessage> fileWrapper = new LambdaQueryWrapper<>();
@@ -626,183 +582,134 @@ public class TeacherMessageServiceImpl implements TeacherMessageService {
 
             log.info("获取共享文件列表成功 - 文件数量: {}", files.size());
             return files;
-
-        } catch (Exception e) {
-            log.error("获取共享文件列表失败", e);
-            throw new RuntimeException("获取共享文件列表失败: " + e.getMessage());
-        }
     }
 
     @Override
     public void downloadSharedFile(Long fileId, Long teacherId, HttpServletResponse response) {
-        try {
-            log.info("下载共享文件 - 教师 ID: {}, 文件 ID: {}", teacherId, fileId);
-
-            // 复用附件下载逻辑
-            downloadAttachment(fileId, teacherId, response);
-
-        } catch (Exception e) {
-            log.error("下载共享文件失败 - 文件 ID: {}", fileId, e);
-            throw new RuntimeException("共享文件下载失败: " + e.getMessage());
-        }
+        log.info("下载共享文件 - 教师 ID: {}, 文件 ID: {}", teacherId, fileId);
+        downloadAttachment(fileId, teacherId, response);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteSharedFile(Long fileId, Long teacherId) {
-        try {
-            log.info("删除共享文件 - 教师 ID: {}, 文件 ID: {}", teacherId, fileId);
+        log.info("删除共享文件 - 教师 ID: {}, 文件 ID: {}", teacherId, fileId);
 
-            // 从消息的 attachments JSON 中移除该文件引用
-            List<InstantMessage> allMessages = instantMessageMapper.selectList(
-                new LambdaQueryWrapper<InstantMessage>()
-                    .like(InstantMessage::getAttachments, String.valueOf(fileId)));
-            for (InstantMessage msg : allMessages) {
-                try {
-                    ObjectMapper om = new ObjectMapper();
-                    List<Map<String, Object>> attachments = om.readValue(msg.getAttachments(),
-                        new TypeReference<List<Map<String, Object>>>() {});
-                    attachments.removeIf(a -> String.valueOf(a.get("id")).equals(String.valueOf(fileId)));
-                    if (attachments.isEmpty()) {
-                        msg.setAttachments(null);
-                    } else {
-                        msg.setAttachments(om.writeValueAsString(attachments));
-                    }
-                    instantMessageMapper.updateById(msg);
-                } catch (Exception e) {
-                    log.warn("清理消息附件引用失败 - 消息ID: {}", msg.getId(), e);
+        List<InstantMessage> allMessages = instantMessageMapper.selectList(
+            new LambdaQueryWrapper<InstantMessage>()
+                .like(InstantMessage::getAttachments, String.valueOf(fileId)));
+        for (InstantMessage msg : allMessages) {
+            try {
+                ObjectMapper om = new ObjectMapper();
+                List<Map<String, Object>> attachments = om.readValue(msg.getAttachments(),
+                    new TypeReference<List<Map<String, Object>>>() {});
+                attachments.removeIf(a -> String.valueOf(a.get("id")).equals(String.valueOf(fileId)));
+                if (attachments.isEmpty()) {
+                    msg.setAttachments(null);
+                } else {
+                    msg.setAttachments(om.writeValueAsString(attachments));
                 }
+                instantMessageMapper.updateById(msg);
+            } catch (Exception e) {
+                log.warn("清理消息附件引用失败 - 消息ID: {}", msg.getId(), e);
             }
-
-            // 删除物理文件
-            fileService.deleteFile(fileId);
-            log.info("删除共享文件成功 - 文件 ID: {}", fileId);
-
-        } catch (Exception e) {
-            log.error("删除共享文件失败 - 文件ID: {}", fileId, e);
-            throw new RuntimeException("删除共享文件失败: " + e.getMessage());
         }
+
+        fileService.deleteFile(fileId);
+        log.info("删除共享文件成功 - 文件 ID: {}", fileId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void markMessagesRead(Long teacherId, Long sessionId) {
-        try {
-            log.info("标记消息已读 - 教师 ID: {}, 会话 ID: {}", teacherId, sessionId);
+        log.info("标记消息已读 - 教师 ID: {}, 会话 ID: {}", teacherId, sessionId);
 
-            // 验证会话是否存在
-            LambdaQueryWrapper<InstantMessage> checkWrapper = new LambdaQueryWrapper<>();
-            checkWrapper.eq(InstantMessage::getConversationId, sessionId)
-                       .last("LIMIT 1");
+        LambdaQueryWrapper<InstantMessage> checkWrapper = new LambdaQueryWrapper<>();
+        checkWrapper.eq(InstantMessage::getConversationId, sessionId)
+                   .last("LIMIT 1");
 
-            InstantMessage existMessage = instantMessageMapper.selectOne(checkWrapper);
-            if (existMessage == null) {
-                log.warn("会话不存在或没有消息 - 会话 ID: {}", sessionId);
-                return; // 幂等性处理
-            }
-
-            // 从历史消息中获取学生 ID
-            Long studentId = null;
-            if (existMessage.getSenderId().equals(teacherId)) {
-                studentId = existMessage.getReceiverId();
-            } else {
-                studentId = existMessage.getSenderId();
-            }
-
-            log.info("从历史消息中获取学生 ID: {}", studentId);
-
-            // 将发送给教师的未读消息标记为已读
-            LambdaQueryWrapper<InstantMessage> readWrapper = new LambdaQueryWrapper<>();
-            readWrapper
-                .eq(InstantMessage::getReceiverId, teacherId)
-                .eq(InstantMessage::getSenderId, studentId)  // 学生发送的消息
-                .eq(InstantMessage::getStatus, "SENT") // 未读状态
-                .eq(InstantMessage::getIsDeleted, 0);
-
-            log.info("查询条件 - receiverId: {}, senderId: {}, status: SENT", teacherId, studentId);
-
-            // 更新状态为已读
-            InstantMessage updateMessage = new InstantMessage();
-            updateMessage.setStatus("READ");
-            updateMessage.setReadTime(LocalDateTime.now());
-            updateMessage.setUpdateTime(LocalDateTime.now());
-
-            int updatedCount = instantMessageMapper.update(updateMessage, readWrapper);
-            log.info("消息标记已读成功 - 更新消息数：{}", updatedCount);
-
-        } catch (Exception e) {
-            log.error("标记消息已读失败", e);
-            throw new RuntimeException("标记消息已读失败：" + e.getMessage());
+        InstantMessage existMessage = instantMessageMapper.selectOne(checkWrapper);
+        if (existMessage == null) {
+            log.warn("会话不存在或没有消息 - 会话 ID: {}", sessionId);
+            return;
         }
+
+        Long studentId = null;
+        if (existMessage.getSenderId().equals(teacherId)) {
+            studentId = existMessage.getReceiverId();
+        } else {
+            studentId = existMessage.getSenderId();
+        }
+
+        log.info("从历史消息中获取学生 ID: {}", studentId);
+
+        LambdaQueryWrapper<InstantMessage> readWrapper = new LambdaQueryWrapper<>();
+        readWrapper
+            .eq(InstantMessage::getReceiverId, teacherId)
+            .eq(InstantMessage::getSenderId, studentId)
+            .eq(InstantMessage::getStatus, "SENT")
+            .eq(InstantMessage::getIsDeleted, 0);
+
+        log.info("查询条件 - receiverId: {}, senderId: {}, status: SENT", teacherId, studentId);
+
+        InstantMessage updateMessage = new InstantMessage();
+        updateMessage.setStatus("READ");
+        updateMessage.setReadTime(LocalDateTime.now());
+        updateMessage.setUpdateTime(LocalDateTime.now());
+
+        int updatedCount = instantMessageMapper.update(updateMessage, readWrapper);
+        log.info("消息标记已读成功 - 更新消息数：{}", updatedCount);
     }
 
     @Override
     public void recallMessage(Long teacherId, Long messageId) {
-        try {
-            log.info("撤回消息 - 教师 ID: {}, 消息 ID: {}", teacherId, messageId);
+        log.info("撤回消息 - 教师 ID: {}, 消息 ID: {}", teacherId, messageId);
 
-            // 检查消息是否可以撤回（必须是发送者且在2分钟内）
-            InstantMessage message = instantMessageMapper.selectById(messageId);
-
-            if (message == null) {
-                throw new RuntimeException("消息不存在");
-            }
-
-            if (!message.getSenderId().equals(teacherId)) {
-                throw new RuntimeException("只能撤回自己发送的消息");
-            }
-
-            // 检查时间限制（2分钟内）
-            LocalDateTime now = LocalDateTime.now();
-            if (message.getSentTime() != null &&
-                message.getSentTime().plusMinutes(2).isBefore(now)) {
-                throw new RuntimeException("消息发送超过2分钟，无法撤回");
-            }
-
-            // 更新消息状态为已撤回
-            message.setStatus("RECALLED");
-            message.setUpdateTime(LocalDateTime.now());
-            message.setContent("[此消息已被撤回]");
-
-            int result = instantMessageMapper.updateById(message);
-            if (result <= 0) {
-                throw new RuntimeException("消息撤回失败");
-            }
-
-            log.info("消息撤回成功 - 消息 ID: {}", messageId);
-
-        } catch (Exception e) {
-            log.error("撤回消息失败", e);
-            throw new RuntimeException("消息撤回失败: " + e.getMessage());
+        InstantMessage message = instantMessageMapper.selectById(messageId);
+        if (message == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "消息不存在");
         }
+
+        if (!message.getSenderId().equals(teacherId)) {
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "只能撤回自己发送的消息");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (message.getSentTime() != null &&
+            message.getSentTime().plusMinutes(2).isBefore(now)) {
+            throw new BusinessException(ResultCode.PERMISSION_NOT_STATUS, "消息发送超过2分钟，无法撤回");
+        }
+
+        message.setStatus("RECALLED");
+        message.setUpdateTime(LocalDateTime.now());
+        message.setContent("[此消息已被撤回]");
+
+        int result = instantMessageMapper.updateById(message);
+        if (result <= 0) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "消息撤回失败");
+        }
+
+        log.info("消息撤回成功 - 消息 ID: {}", messageId);
     }
 
     @Override
     public com.abin.checkrepeatsystem.student.vo.StudentInfoVO getStudentInfo(Long teacherId, Long studentId) {
-        try {
-            log.info("获取学生信息 - 教师 ID: {}, 学生 ID: {}", teacherId, studentId);
+        log.info("获取学生信息 - 教师 ID: {}, 学生 ID: {}", teacherId, studentId);
 
-            // 获取学生信息
-            SysUser student = sysUserMapper.selectById(studentId);
-            if (student == null) {
-                throw new RuntimeException("学生信息不存在");
-            }
-
-            // 构建学生信息 VO
-            com.abin.checkrepeatsystem.student.vo.StudentInfoVO studentInfo = new com.abin.checkrepeatsystem.student.vo.StudentInfoVO();
-            studentInfo.setId(student.getId().toString());
-            studentInfo.setName(student.getRealName());
-            studentInfo.setEmail(student.getEmail());
-            studentInfo.setPhone(student.getPhone());
-            studentInfo.setAvatar(student.getAvatar() != null && !student.getAvatar().trim().isEmpty() ? student.getAvatar() : null);
-
-            log.info("获取学生信息成功 - 学生 ID: {}", studentId);
-            return studentInfo;
-
-        } catch (Exception e) {
-            log.error("获取学生信息失败", e);
-            throw new RuntimeException("获取学生信息失败：" + e.getMessage());
+        SysUser student = sysUserMapper.selectById(studentId);
+        if (student == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "学生信息不存在");
         }
+
+        com.abin.checkrepeatsystem.student.vo.StudentInfoVO studentInfo = new com.abin.checkrepeatsystem.student.vo.StudentInfoVO();
+        studentInfo.setId(student.getId().toString());
+        studentInfo.setName(student.getRealName());
+        studentInfo.setEmail(student.getEmail());
+        studentInfo.setPhone(student.getPhone());
+        studentInfo.setAvatar(student.getAvatar() != null && !student.getAvatar().trim().isEmpty() ? student.getAvatar() : null);
+
+        log.info("获取学生信息成功 - 学生 ID: {}", studentId);
+        return studentInfo;
     }
 
 

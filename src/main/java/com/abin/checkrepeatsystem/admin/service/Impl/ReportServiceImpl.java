@@ -87,7 +87,19 @@ public class ReportServiceImpl implements ReportService {
         Page<CheckReport> resultPage = checkReportMapper.selectPage(page, queryWrapper);
         List<CheckReport> reports = resultPage.getRecords();
 
-        List<Map<String, Object>> reportList = reports.stream().map(this::convertToReportMap).collect(Collectors.toList());
+        // 批量查询关联的PaperInfo，避免N+1
+        List<Long> paperIds = reports.stream()
+                .map(CheckReport::getPaperId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, PaperInfo> paperInfoMap = paperIds.isEmpty() ? new HashMap<>() :
+                paperInfoMapper.selectBatchIds(paperIds).stream()
+                        .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
+
+        List<Map<String, Object>> reportList = reports.stream()
+                .map(report -> convertToReportMap(report, paperInfoMap))
+                .collect(Collectors.toList());
 
         Map<String, Object> result = new HashMap<>();
         result.put("records", reportList);
@@ -141,7 +153,13 @@ public class ReportServiceImpl implements ReportService {
             return Result.error(404, "报告不存在", null);
         }
 
-        Map<String, Object> reportMap = convertToReportMap(report);
+        // 单条查询，直接查一次
+        Map<Long, PaperInfo> paperInfoMap = new HashMap<>();
+        if (report.getPaperId() != null) {
+            PaperInfo pi = paperInfoMapper.selectById(report.getPaperId());
+            if (pi != null) paperInfoMap.put(pi.getId(), pi);
+        }
+        Map<String, Object> reportMap = convertToReportMap(report, paperInfoMap);
         reportMap.put("repeatDetails", report.getRepeatDetails());
 
         return Result.success("获取报告详情成功", reportMap);
@@ -248,7 +266,7 @@ public class ReportServiceImpl implements ReportService {
         return matchedPapers.stream().map(PaperInfo::getId).collect(Collectors.toList());
     }
 
-    private Map<String, Object> convertToReportMap(CheckReport report) {
+    private Map<String, Object> convertToReportMap(CheckReport report, Map<Long, PaperInfo> paperInfoMap) {
         Map<String, Object> reportMap = new HashMap<>();
         reportMap.put("id", report.getId());
         reportMap.put("reportNo", report.getReportNo());
@@ -259,7 +277,7 @@ public class ReportServiceImpl implements ReportService {
 
         Long paperId = report.getPaperId();
         if (paperId != null) {
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+            PaperInfo paperInfo = paperInfoMap.get(paperId);
             if (paperInfo != null) {
                 reportMap.put("paperTitle", paperInfo.getPaperTitle());
                 reportMap.put("paperId", paperInfo.getId());

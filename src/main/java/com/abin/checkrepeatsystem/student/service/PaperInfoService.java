@@ -94,6 +94,15 @@ public interface PaperInfoService extends IService<PaperInfo> {
      * @return 更新后的论文信息
      */
     PaperInfo resubmitAfterWithdraw(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId);
+
+    /**
+     * 修改后重新提交论文（仅 REVISION_NEEDED 状态可调用）
+     * @param paperId 论文ID
+     * @param request 重新提交请求
+     * @param studentId 学生ID
+     * @return 更新后的论文信息
+     */
+    PaperInfo resubmitAfterRevision(Long paperId, PaperReSubmitAfterWithdrawRequest request, Long studentId);
         
     /**
      * 批量下载论文接口

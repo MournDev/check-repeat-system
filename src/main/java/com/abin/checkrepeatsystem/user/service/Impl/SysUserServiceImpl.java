@@ -35,7 +35,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         if (user == null) {
             return false;
         }
-        return UserTypeEnum.ADMIN.getCode().equals(user.getUserType());
+        return UserTypeEnum.ROLE_ADMIN.equals(user.getUserType());
     }
 
     /**
@@ -47,7 +47,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         if (user == null) {
             return false;
         }
-        return UserTypeEnum.TEACHER.getCode().equals(user.getUserType());
+        return UserTypeEnum.ROLE_TEACHER.equals(user.getUserType());
     }
 
     /**
@@ -59,6 +59,6 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         if (user == null) {
             return false;
         }
-        return UserTypeEnum.STUDENT.getCode().equals(user.getUserType());
+        return UserTypeEnum.ROLE_STUDENT.equals(user.getUserType());
     }
 }

@@ -47,7 +47,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new UsernameNotFoundException("用户角色不存在或已被删除");
         }
 
-        // 3. 构建权限列表（Spring Security要求权限以"ROLE_"开头，或直接用角色编码）
+        // 3. 构建权限列表（使用hasAuthority，不加ROLE_前缀）
         List<GrantedAuthority> authorities = new ArrayList<>();
         authorities.add(new SimpleGrantedAuthority(role.getRoleCode()));
 

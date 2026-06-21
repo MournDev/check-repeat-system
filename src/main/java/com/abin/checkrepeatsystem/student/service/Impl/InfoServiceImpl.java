@@ -17,6 +17,7 @@ import com.abin.checkrepeatsystem.student.vo.LoginLogQueryReq;
 import com.abin.checkrepeatsystem.user.dto.UpdateUserInfoReq;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
+import com.abin.checkrepeatsystem.common.service.TokenRevocationService;
 import com.abin.checkrepeatsystem.user.vo.LoginVO;
 import com.abin.checkrepeatsystem.user.mapper.ConversationMemberMapper;
 import com.abin.checkrepeatsystem.pojo.entity.ConversationMember;
@@ -79,6 +80,62 @@ public class InfoServiceImpl implements InfoService {
     private final StudentInfoService studentInfoService;
     
     private final ConversationMemberMapper conversationMemberMapper;
+
+    private final TokenRevocationService tokenRevocationService;
+
+    @Override
+    public Result<LoginVO> getCurrentUserInfo() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return Result.error(ResultCode.NOT_LOGIN, "用户未登录");
+            }
+
+            String currentUsername = authentication.getName();
+            SysUser currentUser = sysUserMapper.selectOne(
+                    Wrappers.<SysUser>lambdaQuery()
+                            .eq(SysUser::getUsername, currentUsername)
+                            .eq(SysUser::getIsDeleted, 0)
+            );
+
+            if (currentUser == null) {
+                return Result.error(ResultCode.RESOURCE_NOT_FOUND, "当前用户不存在");
+            }
+
+            SysRole sysRole = sysRoleMapper.selectById(currentUser.getRoleId());
+            if (sysRole == null || sysRole.getIsDeleted() == 1) {
+                return Result.error(ResultCode.PARAM_ERROR, "用户角色无效");
+            }
+
+            LoginVO loginVO = new LoginVO();
+            loginVO.setUserId(currentUser.getId());
+            loginVO.setRoleCode(sysRole.getRoleCode());
+            loginVO.setUsername(currentUser.getUsername());
+            loginVO.setRealName(currentUser.getRealName());
+            loginVO.setPhone(currentUser.getPhone());
+            loginVO.setEmail(currentUser.getEmail());
+            loginVO.setEmailVerified(currentUser.getEmailVerified());
+            loginVO.setIntroduce(currentUser.getIntroduce());
+            loginVO.setAvatar(currentUser.getAvatar());
+            loginVO.setLastLoginTime(currentUser.getLastLoginTime());
+
+            // 学生信息
+            StudentInfo studentInfo = studentInfoService.getByUserId(currentUser.getId());
+            if (studentInfo != null) {
+                loginVO.setCollegeId(studentInfo.getCollegeId());
+                loginVO.setCollegeName(studentInfo.getCollegeName());
+                loginVO.setMajorId(studentInfo.getMajorId());
+                loginVO.setMajor(studentInfo.getMajor());
+                loginVO.setGrade(studentInfo.getGrade());
+                loginVO.setClassName(studentInfo.getClassName());
+            }
+
+            return Result.success("获取成功", loginVO);
+        } catch (Exception e) {
+            log.error("获取用户信息失败：{}", e.getMessage(), e);
+            return Result.error(ResultCode.SYSTEM_ERROR, "获取用户信息失败：" + e.getMessage());
+        }
+    }
 
     @Override
     public Result<LoginVO> updateUserInfo(UpdateUserInfoReq updateReq) {
@@ -341,6 +398,9 @@ public class InfoServiceImpl implements InfoService {
             // 5. 更新密码（加密存储）
             currentUser.setPassword(passwordEncoder.encode(updatePasswordReq.getNewPassword()));
             sysUserMapper.updateById(currentUser);
+
+            // 6. 吊销该用户的所有旧 token
+            tokenRevocationService.revokeAllTokensForUser(currentUser.getId());
 
             log.info("用户密码修改成功：用户名={}", currentUsername);
             return Result.success("密码修改成功");

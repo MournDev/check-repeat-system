@@ -8,11 +8,15 @@ import com.abin.checkrepeatsystem.detection.dto.SimilarityDetectionResult;
 import com.abin.checkrepeatsystem.detection.dto.SimilaritySegment;
 import com.abin.checkrepeatsystem.monitor.service.ApplicationMonitorService;
 import com.abin.checkrepeatsystem.pojo.entity.CheckResult;
+import com.abin.checkrepeatsystem.pojo.entity.CheckRule;
 import com.abin.checkrepeatsystem.pojo.entity.CheckTask;
 import com.abin.checkrepeatsystem.pojo.entity.PaperInfo;
 import com.abin.checkrepeatsystem.admin.mapper.CheckResultMapper;
+import com.abin.checkrepeatsystem.admin.mapper.CompareLibMapper;
 import com.abin.checkrepeatsystem.student.mapper.CheckTaskMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +46,8 @@ public class EnhancedSimilarityDetectionService {
 
     private final CheckResultMapper checkResultMapper;
 
+    private final CompareLibMapper compareLibMapper;
+
     private final PaperContentExtractor contentExtractor;
 
     private final TextSimilarityUtils textSimilarityUtils;
@@ -58,12 +64,16 @@ public class EnhancedSimilarityDetectionService {
     @Value("${check.task.timeout:3600000}")
     private long taskTimeout;
 
+    @Value("${check.max-comparison-papers:500}")
+    private int maxComparisonPapers;
+
     // 用于并行处理的线程池 - 使用有界队列防止OOM
     private final ThreadPoolExecutor executorService;
 
     public EnhancedSimilarityDetectionService(PaperInfoMapper paperInfoMapper,
             CheckTaskMapper checkTaskMapper,
             CheckResultMapper checkResultMapper,
+            CompareLibMapper compareLibMapper,
             PaperContentExtractor contentExtractor,
             TextSimilarityUtils textSimilarityUtils,
             CheckProgressWebSocketService progressWebSocketService,
@@ -72,6 +82,7 @@ public class EnhancedSimilarityDetectionService {
         this.paperInfoMapper = paperInfoMapper;
         this.checkTaskMapper = checkTaskMapper;
         this.checkResultMapper = checkResultMapper;
+        this.compareLibMapper = compareLibMapper;
         this.contentExtractor = contentExtractor;
         this.textSimilarityUtils = textSimilarityUtils;
         this.progressWebSocketService = progressWebSocketService;
@@ -107,12 +118,27 @@ public class EnhancedSimilarityDetectionService {
      * @return 查重检测结果
      */
     public Result<SimilarityDetectionResult> detectPaperSimilarity(Long paperId, List<Long> targetPaperIds) {
+        return detectPaperSimilarity(paperId, targetPaperIds, null);
+    }
+
+    /**
+     * 执行完整的论文查重检测（带查重规则，支持 compareLib 过滤）
+     *
+     * @param paperId        待检测论文ID
+     * @param targetPaperIds 比对论文ID列表（null表示全库比对）
+     * @param checkRule      查重规则（可选，用于 compareLib 过滤）
+     * @return 查重检测结果
+     */
+    public Result<SimilarityDetectionResult> detectPaperSimilarity(Long paperId, List<Long> targetPaperIds, CheckRule checkRule) {
         String taskNo = generateTaskNo();
         log.info("开始论文查重检测: taskNo={}, paperId={}, targetCount={}",
                 taskNo, paperId, targetPaperIds != null ? targetPaperIds.size() : "全库");
 
         long startTime = System.currentTimeMillis();
         boolean success = false;
+
+        // 解析 compareLib 过滤条件
+        List<Long> compareLibIds = parseCompareLibIds(checkRule);
 
         // 事务1：创建查重任务记录
         CheckTask checkTask = createAndStartCheckTask(paperId, taskNo);
@@ -127,7 +153,7 @@ public class EnhancedSimilarityDetectionService {
             }
 
             // 事务外：执行查重检测（CPU密集型，不持有DB连接）
-            SimilarityDetectionResult result = performDetection(paperId, targetPaperIds, checkTask, userId);
+            SimilarityDetectionResult result = performDetection(paperId, targetPaperIds, checkTask, userId, compareLibIds);
 
             // 事务2：保存查重结果并更新状态
             saveCheckResultAndComplete(checkTask, result, paperId);
@@ -162,7 +188,7 @@ public class EnhancedSimilarityDetectionService {
                 log.warn("WebSocket推送失败（任务失败）: {}", wsEx.getMessage());
             }
 
-            return Result.error(ResultCode.SYSTEM_ERROR, "查重检测失败: " + e.getMessage());
+            return Result.error(ResultCode.SYSTEM_ERROR, "查重检测失败，请稍后重试");
         } finally {
             long duration = System.currentTimeMillis() - startTime;
             monitorService.recordCheckTaskTime(paperId, duration, success);
@@ -193,6 +219,13 @@ public class EnhancedSimilarityDetectionService {
      * 执行查重检测核心逻辑
      */
     private SimilarityDetectionResult performDetection(Long paperId, List<Long> targetPaperIds, CheckTask checkTask, Long userId) {
+        return performDetection(paperId, targetPaperIds, checkTask, userId, null);
+    }
+
+    /**
+     * 执行查重检测核心逻辑（支持 compareLib 过滤）
+     */
+    private SimilarityDetectionResult performDetection(Long paperId, List<Long> targetPaperIds, CheckTask checkTask, Long userId, List<Long> compareLibIds) {
         // 尝试从缓存获取查重结果
         String cacheKey = "check:result:" + paperId + ":" + (targetPaperIds != null ? String.join(",", targetPaperIds.stream().map(String::valueOf).collect(Collectors.toList())) : "all");
         try {
@@ -217,8 +250,8 @@ public class EnhancedSimilarityDetectionService {
             throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "待检测论文不存在");
         }
 
-        // 3. 获取比对论文列表
-        List<PaperInfo> comparisonPapers = getComparisonPapers(targetPaperIds, targetPaper.getCollegeId(), paperId);
+        // 3. 获取比对论文列表（支持 compareLib 过滤）
+        List<PaperInfo> comparisonPapers = getComparisonPapers(targetPaperIds, targetPaper.getCollegeId(), paperId, compareLibIds);
         if (comparisonPapers.isEmpty()) {
             log.warn("无可用的比对论文，返回空结果: paperId={}", paperId);
             SimilarityDetectionResult emptyResult = createEmptyResult(targetPaper);
@@ -336,6 +369,19 @@ public class EnhancedSimilarityDetectionService {
      * 获取比对论文列表
      */
     private List<PaperInfo> getComparisonPapers(List<Long> targetPaperIds, Long excludeCollegeId, Long excludePaperId) {
+        return getComparisonPapers(targetPaperIds, excludeCollegeId, excludePaperId, null);
+    }
+
+    /**
+     * 获取比对论文列表（支持 compareLib 过滤）
+     *
+     * @param targetPaperIds   指定比对论文ID列表（null表示全库比对）
+     * @param excludeCollegeId 排除的学院ID（未使用，保留兼容）
+     * @param excludePaperId   排除的论文ID（自身）
+     * @param compareLibIds    对比库ID列表（可选，为空则不过滤）
+     */
+    private List<PaperInfo> getComparisonPapers(List<Long> targetPaperIds, Long excludeCollegeId,
+                                                 Long excludePaperId, List<Long> compareLibIds) {
         List<PaperInfo> papers = new ArrayList<>();
 
         try {
@@ -351,16 +397,20 @@ public class EnhancedSimilarityDetectionService {
                     }
                 }
             } else {
-                // 全库比对（排除同学院和当前论文）
+                // 全库比对（排除当前论文）
                 LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
                 wrapper.eq(PaperInfo::getIsDeleted, 0)
                         .ne(PaperInfo::getId, excludePaperId)
-                        .isNotNull(PaperInfo::getFileId)
-                        .or()
-                        .isNotNull(PaperInfo::getFilePath);
+                        .and(w -> w.isNotNull(PaperInfo::getFileId).or().isNotNull(PaperInfo::getFilePath));
 
-                // 限制比对数量，避免性能问题
-                wrapper.last("LIMIT 100");
+                // 如果指定了对比库，只比对属于这些库的论文
+                if (compareLibIds != null && !compareLibIds.isEmpty()) {
+                    wrapper.in(PaperInfo::getLibId, compareLibIds);
+                    log.info("按对比库过滤比对论文: compareLibIds={}", compareLibIds);
+                }
+
+                // 使用可配置的上限，避免性能问题
+                wrapper.last("LIMIT " + maxComparisonPapers);
 
                 papers = paperInfoMapper.selectList(wrapper);
             }
@@ -369,6 +419,26 @@ public class EnhancedSimilarityDetectionService {
         }
 
         return papers;
+    }
+
+    /**
+     * 从查重规则中解析对比库ID列表
+     */
+    private List<Long> parseCompareLibIds(CheckRule checkRule) {
+        if (checkRule == null || checkRule.getCompareLib() == null || checkRule.getCompareLib().isBlank()) {
+            return null;
+        }
+        try {
+            JSONArray array = JSON.parseArray(checkRule.getCompareLib());
+            List<Long> ids = new ArrayList<>();
+            for (int i = 0; i < array.size(); i++) {
+                ids.add(array.getLong(i));
+            }
+            return ids.isEmpty() ? null : ids;
+        } catch (Exception e) {
+            log.warn("解析 compareLib JSON 失败: {}", checkRule.getCompareLib(), e);
+            return null;
+        }
     }
 
     /**

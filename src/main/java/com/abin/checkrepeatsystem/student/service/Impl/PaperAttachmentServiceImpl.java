@@ -1,5 +1,7 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
+import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
 import com.abin.checkrepeatsystem.mapper.PaperAttachmentMapper;
 import com.abin.checkrepeatsystem.pojo.entity.FileInfo;
@@ -33,13 +35,13 @@ public class PaperAttachmentServiceImpl {
 
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
         if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("论文不存在或无权限访问");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或无权限访问");
         }
 
         Long fileId = fileService.uploadFile(file, studentId);
         FileInfo fileInfo = fileInfoMapper.selectById(fileId);
         if (fileInfo == null) {
-            throw new RuntimeException("文件上传失败");
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "文件上传失败");
         }
 
         PaperAttachment attachment = new PaperAttachment();
@@ -57,7 +59,7 @@ public class PaperAttachmentServiceImpl {
 
         int result = paperAttachmentMapper.insert(attachment);
         if (result <= 0) {
-            throw new RuntimeException("附件记录创建失败");
+            throw new BusinessException(ResultCode.SYSTEM_DB_ERROR, "附件记录创建失败");
         }
 
         log.info("附件上传成功 - 附件ID: {}, 论文ID: {}", attachment.getId(), paperId);
@@ -69,7 +71,7 @@ public class PaperAttachmentServiceImpl {
 
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
         if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("论文不存在或无权限访问");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在或无权限访问");
         }
 
         List<PaperAttachment> attachments = paperAttachmentMapper.selectList(
@@ -92,11 +94,11 @@ public class PaperAttachmentServiceImpl {
 
         PaperAttachment attachment = paperAttachmentMapper.selectById(attachmentId);
         if (attachment == null || attachment.getIsDeleted() == 1) {
-            throw new RuntimeException("附件不存在");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "附件不存在");
         }
 
         if (!attachment.getStudentId().equals(studentId)) {
-            throw new RuntimeException("无权限删除此附件");
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限删除此附件");
         }
 
         int result = paperAttachmentMapper.deleteById(attachmentId);

@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -58,10 +59,22 @@ public class AuthController {
 
     /**
      * 令牌刷新接口（请求→Service→响应）
+     * 兼容两种方式：1. Body传{oldToken}  2. Authorization header传Bearer token（前端实际用法）
      */
     @PostMapping("/refresh-token")
-    public Result<RefreshTokenVO> refreshToken(@Valid @RequestBody RefreshTokenReq refreshTokenReq) {
-        log.info("接收令牌刷新请求：旧令牌={}", refreshTokenReq.getOldToken().substring(0, 20) + "..."); // 隐藏部分令牌，避免日志泄露
+    public Result<RefreshTokenVO> refreshToken(
+            @RequestBody(required = false) RefreshTokenReq refreshTokenReq,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        // 如果body为空或没有oldToken，从Authorization header提取
+        if (refreshTokenReq == null || refreshTokenReq.getOldToken() == null || refreshTokenReq.getOldToken().isBlank()) {
+            refreshTokenReq = new RefreshTokenReq();
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                refreshTokenReq.setOldToken(authorization.substring(7));
+            } else {
+                refreshTokenReq.setOldToken(authorization);
+            }
+        }
+        log.info("接收令牌刷新请求");
         return authService.refreshToken(refreshTokenReq);
     }
 

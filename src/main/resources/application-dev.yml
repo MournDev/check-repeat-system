@@ -1,255 +1,75 @@
-# 服务基础配置
+# ============================================================
+# 开发环境配置 — 仅覆盖与 application.yml 不同的项
+# 相同配置（mybatis-plus、check、ai、report、review 等）已在 application.yml 中定义，无需重复
+# ============================================================
+
 server:
-  address: 0.0.0.0
   port: 8080
-  servlet:
-    context-path: /check
-  tomcat:
-    threads:
-      max: 200
-      min-spare: 20
-# 预览服务
-kkfileview:
-  base-url: ${KKFILEVIEW_BASE_URL:http://localhost:8012}
-# 对象存储
+
+# 对象存储（开发环境使用局域网MinIO）
 minio:
   endpoint: ${MINIO_ENDPOINT:http://192.168.30.128:9000}
-  accessKey: ${MINIO_ACCESSKEY:}   # 必须通过环境变量设置
-  secretKey: ${MINIO_SECRETKEY:}   # 必须通过环境变量设置
-  bucket:
-    main: check-repeat-system
-    avatar: avatar
-    report: report-bucket
-    paper_content: paper-content
+
 spring:
-  flyway:
-    validate-on-migrate: true    # 校验迁移脚本与数据库结构一致性，防止漂移
-  application:
-    name: check-repeat-system
-  # 数据源配置
+  # 数据源（开发环境直连本地MySQL）
   datasource:
     url: jdbc:mysql://localhost:3306/check-repeat-system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
     username: root
-    password: ${MYSQL_PASSWORD:}   # 必须通过环境变量设置
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    password: ${MYSQL_PASSWORD:}
     hikari:
-      maximum-pool-size: 15 # 连接池最大连接数（dev环境适当调大）
-      minimum-idle: 3 # 连接池最小空闲连接数
-      idle-timeout: 300000 # 连接空闲超时时间（5分钟）
-      connection-timeout: 30000 # 连接获取超时时间（30秒）
-      max-lifetime: 1800000 # 连接最大生存时间（30分钟）
-      validation-timeout: 5000 # 连接验证超时时间（5秒）
-      leak-detection-threshold: 60000 # 连接泄漏检测阈值（60秒）
-      connection-test-query: SELECT 1 # 连接测试查询
-      # 文件上传配置
-  servlet:
-    multipart:
-      max-file-size: 50MB # 单个文件最大大小
-      max-request-size: 200MB # 单次请求最大文件大小
+      maximum-pool-size: 15
+      minimum-idle: 3
 
-    # 缓存配置（Redis，后续高优先级集成）
+  # Redis（开发环境直连本地）
   data:
     redis:
       host: localhost
       port: 6379
-      password: ${REDIS_PASSWORD:}   # 必须通过环境变量设置
-      database: 0
-      timeout: 2000ms
+      password: ${REDIS_PASSWORD:}
       lettuce:
         pool:
           max-active: 8
           max-idle: 8
           min-idle: 2
-  # 自定义配置：JWT（开发环境使用内置密钥，生产环境必须通过环境变量覆盖）
+
+  # JWT（必须通过环境变量设置）
   jwt:
-    secret-key: ${JWT_SECRET_KEY:DevOnly-CheckRepeatSystem-JWT-Secret-Key-2024-ForLocalDevelopment}
-    expiration: 86400000 # 令牌有效期（24小时，单位：毫秒）
-    token-header: Authorization # 请求头名
-  # 1. 邮件发送核心配置（QQ邮箱专属）
-  mail:
-    host: smtp.qq.com  # QQ邮箱SMTP服务器地址（固定值，不可修改）
-    port: 465  # QQ邮箱SMTP SSL加密端口（固定465，非加密端口25易被屏蔽，优先用465）
-    username: ${MAIL_USERNAME:}  # 系统发送邮箱账号，通过环境变量MAIL_USERNAME设置
-    password: ${MAIL_PASSWORD:}  # QQ邮箱SMTP授权码，通过环境变量MAIL_PASSWORD设置
-    protocol: smtp  # 邮件传输协议（固定smtp）
-    default-encoding: UTF-8  # 编码格式（防止邮件内容乱码）
-    # 2. SMTP额外属性（QQ邮箱需开启SSL）
-    properties:
-      mail:
-        smtp:
-          auth: true  # 开启SMTP认证（必须为true，否则无法登录QQ邮箱服务器）
-          ssl:
-            enable: true  # 开启SSL加密（对应465端口，必须开启）
-            required: true  # 强制要求SSL连接（防止非加密传输）
-          starttls:
-            enable: false  # QQ邮箱不支持starttls，设为false（避免冲突）
-        debug: false  # 关闭调试模式（调试时可设为true查看SMTP发送日志）
+    secret-key: ${JWT_SECRET_KEY}
 
-  # 3. 通知内容模板（保持原有逻辑，无需修改）
-  notice:
-    email:
-      subject-prefix: "[论文查重管理系统] "  # 邮件主题前缀（如“[论文查重系统] 论文提交成功通知”）
-      content-header: "尊敬的用户：<br><br>您有一条新的系统通知，请查收：<br><br>"  # 邮件内容头部（HTML格式）
-      content-footer: "<br><br>此邮件为系统自动发送，请勿回复。如需帮助，请联系管理员。<br>论文查重系统团队"  # 邮件尾部
-# 自定义配置：查重算法
-check:
-  task:
-    max-concurrent: 10 # 最大并发查重任务数（避免服务器资源耗尽）
-    timeout: 3600000   # 任务超时时间（1小时，单位：毫秒）
-    temp-file-path: /data/check-temp/ # 查重临时文件存储路径
-  simhash:
-    hash-bits: 64 # SimHash哈希位数
-    k: 3 # 海明距离阈值（小于等于3判定为相似）
-    hamming-threshold: 3 # 海明距离阈值（与k相同，用于相似性判断）
-  text:
-    segment:
-      type: ik # 分词类型（ik-IK Analyzer）
-      dic-path: classpath:dic/ # 自定义词典路径
-  # 本地查重引擎配置
-  local:
-    enabled: true # 是否启用本地查重引擎
-    cache-enabled: true # 是否启用结果缓存
-    cache-expire-hours: 24 # 缓存过期时间（小时）
-  # 第三方查重引擎配置
-  third-party:
-    enabled: false # 是否启用第三方查重
-    api-url: https://api.thirdparty.com/check # 第三方API地址
-    api-key: ${THIRD_PARTY_API_KEY:} # API密钥，通过环境变量设置
-    timeout: 30000 # API调用超时时间（毫秒）
-  # 深度学习引擎配置
-  deep-learning:
-    enabled: false # 是否启用深度学习引擎
-    model-path: /models/bert-similarity # 模型文件路径
-    gpu-enabled: false # 是否使用GPU加速
-
-# AI 配置（DeepSeek）
-ai:
-  deepseek:
-    enabled: true
-    api-key: ${DEEPSEEK_API_KEY:}
-    base-url: https://api.deepseek.com
-    model: deepseek-chat
-    timeout: 30s
-    max-tokens: 2048
-    temperature: 0.3
-
-# MyBatis-Plus配置
-mybatis-plus:
-    mapper-locations: classpath*:mapper/**/*.xml # Mapper.xml文件路径
-    type-aliases-package: com.abin.checkrepeatsystem.pojo.entity
-    configuration:
-      map-underscore-to-camel-case: true # 下划线转驼峰
-      log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl # 使用Slf4j记录SQL（避免StdOut误用于生产）
-    global-config:
-      db-config:
-        id-type: ASSIGN_ID # 雪花ID主键策略
-        logic-delete-field: isDeleted # 软删除字段名
-        logic-delete-value: 1 # 软删除值（1-已删除）
-        logic-not-delete-value: 0 # 未删除值（0-未删除）
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
-      probes:
-        enabled: true
-    metrics:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    enable:
-      jvm: true
-      system: true
-      process: true
-      logback: true
-
-# 报告模块配置
-report:
-  pdf:
-    font-path: fonts/SimHei.ttf # 中文字体路径（需在resources/fonts下放置SimHei.ttf）
-    page-size: A4 # PDF页面大小（A4/A3/Letter）
-    margin: 50    # 页面边距（单位：pt）
-  preview:
-    max-paragraph-length: 500 # 在线预览时单段最大长度（避免页面过长）
-  storage:
-    enabled: true
-    base-path: ${REPORT_STORAGE_PATH:./data/report} # 报告文件存储根路径
-    expire-days: 365 # 报告文件过期时间（365天，过期可清理）
-  # 增强版报告配置
-  enhanced:
-    enabled: true # 是否启用增强版报告
-    include-charts: true # 是否包含图表
-    include-recommendations: true # 是否包含改进建议
-    template-type: professional # 报告模板类型（professional/business/simple）
-# 教师审核模块配置
-review:
-  attach:
-    base-path: /data/review-attach/ # 审核附件存储路径
-    max-size: 50MB # 附件最大大小
-    allowed-types: doc,docx,pdf,jpg,png # 允许的附件格式
-  batch:
-    max-count: 20 # 批量审核最大数量（避免单次操作过多）
-  notify:
-    enabled: true # 是否开启审核结果通知（后续扩展消息推送时使用）
-# 管理员规则配置模块默认值
+# 管理员规则配置（开发环境放宽查重间隔）
 admin:
   check-rule:
-    default-threshold: 20.00 # 默认重复率阈值（%）
-    default-interval: 86400 # 默认二次查重间隔（秒）
-    default-max-count: 5 # 默认最大查重次数
-  compare-lib:
-    default-enabled: 1 # 新建比对库默认启用
-  system-param:
-    max-paper-size: 209715200 # 默认论文最大大小（200MB=200*1024*1024）
-    max-concurrent-check: 10 # 默认最大并发查重数
-  jwt-expiration: 86400000 # 默认JWT有效期（毫秒）
-# 头像存储配置
-avatar:
+    default-interval: 86400
+
+# 报告存储路径（开发环境使用相对路径）
+report:
   storage:
-    base-path: ${AVATAR_STORAGE_PATH:./data/avatar-storage} # 头像文件存储根路径
-    max-size: 5MB # 头像文件最大大小
-    allowed-types: jpg,jpeg,png # 允许的头像格式
-  access:
-    url-prefix: /api/avatar/ # 头像访问URL前缀
+    base-path: ${REPORT_STORAGE_PATH:./data/report}
 
-# 文件上传配置
-file:
-  upload:
-    storage-type: MINIO # 存储类型：MINIO
-    base-path: ${UPLOAD_BASE_PATH:./upload/} # 本地存储根路径
-    max-size-mb: 50 # 最大文件大小（MB）
-
-# 论文查重服务配置
-paper-check:
-  threshold: 20.0 # 查重通过阈值（重复率≤20%为通过）
-  min-hash-distance: 3 # SimHash汉明距离阈值（≤3视为相似）
-  parse-timeout: 30000 # 文本解析超时时间（30秒）
-  report-storage-path: ${CHECK_REPORT_PATH:./check-report/} # 查重报告存储路径
-  compare-library:
-    campus-paper-lib: true # 是否启用校内论文库比对
-    network-resource: false # 是否启用网络资源比对（默认关闭，避免版权问题）
-# 系统初始化配置（首次启动时自动创建角色和超级管理员）
-app:
-  init:
-    super-admin:
-      username: ${SUPER_ADMIN_USERNAME:superadmin}
-      password: ${SUPER_ADMIN_PASSWORD:}   # 必须通过环境变量设置
-      real-name: ${SUPER_ADMIN_REAL_NAME:超级管理员}
-      email: ${SUPER_ADMIN_EMAIL:admin@system.local}
-
-advisor-assign:
-  max-task-count: 10
-  retry-count: 3
+# 审核附件存储路径（开发环境使用相对路径）
+review:
+  attach:
+    base-path: /data/review-attach/
 
 # WebSocket 允许的来源（开发环境）
 websocket:
   allowed-origins: http://localhost:3000,http://localhost:5173
 
-# 兼容性配置（用于旧代码）
-upload:
-  base-path: ${UPLOAD_BASE_PATH:./upload/}
+# 文件上传路径（开发环境使用相对路径）
+file:
+  upload:
+    base-path: ${UPLOAD_BASE_PATH:./upload/}
+
+# 查重临时文件路径（开发环境）
+check:
+  task:
+    temp-file-path: /data/check-temp/
+
+# 头像存储路径（开发环境使用相对路径）
+avatar:
+  storage:
+    base-path: ${AVATAR_STORAGE_PATH:./data/avatar-storage}
+
+# 论文查重报告路径（开发环境使用相对路径）
+paper-check:
+  report-storage-path: ${CHECK_REPORT_PATH:./check-report/}

@@ -22,6 +22,7 @@ public enum ResultCode {
     PARAM_ERROR(40005, HttpStatus.BAD_REQUEST, "参数错误"),
 
     NOT_LOGIN(401, HttpStatus.UNAUTHORIZED, "未登录"),
+    ACCOUNT_LOCKED(42301, HttpStatus.LOCKED, "账户已锁定，请稍后再试"),
 
     // ====================== 2. 资源相关错误（HTTP 404） ======================
     RESOURCE_NOT_FOUND(40401, HttpStatus.NOT_FOUND, "资源不存在"),

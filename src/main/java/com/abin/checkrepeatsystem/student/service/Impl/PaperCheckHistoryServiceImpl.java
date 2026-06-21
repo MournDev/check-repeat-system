@@ -24,7 +24,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
 
 @RequiredArgsConstructor
 @Service
@@ -128,10 +127,43 @@ public class PaperCheckHistoryServiceImpl {
         paperInfoDTO.setLowestSimilarity(lowestSimilarity);
         paperInfoDTO.setVersionCount(checkTasks.size());
 
+        // 计算统计数据
+        CheckHistoryResponseDTO.StatisticsDTO statisticsDTO = new CheckHistoryResponseDTO.StatisticsDTO();
+        if (!checkTasks.isEmpty()) {
+            BigDecimal earliestSim = checkTasks.get(checkTasks.size() - 1).getCheckRate();
+            BigDecimal latestSim = checkTasks.get(0).getCheckRate();
+            if (earliestSim != null && latestSim != null && earliestSim.compareTo(BigDecimal.ZERO) > 0) {
+                int rate = earliestSim.subtract(latestSim)
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(earliestSim, 0, RoundingMode.HALF_UP)
+                    .intValue();
+                statisticsDTO.setImprovementRate(rate);
+            } else {
+                statisticsDTO.setImprovementRate(0);
+            }
+            BigDecimal sum = BigDecimal.ZERO;
+            int count = 0;
+            for (CheckTask t : checkTasks) {
+                if (t.getCheckRate() != null) {
+                    sum = sum.add(t.getCheckRate());
+                    count++;
+                }
+            }
+            statisticsDTO.setAverageSimilarity(count > 0 ?
+                sum.divide(BigDecimal.valueOf(count), 1, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+            statisticsDTO.setImprovementSpeed(checkTasks.size() > 1 ?
+                (checkTasks.size() - 1) + "个版本" : "首个版本");
+        } else {
+            statisticsDTO.setImprovementRate(0);
+            statisticsDTO.setAverageSimilarity(BigDecimal.ZERO);
+            statisticsDTO.setImprovementSpeed("暂无数据");
+        }
+
         CheckHistoryResponseDTO response = new CheckHistoryResponseDTO();
         response.setHistory(history);
         response.setTrendAnalysis(trendAnalysis);
         response.setPaperInfo(paperInfoDTO);
+        response.setStatistics(statisticsDTO);
 
         log.info("查重历史记录获取成功 - 论文ID: {}, 记录数: {}", paperId, history.size());
         return response;
@@ -359,46 +391,91 @@ public class PaperCheckHistoryServiceImpl {
             CheckTask fromTask, CheckTask toTask) {
 
         List<VersionCompareResponseDTO.SectionComparisonDTO> comparisons = new ArrayList<>();
-        String[] sections = {"引言", "文献综述", "研究方法", "实验结果", "结论"};
-        Random random = ThreadLocalRandom.current();
 
-        BigDecimal overallChange = fromTask.getCheckRate().subtract(toTask.getCheckRate());
+        // 尝试从报告中提取章节数据
+        Map<String, BigDecimal> fromSections = extractSectionSimilarities(fromTask);
+        Map<String, BigDecimal> toSections = extractSectionSimilarities(toTask);
 
-        for (String section : sections) {
-            VersionCompareResponseDTO.SectionComparisonDTO sectionDTO =
+        if (!fromSections.isEmpty() || !toSections.isEmpty()) {
+            Set<String> allSections = new LinkedHashSet<>();
+            allSections.addAll(fromSections.keySet());
+            allSections.addAll(toSections.keySet());
+
+            for (String section : allSections) {
+                VersionCompareResponseDTO.SectionComparisonDTO dto =
+                    new VersionCompareResponseDTO.SectionComparisonDTO();
+                BigDecimal fromRate = fromSections.getOrDefault(section, BigDecimal.ZERO);
+                BigDecimal toRate = toSections.getOrDefault(section, BigDecimal.ZERO);
+                dto.setName(section);
+                dto.setFrom(fromRate);
+                dto.setTo(toRate);
+                dto.setChange(fromRate.subtract(toRate));
+                comparisons.add(dto);
+            }
+        } else {
+            // 无章节数据时，仅展示总体对比
+            VersionCompareResponseDTO.SectionComparisonDTO dto =
                 new VersionCompareResponseDTO.SectionComparisonDTO();
-            sectionDTO.setName(section);
-
-            BigDecimal fromRate = BigDecimal.valueOf(
-                fromTask.getCheckRate().doubleValue() * (0.8 + random.nextDouble() * 0.4)
-            ).setScale(1, RoundingMode.HALF_UP);
-
-            BigDecimal toRate = fromRate.subtract(
-                overallChange.multiply(BigDecimal.valueOf(0.5 + random.nextDouble() * 1.0))
-            ).setScale(1, RoundingMode.HALF_UP);
-
-            sectionDTO.setFrom(fromRate);
-            sectionDTO.setTo(toRate);
-            sectionDTO.setChange(fromRate.subtract(toRate));
-
-            comparisons.add(sectionDTO);
+            dto.setName("总体相似度");
+            dto.setFrom(fromTask.getCheckRate() != null ? fromTask.getCheckRate() : BigDecimal.ZERO);
+            dto.setTo(toTask.getCheckRate() != null ? toTask.getCheckRate() : BigDecimal.ZERO);
+            BigDecimal from = dto.getFrom();
+            BigDecimal to = dto.getTo();
+            dto.setChange(from.subtract(to));
+            comparisons.add(dto);
         }
 
         return comparisons;
     }
 
+    private Map<String, BigDecimal> extractSectionSimilarities(CheckTask task) {
+        Map<String, BigDecimal> sections = new LinkedHashMap<>();
+        if (task.getReportId() == null) return sections;
+
+        CheckReport report = checkReportMapper.selectById(task.getReportId());
+        if (report == null || !StringUtils.hasText(report.getRepeatDetails())) return sections;
+
+        try {
+            List<Map<String, Object>> details = JSON.parseObject(
+                report.getRepeatDetails(),
+                new TypeReference<List<Map<String, Object>>>() {}
+            );
+            if (details == null) return sections;
+
+            for (Map<String, Object> detail : details) {
+                String name = null;
+                if (detail.containsKey("section")) name = detail.get("section").toString();
+                else if (detail.containsKey("chapter")) name = detail.get("chapter").toString();
+                else if (detail.containsKey("source")) name = detail.get("source").toString();
+
+                if (name != null && detail.containsKey("similarity")) {
+                    Object simValue = detail.get("similarity");
+                    BigDecimal sim = null;
+                    if (simValue instanceof Number) {
+                        sim = new BigDecimal(simValue.toString());
+                    } else if (simValue instanceof String) {
+                        try { sim = new BigDecimal((String) simValue); } catch (NumberFormatException ignored) {}
+                    }
+                    if (sim != null) sections.put(name, sim);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("解析章节相似度数据失败: {}", e.getMessage());
+        }
+
+        return sections;
+    }
+
     private String generateChangesDescription(int versionIndex, BigDecimal similarity) {
         if (versionIndex == 0) return "初次提交查重";
 
-        String[] changes = {
-            "优化引用格式，调整段落结构",
-            "完善参考文献，修正语法错误",
-            "重新组织论证逻辑，增强论述严谨性",
-            "细化实验数据分析，补充图表说明",
-            "强化理论支撑，增加文献引用"
-        };
+        if (similarity == null) return "第" + (versionIndex + 1) + "次查重";
 
-        return changes[Math.min(versionIndex - 1, changes.length - 1)];
+        double rate = similarity.doubleValue();
+        if (rate < 15) return "查重率" + String.format("%.1f", rate) + "%，原创性优秀";
+        if (rate < 30) return "查重率" + String.format("%.1f", rate) + "%，需小幅修改";
+        if (rate < 50) return "查重率" + String.format("%.1f", rate) + "%，需重点修改重复段落";
+        return "查重率" + String.format("%.1f", rate) + "%，需大幅重写高重复内容";
     }
 
     private Map<String, CheckHistoryDTO.SectionChangeDTO> extractSectionChangesFromReport(CheckTask task) {
@@ -473,34 +550,14 @@ public class PaperCheckHistoryServiceImpl {
     private Map<String, CheckHistoryDTO.SectionChangeDTO> buildDefaultSectionChanges(CheckTask task) {
         Map<String, CheckHistoryDTO.SectionChangeDTO> sectionChanges = new HashMap<>();
 
-        String[][] sections = {
-            {"introduction", "引言"},
-            {"literature_review", "文献综述"},
-            {"methodology", "研究方法"},
-            {"results", "实验结果"},
-            {"discussion", "讨论"},
-            {"conclusion", "结论"}
-        };
+        BigDecimal overallSimilarity = task.getCheckRate() != null ? task.getCheckRate() : BigDecimal.ZERO;
 
-        BigDecimal overallSimilarity = task.getCheckRate();
-        Random random = ThreadLocalRandom.current();
-
-        for (String[] section : sections) {
-            String key = section[0];
-
-            CheckHistoryDTO.SectionChangeDTO sectionChange = new CheckHistoryDTO.SectionChangeDTO();
-
-            double fluctuation = 0.7 + random.nextDouble() * 0.6;
-            BigDecimal sectionSimilarity = overallSimilarity.multiply(
-                new BigDecimal(String.valueOf(fluctuation))
-            ).setScale(1, RoundingMode.HALF_UP);
-
-            sectionChange.setFrom(sectionSimilarity);
-            sectionChange.setTo(sectionSimilarity);
-            sectionChange.setChange(BigDecimal.ZERO);
-
-            sectionChanges.put(key, sectionChange);
-        }
+        // 无章节详情时，仅展示总体相似度
+        CheckHistoryDTO.SectionChangeDTO sectionChange = new CheckHistoryDTO.SectionChangeDTO();
+        sectionChange.setFrom(overallSimilarity);
+        sectionChange.setTo(overallSimilarity);
+        sectionChange.setChange(BigDecimal.ZERO);
+        sectionChanges.put("总体相似度", sectionChange);
 
         return sectionChanges;
     }

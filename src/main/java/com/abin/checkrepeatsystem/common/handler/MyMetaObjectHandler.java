@@ -56,6 +56,17 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
             strictUpdateFill(metaObject, "updateBy", Long.class, currentUserId);
             // 填充更新时间
             strictUpdateFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
+
+            // 检测软删除操作（isDeleted被设置为1），自动填充删除审计字段
+            try {
+                Integer isDeleted = (Integer) metaObject.getValue("isDeleted");
+                if (Integer.valueOf(1).equals(isDeleted)) {
+                    strictUpdateFill(metaObject, "deleteBy", Long.class, currentUserId);
+                    strictUpdateFill(metaObject, "deleteTime", LocalDateTime.class, LocalDateTime.now());
+                }
+            } catch (Exception ignored) {
+                // isDeleted字段不存在或未设置，忽略
+            }
         }
     }
 }

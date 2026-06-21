@@ -74,6 +74,7 @@ public class StudentPaperController {
      * @return 论文提交结果
      */
     @PostMapping("/submit")
+    @PreAuthorize("hasAuthority('STUDENT')")
     @OperationLog(type = "student_paper_submit", description = "学生提交论文", recordResult = true)
     public Result<PaperInfo> submitPaper(@RequestBody @Valid PaperSubmitRequest request) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
@@ -225,6 +226,7 @@ public class StudentPaperController {
      * @return 删除结果
      */
     @PostMapping("/delete")
+    @PreAuthorize("hasAuthority('STUDENT')")
     public Result<String> deletePaper(@RequestParam Long paperId) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
         log.info("删除论文请求 - 学生ID: {}, 论文ID: {}", studentId, paperId);
@@ -271,6 +273,7 @@ public class StudentPaperController {
      * @return 更新结果
      */
     @PutMapping("/{paperId}/update")
+    @PreAuthorize("hasAuthority('STUDENT')")
     @OperationLog(type = "student_paper_update", description = "学生更新论文信息", recordResult = true)
     public Result<PaperInfo> updatePaper(@PathVariable Long paperId, @RequestBody @Valid PaperSubmitRequest request) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
@@ -342,6 +345,7 @@ public class StudentPaperController {
      * @return 撤回结果
      */
     @PostMapping("/{paperId}/withdraw")
+    @PreAuthorize("hasAuthority('STUDENT')")
     @OperationLog(type = "student_paper_withdraw", description = "学生撤回论文", recordResult = true)
     public Result<String> withdrawPaper(
         @PathVariable Long paperId, 
@@ -364,6 +368,7 @@ public class StudentPaperController {
      * 撤回后重新提交论文接口
      */
     @PostMapping("/{paperId}/resubmit-after-withdraw")
+    @PreAuthorize("hasAuthority('STUDENT')")
     @OperationLog(type = "student_paper_resubmit", description = "撤回后重新提交", recordResult = true)
     public Result<PaperInfo> resubmitAfterWithdraw(
         @PathVariable Long paperId,
@@ -401,6 +406,7 @@ public class StudentPaperController {
      * @return 申请结果
      */
     @PostMapping("/{paperId}/modify-request")
+    @PreAuthorize("hasAuthority('STUDENT')")
     @OperationLog(type = "student_paper_modify_request", description = "学生申请修改论文", recordResult = true)
     public Result<String> requestModification(@PathVariable Long paperId, @RequestBody @Valid PaperModifyRequest request) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
@@ -413,7 +419,36 @@ public class StudentPaperController {
             return Result.error(ResultCode.BUSINESS_NO_SAFE, "申请提交失败");
         }
     }
-    
+
+    /**
+     * 修改后重新提交论文接口（仅 REVISION_NEDDED 状态可调用）
+     */
+    @PostMapping("/{paperId}/resubmit-after-revision")
+    @PreAuthorize("hasAuthority('STUDENT')")
+    @OperationLog(type = "student_paper_revision_resubmit", description = "修改后重新提交论文", recordResult = true)
+    public Result<PaperInfo> resubmitAfterRevision(
+        @PathVariable Long paperId,
+        @RequestBody @Valid PaperReSubmitAfterWithdrawRequest request
+    ) {
+        Long studentId = UserBusinessInfoUtils.getCurrentUserId();
+        log.info("修改后重新提交请求 - 学生 ID: {}, 论文 ID: {}", studentId, paperId);
+
+        // 验证论文存在
+        PaperInfo paper = paperInfoService.getById(paperId);
+        if (paper == null) {
+            return Result.error(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
+        }
+
+        // 验证论文归属
+        if (!paper.getStudentId().equals(studentId)) {
+            return Result.error(ResultCode.RESOURCE_NO_PERMISSION, "无权操作他人论文");
+        }
+
+        // 调用服务层重新提交
+        PaperInfo updatedPaper = paperInfoService.resubmitAfterRevision(paperId, request, studentId);
+        return Result.success("重新提交成功", updatedPaper);
+    }
+
     /**
      * 6. 批量下载论文接口
      * 批量下载多篇论文（打包成ZIP）
@@ -443,6 +478,7 @@ public class StudentPaperController {
      * @return 删除结果
      */
     @DeleteMapping("/batch-delete")
+    @PreAuthorize("hasAuthority('STUDENT')")
     @OperationLog(type = "student_paper_batch_delete", description = "学生批量删除论文", recordResult = true)
     public Result<Map<String, Object>> batchDeletePapers(@RequestBody BatchOperationRequest request) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();

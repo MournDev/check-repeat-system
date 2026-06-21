@@ -8,6 +8,7 @@ import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.engine.CheckEngineManager;
+import com.abin.checkrepeatsystem.common.service.PaperStatusTransitionService;
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
 import com.abin.checkrepeatsystem.common.enums.CheckTaskStatusEnum;
 import com.abin.checkrepeatsystem.common.enums.PaperStatusEnum;
@@ -124,6 +125,8 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
 
     private final ObjectProvider<com.abin.checkrepeatsystem.student.controller.CheckStatusWebSocketController> checkStatusWebSocketControllerProvider;
 
+    private final PaperStatusTransitionService paperStatusTransitionService;
+
     /**
      * 初始化上传路径，确保在Windows环境下使用正确的路径
      */
@@ -194,11 +197,9 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         UserBusinessInfoUtils.setAuditField(checkTask, true);
         save(checkTask);
 
-        // 2. 同步论文状态为"查重中"
-        PaperInfo updatePaper = new PaperInfo();
-        updatePaper.setId(paperId);
-        updatePaper.setPaperStatus(DictConstants.PaperStatus.CHECKING);
-        paperInfoMapper.updateById(updatePaper);
+        // 2. 同步论文状态为"查重中"（通过状态机服务）
+        paperStatusTransitionService.transitionSilently(
+                paperId, PaperStatusEnum.CHECKING, UserBusinessInfoUtils.getCurrentUserId(), "发起查重任务");
 
         // 2. 存储当前用户信息到ThreadLocal，供异步线程使用
         SysUser currentUser = UserBusinessInfoUtils.getCurrentSysUser();
@@ -364,11 +365,10 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
         UserBusinessInfoUtils.setAuditField(checkTask, false);
         updateById(checkTask);
 
-       // 5. 恢复论文状态为"已分配"（论文已通过导师分配阶段，取消查重后回到待查重的已分配状态）
-        PaperInfo updatePaper = new PaperInfo();
-        updatePaper.setId(paperInfo.getId());
-        updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED); // 已分配，等待重新发起查重
-        paperInfoMapper.updateById(updatePaper);
+       // 5. 恢复论文状态为"已分配"（通过状态机服务）
+        paperStatusTransitionService.transitionSilently(
+                paperInfo.getId(), PaperStatusEnum.ASSIGNED,
+                currentUser.getId(), "用户取消查重任务");
        
         return Result.success("查重任务取消成功");
     }
@@ -645,11 +645,7 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                 UserBusinessInfoUtils.setAuditField(dbCheckResult, true);
                 checkResultMapper.insert(dbCheckResult);
         
-                // 10. 记录论文状态变更日志
-                recordPaperStatusLog(paperInfo.getId(), 
-                    DictConstants.PaperStatus.CHECKING, 
-                    getFinalPaperStatus(maxSimilarity), 
-                    "查重完成，根据重复率自动更新状态");
+                // 10. 状态变更日志已由 PaperStatusTransitionService 自动处理
             
                 log.info("查重任务执行成功 - 任务 ID: {}, 相似度：{}%", taskId, maxSimilarity);
                 success = true;
@@ -670,18 +666,16 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
                     // 推送状态更新
                     checkStatusWebSocketControllerProvider.getObject().onTaskStatusChange(paperId);
                 
-                    // 【关键改进 4】失败时回滚论文状态
+                    // 【关键改进 4】失败时回滚论文状态（通过状态机服务）
+                    paperStatusTransitionService.transitionSilently(
+                            paperInfo.getId(), PaperStatusEnum.ASSIGNED,
+                            paperInfo.getStudentId(), "查重任务执行失败，恢复至已分配状态");
                     PaperInfo updatePaper = new PaperInfo();
                     updatePaper.setId(paperInfo.getId());
-                    updatePaper.setPaperStatus(DictConstants.PaperStatus.ASSIGNED);
                     updatePaper.setCheckTime(null);
                     paperInfoMapper.updateById(updatePaper);
-            
-                    // 记录论文状态变更日志
-                    recordPaperStatusLog(paperInfo.getId(), 
-                        DictConstants.PaperStatus.CHECKING, 
-                        DictConstants.PaperStatus.ASSIGNED, 
-                        "查重任务执行失败，恢复至已分配状态");
+
+                    // 状态变更日志已由 PaperStatusTransitionService 自动处理
                             
                     log.warn("查重任务失败，已恢复论文状态 - 任务 ID: {}, 论文 ID: {}", taskId, paperId);
                     monitorService.recordCheckTaskTime(paperId, System.currentTimeMillis() - startMs, false);
@@ -733,12 +727,17 @@ public class CheckTaskServiceImpl extends ServiceImpl<CheckTaskMapper, CheckTask
             return;
         }
 
+        // 通过状态机更新论文状态
+        PaperStatusEnum targetStatus = qualified ? PaperStatusEnum.AUDITING : PaperStatusEnum.REJECTED;
+        String reason = qualified ?
+                "查重完成，相似度" + similarity + "%，低于阈值" + defaultThreshold + "%，进入待审核" :
+                "查重完成，相似度" + similarity + "%，超过阈值" + defaultThreshold + "%，审核不通过";
+        paperStatusTransitionService.transitionSilently(
+                paperInfo.getId(), targetStatus, paperInfo.getStudentId(), reason);
+
+        // 补充查重结果相关字段（非状态字段直接更新）
         PaperInfo updatePaper = new PaperInfo();
         updatePaper.setId(paperInfo.getId());
-        updatePaper.setPaperStatus(qualified
-                ? DictConstants.PaperStatus.AUDITING
-                : DictConstants.PaperStatus.REJECTED);
-        // 补充查重结果相关字段
         updatePaper.setSimilarityRate(BigDecimal.valueOf(similarity));
         updatePaper.setCheckCompleted(1);
         updatePaper.setCheckSource("LOCAL");

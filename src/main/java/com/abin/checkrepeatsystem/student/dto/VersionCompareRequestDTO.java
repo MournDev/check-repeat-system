@@ -1,7 +1,6 @@
 package com.abin.checkrepeatsystem.student.dto;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import jakarta.validation.constraints.NotNull;
@@ -10,14 +9,14 @@ import jakarta.validation.constraints.NotNull;
  * 版本对比请求DTO
  */
 @Data
-@ApiModel(description = "版本对比请求DTO")
+@Schema(description = "版本对比请求DTO")
 public class VersionCompareRequestDTO {
     
-    @ApiModelProperty(value = "起始版本")
+    @Schema(description = "起始版本")
     @NotNull(message = "起始版本不能为空")
     private Integer fromVersion;
     
-    @ApiModelProperty(value = "目标版本")
+    @Schema(description = "目标版本")
     @NotNull(message = "目标版本不能为空")
     private Integer toVersion;
 }

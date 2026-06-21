@@ -16,7 +16,7 @@ import java.util.Map;
 @Tag(name = "数据库备份管理", description = "手动触发备份、查看备份历史和状态")
 @RestController
 @RequestMapping("/api/v1/admin/backup")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAuthority('SUPER_ADMIN')")
 @RequiredArgsConstructor
 @Slf4j
 public class BackupController {

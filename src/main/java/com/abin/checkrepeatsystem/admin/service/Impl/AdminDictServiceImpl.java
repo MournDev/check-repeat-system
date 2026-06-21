@@ -11,6 +11,7 @@ import com.abin.checkrepeatsystem.user.service.SysUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -31,6 +32,7 @@ public class AdminDictServiceImpl implements AdminDictService {
     private final MajorMapper majorMapper;
 
     @Override
+    @Cacheable(cacheNames = "adminMajors", sync = true)
     public Result<List<Map<String, Object>>> getMajors() {
         // 从 major 表查询所有专业信息
         LambdaQueryWrapper<Major> wrapper = new LambdaQueryWrapper<>();
@@ -55,6 +57,7 @@ public class AdminDictServiceImpl implements AdminDictService {
     }
 
     @Override
+    @Cacheable(cacheNames = "adminGrades", sync = true)
     public Result<List<Map<String, Object>>> getGrades() {
         // 从用户表中提取所有年级信息
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
@@ -86,6 +89,7 @@ public class AdminDictServiceImpl implements AdminDictService {
     }
 
     @Override
+    @Cacheable(cacheNames = "adminColleges", sync = true)
     public Result<List<Map<String, Object>>> getColleges() {
         // 从 college 表查询所有学院信息
         LambdaQueryWrapper<College> wrapper = new LambdaQueryWrapper<>();
@@ -109,6 +113,7 @@ public class AdminDictServiceImpl implements AdminDictService {
     }
     
     @Override
+    @Cacheable(cacheNames = "adminMajorMap", sync = true)
     public Result<Map<String, String>> getMajorNameMap() {
         try {
             // 从 major 表查询专业ID和名称的映射关系

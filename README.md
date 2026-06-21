@@ -9,17 +9,18 @@
 | 技术 | 版本 | 说明 |
 |------|------|------|
 | Spring Boot | 3.5.7 | 应用框架 |
-| Java | 17 | 开发语言 |
+| Java | 21 | 开发语言 |
 | MyBatis-Plus | 3.5.5 | ORM 框架 |
 | MySQL | 8.0+ | 关系型数据库 |
 | Redis | 6.0+ | 缓存与会话管理 |
 | MinIO | — | 对象存储（文件管理） |
+| Flyway | — | 数据库版本迁移 |
 | Spring Security | — | 安全框架，JWT 无状态认证 |
 | Apache Tika | — | 文档内容提取（doc/docx/pdf） |
 | IK Analyzer | — | 中文分词（自定义词典） |
 | iText7 | — | PDF 报告生成（支持中文 SimHei 字体） |
 | Micrometer + Prometheus | — | 应用性能监控 |
-| Springfox Swagger 3 | — | API 文档 |
+| SpringDoc OpenAPI | 2.6 | API 文档（Swagger UI） |
 | Lombok | — | 代码简化 |
 
 ## 核心功能
@@ -43,10 +44,14 @@
 - 用户管理（学生/教师/管理员）
 - 论文分配（手动/自动）
 - 查重规则配置
-- 系统监控（CPU/内存/磁盘/数据库连接池）
+- 系统监控（CPU/内存/磁盘/数据库连接池、Micrometer 指标、响应时间趋势）
 - 数据备份与恢复
-- 操作日志审计
+- 操作日志审计（统计分析、热门操作、用户活跃度、模块使用率）
 - 学校/学院/专业基础数据管理
+- 系统通知管理（站内通知、优先级、已读状态）
+- 消息模板管理（模板 CRUD、变量渲染预览）
+- 字典数据管理
+- 查重规则与对比库管理
 
 ### 查重引擎
 - 本地 SimHash 引擎（Hamming 距离 ≤ 3 判定相似）
@@ -68,15 +73,17 @@ com.abin.checkrepeatsystem
 ├── admin/              # 管理员模块（用户/论文/配置/统计/分配）
 ├── student/            # 学生模块（论文提交/查重/报告/消息）
 ├── teacher/            # 教师模块（审核/统计/学生管理）
-├── user/               # 认证模块（登录/刷新/通知/消息）
+├── user/               # 认证模块（登录/刷新/通知/消息/消息模板）
 ├── common/             # 公共模块
-│   ├── config/         #   安全配置、WebSocket、CORS
-│   ├── filter/         #   JWT 过滤器
+│   ├── config/         #   安全配置、WebSocket、CORS、缓存配置
+│   ├── filter/         #   JWT 过滤器、XSS 过滤器、维护模式拦截
 │   ├── handler/        #   全局异常处理
-│   ├── service/        #   文件服务（MinIO/本地）
+│   ├── service/        #   文件服务（MinIO/本地）、权限服务、预览服务
 │   ├── utils/          #   工具类（JWT、PDF 生成等）
-│   └── annotation/     #   自定义注解（操作日志）
-├── monitor/            # 监控模块（系统指标采集、数据库监控）
+│   ├── annotation/     #   自定义注解（操作日志、脱敏、密码校验）
+│   ├── security/       #   XSS 防护、敏感数据序列化
+│   └── websocket/      #   WebSocket JWT 握手拦截
+├── monitor/            # 监控模块（系统指标采集、数据库监控、Micrometer 指标）
 ├── notification/       # 通知模块（消息发送、公告发布）
 ├── detection/          # 查重检测模块（SimHash、引擎管理）
 ├── pojo/
@@ -84,7 +91,7 @@ com.abin.checkrepeatsystem
 │   ├── dto/            #   请求/响应 DTO
 │   └── vo/             #   视图对象
 ├── mapper/             # MyBatis-Plus Mapper 接口
-└── schedule/           # 定时任务（数据完整性检查等）
+└── schedule/           # 定时任务（论文超时检查、数据完整性检查）
 ```
 
 ## 快速开始
@@ -138,6 +145,7 @@ http://localhost:8080/check/actuator/health         # 健康检查
 - 字段映射：下划线转驼峰
 - 软删除：`is_deleted` 字段（1 = 已删除）
 - 自动填充：`BaseEntity` 提供 `createTime`/`updateTime` 自动填充
+- 数据库迁移：Flyway（`src/main/resources/db/migration/`），支持乱序执行
 
 ## 配置说明
 

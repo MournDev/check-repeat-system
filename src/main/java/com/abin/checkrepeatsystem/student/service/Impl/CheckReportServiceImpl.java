@@ -579,7 +579,7 @@ public class CheckReportServiceImpl extends ServiceImpl<CheckReportMapper, Check
         // 1. 获取论文信息
         com.abin.checkrepeatsystem.pojo.entity.PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
         if (paperInfo == null) {
-            throw new RuntimeException("论文不存在：" + paperId);
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在：" + paperId);
         }
         
         // 2. 优先从MinIO读取已提取的内容

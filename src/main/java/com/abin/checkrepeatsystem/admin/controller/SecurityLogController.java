@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/v1/admin/logs/security")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAuthority('SUPER_ADMIN')")
 @RequiredArgsConstructor
 @Slf4j
 public class SecurityLogController {

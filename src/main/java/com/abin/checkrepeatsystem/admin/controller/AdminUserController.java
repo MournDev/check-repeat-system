@@ -10,6 +10,7 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,7 +28,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/v1/admin/users")
-@PreAuthorize("hasAuthority('ADMIN')")
 @RequiredArgsConstructor
 public class AdminUserController {
 
@@ -35,6 +35,7 @@ public class AdminUserController {
 
     private final AdminUserService adminUserService;
 
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/list")
     public Result<Page<UserInfoDTO>> getUserList(
             @RequestParam(defaultValue = "1") Integer page,
@@ -47,6 +48,7 @@ public class AdminUserController {
         return adminUserService.getUserList(page, size, userType, status, keyword);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/create")
     @OperationLog(type = "admin_user_create", description = "管理员创建用户", recordResult = true)
     public Result<Map<String, Object>> createUser(@Valid @RequestBody UserCreateReq createReq) {
@@ -54,6 +56,7 @@ public class AdminUserController {
         return adminUserService.createUser(createReq);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/{userId}")
     @OperationLog(type = "admin_user_update", description = "管理员更新用户信息")
     public Result<String> updateUser(@PathVariable Long userId,
@@ -62,6 +65,7 @@ public class AdminUserController {
         return adminUserService.updateUser(userId, updateReq);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @DeleteMapping("/{userId}")
     @OperationLog(type = "admin_user_delete", description = "管理员删除用户")
     public Result<String> deleteUser(@PathVariable Long userId) {
@@ -69,6 +73,7 @@ public class AdminUserController {
         return adminUserService.deleteUser(userId);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PostMapping("/batch-delete")
     @OperationLog(type = "admin_user_batch_delete", description = "管理员批量删除用户")
     public Result<String> batchDeleteUsers(@Valid @RequestBody BatchDeleteReq batchReq) {
@@ -76,6 +81,7 @@ public class AdminUserController {
         return adminUserService.batchDeleteUsers(batchReq);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/{userId}/status")
     @OperationLog(type = "admin_user_status_update", description = "管理员更新用户状态")
     public Result<String> updateUserStatus(@PathVariable Long userId,
@@ -85,6 +91,7 @@ public class AdminUserController {
         return adminUserService.updateUserStatus(userId, status);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @PutMapping("/{userId}/reset-password")
     @OperationLog(type = "admin_user_password_reset", description = "管理员重置用户密码")
     public Result<String> resetPassword(@PathVariable Long userId,
@@ -93,12 +100,14 @@ public class AdminUserController {
         return adminUserService.resetPassword(userId, resetReq);
     }
 
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/{userId}")
     public Result<UserInfoDTO> getUserDetail(@PathVariable Long userId) {
         log.info("接收获取用户详细信息请求: userId={}", userId);
         return adminUserService.getUserDetail(userId);
     }
 
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/{userId}/login-history")
     public Result<Page<SysLoginLog>> getUserLoginHistory(
             @PathVariable Long userId,
@@ -108,8 +117,9 @@ public class AdminUserController {
         return adminUserService.getUserLoginHistory(userId, page, size);
     }
 
+    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     @GetMapping("/export")
-    public void exportUserList(@RequestParam Map<String, Object> params, jakarta.servlet.http.HttpServletResponse response) {
+    public void exportUserList(@RequestParam Map<String, Object> params, HttpServletResponse response) {
         log.info("接收导出用户列表请求: params={}", params);
         adminUserService.exportUserList(params, response);
     }

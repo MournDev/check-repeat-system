@@ -65,6 +65,13 @@ PaperInfo extends BaseEntity implements Serializable {
     private Long majorId;
 
     /**
+     * 对比库ID（关联compare_lib.id）
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    @TableField("lib_id")
+    private Long libId;
+
+    /**
      * 导师ID（关联sys_user.id）
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING)

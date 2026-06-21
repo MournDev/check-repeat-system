@@ -6,8 +6,8 @@ import com.abin.checkrepeatsystem.student.dto.AcademicResourceDTO;
 import com.abin.checkrepeatsystem.student.dto.ChecklistItemDTO;
 import com.abin.checkrepeatsystem.student.dto.PersonalAdviceDTO;
 import com.abin.checkrepeatsystem.student.service.AcademicIntegrityService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +21,7 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/student/academic-integrity")
-@Api(tags = "学生学术诚信管理")
+@Tag(name = "学生学术诚信管理")
 public class AcademicIntegrityController {
     
     private final AcademicIntegrityService academicIntegrityService;
@@ -30,7 +30,7 @@ public class AcademicIntegrityController {
      * 获取个性化学术建议
      */
     @GetMapping("/personal-advice")
-    @ApiOperation("获取个性化学术建议")
+    @Operation(summary = "获取个性化学术建议")
     public Result<PersonalAdviceDTO> getPersonalAdvice() {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
         PersonalAdviceDTO advice = academicIntegrityService.getPersonalAdvice(studentId);
@@ -41,7 +41,7 @@ public class AcademicIntegrityController {
      * 获取推荐学习资源
      */
     @GetMapping("/resources")
-    @ApiOperation("获取推荐学习资源")
+    @Operation(summary = "获取推荐学习资源")
     public Result<List<AcademicResourceDTO>> getRecommendedResources(
             @RequestParam(required = false) String resourceType) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
@@ -53,7 +53,7 @@ public class AcademicIntegrityController {
      * 获取用户检查清单
      */
     @GetMapping("/checklist")
-    @ApiOperation("获取用户检查清单")
+    @Operation(summary = "获取用户检查清单")
     public Result<List<ChecklistItemDTO>> getChecklist() {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
         List<ChecklistItemDTO> checklist = academicIntegrityService.getChecklist(studentId);
@@ -64,7 +64,7 @@ public class AcademicIntegrityController {
      * 更新检查项状态
      */
     @PutMapping("/checklist/{itemId}")
-    @ApiOperation("更新检查项状态")
+    @Operation(summary = "更新检查项状态")
     public Result<String> updateChecklistItem(
             @PathVariable Long itemId,
             @RequestBody ChecklistItemDTO updateRequest) {
@@ -81,7 +81,7 @@ public class AcademicIntegrityController {
      * 初始化用户检查清单
      */
     @PostMapping("/checklist/init")
-    @ApiOperation("初始化用户检查清单")
+    @Operation(summary = "初始化用户检查清单")
     public Result<String> initializeChecklist() {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
         academicIntegrityService.initializeChecklist(studentId);

@@ -19,11 +19,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NoticeLogService {
 
+    private static final int MAX_CONTENT_LENGTH = 500;
+
     private final SysNoticeLogMapper noticeLogMapper;
 
     /**
      * 保存通知日志
      */
+
     public void saveNoticeLog(String toEmail, String subject, String content,
                               String noticeType, boolean success, String errorMsg,
                               Long relatedId, String relatedType) {
@@ -31,7 +34,8 @@ public class NoticeLogService {
             SysNoticeLog noticeLog = new SysNoticeLog();
             noticeLog.setToEmail(toEmail);
             noticeLog.setSubject(subject);
-            noticeLog.setContent(content);
+            // 日志仅做审计用途，截断超长内容避免数据库字段溢出
+            noticeLog.setContent(truncateContent(content));
             noticeLog.setNoticeType(noticeType);
             noticeLog.setSuccess(success);
             noticeLog.setErrorMsg(errorMsg);
@@ -46,6 +50,15 @@ public class NoticeLogService {
         } catch (Exception e) {
             log.error("保存通知日志失败：toEmail={}, noticeType={}", toEmail, noticeType, e);
         }
+    }
+
+    private String truncateContent(String content) {
+        if (content == null) {
+            return null;
+        }
+        return content.length() > MAX_CONTENT_LENGTH
+                ? content.substring(0, MAX_CONTENT_LENGTH) + "...(已截断)"
+                : content;
     }
 
     /**

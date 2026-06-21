@@ -1,6 +1,7 @@
 package com.abin.checkrepeatsystem.teacher.controller;
 
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.teacher.dto.PaperContentDTO;
 import com.abin.checkrepeatsystem.teacher.dto.PaperPreviewUrlDTO;
@@ -60,6 +61,7 @@ public class TeacherReviewController {
      * （注：文件上传需用multipart/form-data格式，参数通过@RequestParam接收）
      */
     @PostMapping(value = "/do-review", consumes = "multipart/form-data")
+    @OperationLog(type = "teacher_review", description = "教师审核论文")
     public Result<Map<String, Object>> doReview(
             @RequestParam("paperIds") List<Long> paperIds, // 论文ID列表（逗号分隔，如1,2,3）
             @RequestParam("reviewStatus") String reviewStatus, // completed-通过，rejected-不通过
@@ -76,12 +78,9 @@ public class TeacherReviewController {
 
     /**
      * 3. 教师查询已审核论文列表（分页）
-     * @param studentName 学生姓名（可选）
-     * @param paperTitle 论文标题（可选）
-     * @param currentPage 当前页码（可选）
-     * @param pageSize 每页条数（可选）
+     * 同时映射 /reviewed-list 和 /history 两个路径（前端兼容）
      */
-    @GetMapping("/reviewed-list")
+    @GetMapping({"/reviewed-list", "/history"})
     public Result<Page<ReviewResultDTO>> getReviewedList(
             @RequestParam(value = "studentName", required = false) String studentName,
             @RequestParam(value = "paperTitle", required = false) String paperTitle,
@@ -130,6 +129,7 @@ public class TeacherReviewController {
      * @param paperId 论文ID（必传，通过@RequestParam）
      */
     @PostMapping("/re-initiate")
+    @OperationLog(type = "teacher_review_reinitiate", description = "教师重新发起审核")
     public Result<String> reInitiateReview(
             @RequestParam("paperId") Long paperId) {
         return teacherReviewService.reInitiateReview(paperId);

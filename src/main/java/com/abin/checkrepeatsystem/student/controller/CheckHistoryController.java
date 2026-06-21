@@ -4,8 +4,8 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.utils.UserBusinessInfoUtils;
 import com.abin.checkrepeatsystem.student.dto.*;
 import com.abin.checkrepeatsystem.student.service.PaperInfoService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,7 +19,7 @@ import jakarta.validation.Valid;
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/student/papers")
-@Api(tags = "学生查重历史管理")
+@Tag(name = "学生查重历史管理")
 @PreAuthorize("hasAnyAuthority('STUDENT', 'TEACHER', 'ADMIN')")
 @RequiredArgsConstructor
 public class CheckHistoryController {
@@ -30,7 +30,7 @@ public class CheckHistoryController {
      * 获取查重历史记录
      */
     @GetMapping("/{paperId}/check-history")
-    @ApiOperation("获取论文查重历史记录")
+    @Operation(summary = "获取论文查重历史记录")
     public Result<CheckHistoryResponseDTO> getCheckHistory(@PathVariable Long paperId) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
         CheckHistoryResponseDTO history = paperInfoService.getCheckHistory(paperId, studentId);
@@ -41,7 +41,7 @@ public class CheckHistoryController {
      * 获取相似度趋势数据
      */
     @GetMapping("/{paperId}/similarity-trend")
-    @ApiOperation("获取相似度趋势数据")
+    @Operation(summary = "获取相似度趋势数据")
     public Result<SimilarityTrendDTO> getSimilarityTrend(
             @PathVariable Long paperId,
             @RequestParam(defaultValue = "30") Integer period) {
@@ -54,7 +54,7 @@ public class CheckHistoryController {
      * 版本对比分析
      */
     @PostMapping("/{paperId}/compare-versions")
-    @ApiOperation("版本对比分析")
+    @Operation(summary = "版本对比分析")
     public Result<VersionCompareResponseDTO> compareVersions(
             @PathVariable Long paperId,
             @Valid @RequestBody VersionCompareRequestDTO request) {
@@ -67,7 +67,7 @@ public class CheckHistoryController {
      * 获取论文统计分析数据
      */
     @GetMapping("/{paperId}/statistics")
-    @ApiOperation("获取论文统计分析数据")
+    @Operation(summary = "获取论文统计分析数据")
     public Result<StatisticsDTO> getPaperStatistics(@PathVariable Long paperId) {
         Long studentId = UserBusinessInfoUtils.getCurrentUserId();
         StatisticsDTO statistics = paperInfoService.getPaperStatistics(paperId, studentId);

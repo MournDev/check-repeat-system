@@ -62,6 +62,8 @@ spring:
     locations: classpath:db/migration
     table: flyway_schema_history
     clean-disabled: true
+    out-of-order: true
+    validate-on-migrate: false
 
   # 文件上传配置
   servlet:
@@ -127,7 +129,7 @@ check:
     hamming-threshold: 3
   text:
     segment:
-      type: ik
+      type: jieba
       dic-path: classpath:dic/
   local:
     enabled: true

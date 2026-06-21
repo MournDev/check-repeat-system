@@ -81,7 +81,7 @@ public class JwtUtils {
     }
 
     /**
-     * 从token中提取所有声明
+     * 从token中提取所有声明（token必须未过期）
      */
     public Claims extractAllClaims(String token) {
         return Jwts.parser()
@@ -89,6 +89,18 @@ public class JwtUtils {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    /**
+     * 从token中提取所有声明，即使token已过期也会解析（用于刷新token场景）
+     * 签名验证仍然生效，仅跳过过期检查
+     */
+    public Claims extractAllClaimsIgnoreExpiry(String token) {
+        try {
+            return extractAllClaims(token);
+        } catch (ExpiredJwtException e) {
+            return e.getClaims();
+        }
     }
 
     /**
@@ -172,6 +184,8 @@ public class JwtUtils {
                 return "teacher";
             case "ADMIN":
                 return "admin";
+            case "SUPER_ADMIN":
+                return "super_admin";
             default:
                 return "unknown";
         }

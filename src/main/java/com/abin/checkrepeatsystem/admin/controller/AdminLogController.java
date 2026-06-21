@@ -39,7 +39,7 @@ import lombok.RequiredArgsConstructor;
  */
 @RestController
 @RequestMapping("/api/v1/admin/logs")
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAuthority('SUPER_ADMIN')")
 @RequiredArgsConstructor
 public class AdminLogController {
 
@@ -184,7 +184,7 @@ public class AdminLogController {
             log.error("导出操作日志失败", e);
             response.reset();
             response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":500,\"message\":\"导出失败：" + e.getMessage() + "\"}");
+            response.getWriter().write("{\"code\":500,\"message\":\"导出失败，请查看服务器日志\"}");
         }
     }
 
@@ -242,7 +242,7 @@ public class AdminLogController {
             log.error("导出登录日志失败", e);
             response.reset();
             response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":500,\"message\":\"导出失败：" + e.getMessage() + "\"}");
+            response.getWriter().write("{\"code\":500,\"message\":\"导出失败，请查看服务器日志\"}");
         }
     }
 

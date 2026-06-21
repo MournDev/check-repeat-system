@@ -146,12 +146,21 @@ public class UserBusinessInfoUtils {
     }
 
     /**
-     * 校验当前用户是否为管理员
+     * 校验当前用户是否为管理员（含超级管理员）
      * @return true=管理员，false=非管理员
      */
     public static boolean isAdmin() {
         String roleCode = getCurrentUserRoleCode();
-        return UserTypeEnum.ROLE_ADMIN.equals(roleCode);
+        return UserTypeEnum.ROLE_ADMIN.equals(roleCode) || UserTypeEnum.ROLE_SUPER_ADMIN.equals(roleCode);
+    }
+
+    /**
+     * 校验当前用户是否为超级管理员
+     * @return true=超级管理员，false=非超级管理员
+     */
+    public static boolean isSuperAdmin() {
+        String roleCode = getCurrentUserRoleCode();
+        return UserTypeEnum.ROLE_SUPER_ADMIN.equals(roleCode);
     }
 
     /**

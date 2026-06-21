@@ -78,4 +78,10 @@ public class SysOperationLog extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @TableField("operation_time")
     private LocalDateTime operationTime;
+
+    /**
+     * 请求追踪ID（用于关联同一请求的多个日志）
+     */
+    @TableField("trace_id")
+    private String traceId;
 }

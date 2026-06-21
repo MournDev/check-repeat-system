@@ -12,6 +12,7 @@ import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -52,12 +53,12 @@ public class IdempotencyInterceptor implements HandlerInterceptor {
         String idempotencyKey = request.getHeader(HEADER_NAME);
         if (idempotencyKey == null || idempotencyKey.isEmpty()) {
             response.setStatus(400);
-            writeJson(response, Map.of(
-                "code", 400,
-                "errorCode", "400",
-                "message", "缺少Idempotency-Key请求头",
-                "data", null
-            ));
+            Map<String, Object> body = new HashMap<>();
+            body.put("code", 400);
+            body.put("errorCode", "400");
+            body.put("message", "缺少Idempotency-Key请求头");
+            body.put("data", null);
+            writeJson(response, body);
             return false;
         }
 
@@ -67,12 +68,12 @@ public class IdempotencyInterceptor implements HandlerInterceptor {
 
         if (Boolean.FALSE.equals(success)) {
             response.setStatus(409);
-            writeJson(response, Map.of(
-                "code", 409,
-                "errorCode", "409",
-                "message", idempotent.message(),
-                "data", null
-            ));
+            Map<String, Object> body = new HashMap<>();
+            body.put("code", 409);
+            body.put("errorCode", "409");
+            body.put("message", idempotent.message());
+            body.put("data", null);
+            writeJson(response, body);
             log.warn("幂等性拦截：重复请求 — key={}", idempotencyKey);
             return false;
         }

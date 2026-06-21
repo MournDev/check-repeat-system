@@ -8,7 +8,7 @@ import com.abin.checkrepeatsystem.teacher.service.TeacherAssignmentService;
 import com.abin.checkrepeatsystem.user.service.AdvisorAssignService;
 import com.abin.checkrepeatsystem.user.service.MessageService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import io.swagger.annotations.Api;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/v1/assignment")
-@Api(tags = "教师论文分配操作")
+@Tag(name = "教师论文分配操作")
 @Slf4j
 public class TeacherAssignmentController {
 

@@ -1,6 +1,8 @@
 package com.abin.checkrepeatsystem.user.service.Impl;
 
 import com.abin.checkrepeatsystem.common.enums.CheckEngineTypeEnum;
+import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.service.PaperContentMinioService;
 import com.abin.checkrepeatsystem.common.utils.IKAnalyzerUtils;
 import com.abin.checkrepeatsystem.common.utils.SpringContextUtil;
@@ -108,7 +110,7 @@ public class LocalCheckEngine implements CheckEngine {
 
         String segmentedTargetText = IKAnalyzerUtils.segmentToString(contentWithoutReferences);
         if (segmentedTargetText.isEmpty()) {
-            throw new RuntimeException("论文内容为空或分词后无有效内容");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "论文内容为空或分词后无有效内容");
         }
         BigInteger targetSimHash = textSimilarityUtils.calculateSimHash(segmentedTargetText);
 

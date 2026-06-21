@@ -2,6 +2,7 @@ package com.abin.checkrepeatsystem.admin.service.Impl;
 
 import com.abin.checkrepeatsystem.admin.service.AdminAssignmentService;
 import com.abin.checkrepeatsystem.common.Result;
+import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.admin.dto.AssignmentRuleConfigDTO;
 import com.abin.checkrepeatsystem.mapper.SysUserMapper;
@@ -49,10 +50,10 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
         try {
             Map<String, Object> stats = new HashMap<>();
             
-            // 未分配学生数 - 没有指导老师的论文
+            // 未分配学生数 - 没有指导老师的待分配论文（含导师拒绝后待重新分配）
             LambdaQueryWrapper<PaperInfo> unassignedWrapper = new LambdaQueryWrapper<>();
             unassignedWrapper.isNull(PaperInfo::getTeacherId)
-                           .eq(PaperInfo::getPaperStatus, "approved"); // 只统计已通过审核的论文
+                           .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.PENDING);
             int unassignedStudents = paperInfoMapper.selectCount(unassignedWrapper).intValue();
             stats.put("unassignedStudents", unassignedStudents);
             
@@ -67,10 +68,13 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             List<SysUser> teachers = sysUserMapper.selectList(teacherWrapper);
             double avgLoad = 0;
             if (!teachers.isEmpty()) {
+                List<Long> teacherIds = teachers.stream().map(SysUser::getId).collect(Collectors.toList());
+                Map<Long, TeacherInfo> teacherInfoMap = teacherInfoService.listByUserIds(teacherIds).stream()
+                        .collect(Collectors.toMap(TeacherInfo::getUserId, t -> t, (a, b) -> a));
                 int totalLoad = 0;
                 int validCount = 0;
                 for (SysUser teacher : teachers) {
-                    TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
+                    TeacherInfo teacherInfo = teacherInfoMap.get(teacher.getId());
                     if (teacherInfo != null && teacherInfo.getCurrentAdvisorCount() != null) {
                         totalLoad += teacherInfo.getCurrentAdvisorCount();
                         validCount++;
@@ -103,7 +107,7 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             
             LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
             wrapper.isNull(PaperInfo::getTeacherId) // 未分配指导老师
-                   .eq(PaperInfo::getPaperStatus, "approved"); // 已通过审核
+                   .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.PENDING); // 待分配状态（含导师拒绝后待重新分配）
             
             // 关键词搜索
             if (keyword != null && !keyword.isEmpty()) {
@@ -273,10 +277,10 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 return Result.error(ResultCode.PARAM_ERROR, "教师不存在");
             }
             
-            if (!"teacher".equals(teacher.getUserType())) {
+            if (!"TEACHER".equals(teacher.getUserType())) {
                 return Result.error(ResultCode.PARAM_ERROR, "指定用户不是教师");
             }
-            
+
             // 执行分配
             paper.setTeacherId(Long.valueOf(teacherId));
             paper.setUpdateTime(LocalDateTime.now());
@@ -329,10 +333,10 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 return Result.error(ResultCode.PARAM_ERROR, "教师不存在");
             }
             
-            if (!"teacher".equals(teacher.getUserType())) {
+            if (!"TEACHER".equals(teacher.getUserType())) {
                 return Result.error(ResultCode.PARAM_ERROR, "指定用户不是教师");
             }
-            
+
             // 从TeacherInfo表获取教师负载信息
             TeacherInfo teacherInfo = teacherInfoService.getByUserId(Long.valueOf(teacherId));
             if (teacherInfo == null) {
@@ -351,30 +355,47 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                 .limit(availableSlots)
                 .collect(Collectors.toList());
             
+            // 批量查询论文信息，避免N+1
+            List<Long> assignableIdLongs = assignableIds.stream().map(Long::valueOf).collect(Collectors.toList());
+            Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(assignableIdLongs).stream()
+                    .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
+
+            // 批量查询学生用户信息
+            List<Long> stuIds = paperMap.values().stream()
+                    .map(PaperInfo::getStudentId).filter(Objects::nonNull).distinct().collect(Collectors.toList());
+            Map<Long, SysUser> studentUserMap = stuIds.isEmpty() ? new HashMap<>() :
+                    sysUserMapper.selectBatchIds(stuIds).stream()
+                            .collect(Collectors.toMap(SysUser::getId, u -> u, (a, b) -> a));
+
+            // 批量查询学生详细信息
+            Map<Long, StudentInfo> studentInfoMap = stuIds.isEmpty() ? new HashMap<>() :
+                    studentInfoService.listByUserIds(stuIds).stream()
+                            .collect(Collectors.toMap(StudentInfo::getUserId, s -> s, (a, b) -> a));
+
             for (String studentId : assignableIds) {
                 try {
-                    PaperInfo paper = paperInfoMapper.selectById(studentId);
+                    PaperInfo paper = paperMap.get(Long.valueOf(studentId));
                     if (paper == null) {
                         details.add("论文ID " + studentId + " 不存在");
                         failCount++;
                         continue;
                     }
-                    
+
                     if (paper.getTeacherId() != null) {
                         details.add("论文ID " + studentId + " 已有指导老师");
                         failCount++;
                         continue;
                     }
-                    
+
                     // 执行分配
                     paper.setTeacherId(Long.valueOf(teacherId));
                     paper.setUpdateTime(LocalDateTime.now());
                     paperInfoMapper.updateById(paper);
-                    
+
                     // 更新学生学院和专业信息
-                    SysUser student = sysUserMapper.selectById(paper.getStudentId());
+                    SysUser student = studentUserMap.get(paper.getStudentId());
                     if (student != null) {
-                        StudentInfo studentInfo = studentInfoService.getByUserId(student.getId());
+                        StudentInfo studentInfo = studentInfoMap.get(student.getId());
                         if (studentInfo == null) {
                             studentInfo = new StudentInfo();
                             studentInfo.setUserId(student.getId());
@@ -390,9 +411,9 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
                         studentInfo.setUpdateTime(LocalDateTime.now());
                         studentInfoService.saveOrUpdate(studentInfo);
                     }
-                    
+
                     successCount++;
-                    
+
                 } catch (Exception e) {
                     log.error("批量分配单个学生失败: studentId={}", studentId, e);
                     details.add("论文ID " + studentId + " 分配失败: " + e.getMessage());
@@ -547,17 +568,19 @@ public class AdminAssignmentServiceImpl implements AdminAssignmentService {
             LambdaQueryWrapper<SysUser> userWrapper = new LambdaQueryWrapper<>();
             userWrapper.eq(SysUser::getUserType, "teacher");
             List<SysUser> teachers = sysUserMapper.selectList(userWrapper);
-            
+
+            // 批量查询教师信息，避免N+1
+            List<Long> teacherIds = teachers.stream().map(SysUser::getId).collect(Collectors.toList());
+            List<TeacherInfo> teacherInfoList = teacherIds.isEmpty() ? new ArrayList<>() :
+                    teacherInfoService.listByUserIds(teacherIds);
+
             // 批量更新每个教师的最大审核数量
             int updatedCount = 0;
-            for (SysUser teacher : teachers) {
-                TeacherInfo teacherInfo = teacherInfoService.getByUserId(teacher.getId());
-                if (teacherInfo != null) {
-                    teacherInfo.setMaxReviewCount(maxLoadPerTeacher);
-                    teacherInfo.setUpdateTime(LocalDateTime.now());
-                    teacherInfoService.saveOrUpdate(teacherInfo);
-                    updatedCount++;
-                }
+            for (TeacherInfo teacherInfo : teacherInfoList) {
+                teacherInfo.setMaxReviewCount(maxLoadPerTeacher);
+                teacherInfo.setUpdateTime(LocalDateTime.now());
+                teacherInfoService.saveOrUpdate(teacherInfo);
+                updatedCount++;
             }
             
             log.info("更新教师最大审核数量成功，影响记录数: {}", updatedCount);

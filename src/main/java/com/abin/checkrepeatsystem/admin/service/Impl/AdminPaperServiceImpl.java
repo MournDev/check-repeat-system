@@ -4,6 +4,7 @@ import com.abin.checkrepeatsystem.admin.service.AdminPaperService;
 import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.enums.CheckStatusFilterEnum;
 import com.abin.checkrepeatsystem.student.mapper.MajorMapper;
 import com.abin.checkrepeatsystem.student.mapper.PaperInfoMapper;
@@ -71,345 +72,310 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     private final ObjectMapper objectMapper;
 
     @Override
-    public Result<Page<PaperInfo>> getPaperList(Integer page, Integer size, String paperStatus, 
+    public Result<Page<PaperInfo>> getPaperList(Integer page, Integer size, String paperStatus,
                                               String paperType, String keyword, String startDate, String endDate,
                                               Long collegeId, Long majorId, String majorName, String grade, String checkStatus,
                                               Double minSimilarity, Double maxSimilarity) {
-        try {
-            Page<PaperInfo> paperPage = new Page<>(page, size);
-            LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
+        Page<PaperInfo> paperPage = new Page<>(page, size);
+        LambdaQueryWrapper<PaperInfo> wrapper = new LambdaQueryWrapper<>();
 
-            wrapper.ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN);
-            
-            // 状态筛选
-            if (paperStatus != null && !paperStatus.isEmpty()) {
-                wrapper.eq(PaperInfo::getPaperStatus, paperStatus);
-            }
-            
-            // 类型筛选
-            if (paperType != null && !paperType.isEmpty()) {
-                wrapper.eq(PaperInfo::getPaperType, paperType);
-            }
-            
-            // 关键词搜索（标题、作者、论文关键词等）
-            if (keyword != null && !keyword.isEmpty()) {
-                List<Long> matchedUserIds = sysUserMapper.selectList(
-                    new LambdaQueryWrapper<SysUser>()
-                        .like(SysUser::getRealName, keyword)
-                        .eq(SysUser::getIsDeleted, 0)
-                        .select(SysUser::getId)
-                ).stream().map(SysUser::getId).collect(Collectors.toList());
+        wrapper.ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN);
 
-                wrapper.and(w -> {
-                    w.like(PaperInfo::getPaperTitle, keyword)
-                     .or()
-                     .like(PaperInfo::getAuthor, keyword)
-                     .or()
-                     .like(PaperInfo::getPaperAbstract, keyword);
-                    if (!matchedUserIds.isEmpty()) {
-                        w.or().in(PaperInfo::getStudentId, matchedUserIds);
-                    }
-                });
-            }
-            
-            // 时间范围筛选
-            if (startDate != null && !startDate.isEmpty()) {
-                wrapper.ge(PaperInfo::getCreateTime, LocalDateTime.parse(startDate));
-            }
-            if (endDate != null && !endDate.isEmpty()) {
-                wrapper.le(PaperInfo::getCreateTime, LocalDateTime.parse(endDate));
-            }
-            
-            // 学院筛选（直接使用PaperInfo表中的college_id字段）
-            if (collegeId != null) {
-                wrapper.eq(PaperInfo::getCollegeId, collegeId);
-            }
-            
-            // 专业ID筛选（直接使用PaperInfo表中的major_id字段）
-            if (majorId != null) {
-                wrapper.eq(PaperInfo::getMajorId, majorId);
-            }
-            
-            // 专业名称筛选（通过专业名称关联查询）
-            if (majorName != null && !majorName.isEmpty()) {
-                List<Long> matchedMajorIds = majorMapper.selectList(
-                    new LambdaQueryWrapper<Major>()
-                        .like(Major::getMajorName, majorName)
-                        .eq(Major::getIsDeleted, 0)
-                        .select(Major::getId)
-                ).stream().map(Major::getId).collect(Collectors.toList());
-                if (!matchedMajorIds.isEmpty()) {
-                    wrapper.in(PaperInfo::getMajorId, matchedMajorIds);
-                } else {
-                    wrapper.eq(PaperInfo::getMajorId, -1L);
-                }
-            }
-            
-            // 年级筛选（通过StudentInfo表查询对应年级的学生ID）
-            if (grade != null && !grade.isEmpty()) {
-                List<StudentInfo> matchedStudents = studentInfoService.lambdaQuery()
-                    .eq(StudentInfo::getGrade, grade)
-                    .eq(StudentInfo::getIsDeleted, 0)
-                    .select(StudentInfo::getUserId)
-                    .list();
-                List<Long> matchedStudentIds = matchedStudents.stream()
-                    .map(StudentInfo::getUserId).collect(Collectors.toList());
-                if (!matchedStudentIds.isEmpty()) {
-                    wrapper.in(PaperInfo::getStudentId, matchedStudentIds);
-                } else {
-                    wrapper.eq(PaperInfo::getStudentId, -1L);
-                }
-            }
-            
-            // 查重状态筛选
-            if (checkStatus != null && !checkStatus.isEmpty()) {
-                addCheckStatusCondition(wrapper, checkStatus);
-            }
-            
-            // 相似度范围筛选（数值范围）
-            if (minSimilarity != null || maxSimilarity != null) {
-                addSimilarityRangeByValue(wrapper, minSimilarity, maxSimilarity);
-            }
-            
-            // 排除已删除的论文
-            wrapper.eq(PaperInfo::getIsDeleted, 0);
-            wrapper.orderByDesc(PaperInfo::getCreateTime);
-            
-            Page<PaperInfo> resultPage = paperInfoMapper.selectPage(paperPage, wrapper);
-            
-            // 补充关联信息
-            enhancePaperList(resultPage.getRecords());
-            
-            log.info("管理员获取论文列表成功: 总数={}", resultPage.getTotal());
-            return Result.success("论文列表获取成功", resultPage);
-        } catch (Exception e) {
-            log.error("获取论文列表失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文列表失败: " + e.getMessage());
+        // 状态筛选
+        if (paperStatus != null && !paperStatus.isEmpty()) {
+            wrapper.eq(PaperInfo::getPaperStatus, paperStatus);
         }
+
+        // 类型筛选
+        if (paperType != null && !paperType.isEmpty()) {
+            wrapper.eq(PaperInfo::getPaperType, paperType);
+        }
+
+        // 关键词搜索（标题、作者、论文关键词等）
+        if (keyword != null && !keyword.isEmpty()) {
+            List<Long> matchedUserIds = sysUserMapper.selectList(
+                new LambdaQueryWrapper<SysUser>()
+                    .like(SysUser::getRealName, keyword)
+                    .eq(SysUser::getIsDeleted, 0)
+                    .select(SysUser::getId)
+            ).stream().map(SysUser::getId).collect(Collectors.toList());
+
+            wrapper.and(w -> {
+                w.like(PaperInfo::getPaperTitle, keyword)
+                 .or()
+                 .like(PaperInfo::getAuthor, keyword)
+                 .or()
+                 .like(PaperInfo::getPaperAbstract, keyword);
+                if (!matchedUserIds.isEmpty()) {
+                    w.or().in(PaperInfo::getStudentId, matchedUserIds);
+                }
+            });
+        }
+
+        // 时间范围筛选
+        if (startDate != null && !startDate.isEmpty()) {
+            wrapper.ge(PaperInfo::getCreateTime, LocalDateTime.parse(startDate));
+        }
+        if (endDate != null && !endDate.isEmpty()) {
+            wrapper.le(PaperInfo::getCreateTime, LocalDateTime.parse(endDate));
+        }
+
+        // 学院筛选（直接使用PaperInfo表中的college_id字段）
+        if (collegeId != null) {
+            wrapper.eq(PaperInfo::getCollegeId, collegeId);
+        }
+
+        // 专业ID筛选（直接使用PaperInfo表中的major_id字段）
+        if (majorId != null) {
+            wrapper.eq(PaperInfo::getMajorId, majorId);
+        }
+
+        // 专业名称筛选（通过专业名称关联查询）
+        if (majorName != null && !majorName.isEmpty()) {
+            List<Long> matchedMajorIds = majorMapper.selectList(
+                new LambdaQueryWrapper<Major>()
+                    .like(Major::getMajorName, majorName)
+                    .eq(Major::getIsDeleted, 0)
+                    .select(Major::getId)
+            ).stream().map(Major::getId).collect(Collectors.toList());
+            if (!matchedMajorIds.isEmpty()) {
+                wrapper.in(PaperInfo::getMajorId, matchedMajorIds);
+            } else {
+                wrapper.eq(PaperInfo::getMajorId, -1L);
+            }
+        }
+
+        // 年级筛选（通过StudentInfo表查询对应年级的学生ID）
+        if (grade != null && !grade.isEmpty()) {
+            List<StudentInfo> matchedStudents = studentInfoService.lambdaQuery()
+                .eq(StudentInfo::getGrade, grade)
+                .eq(StudentInfo::getIsDeleted, 0)
+                .select(StudentInfo::getUserId)
+                .list();
+            List<Long> matchedStudentIds = matchedStudents.stream()
+                .map(StudentInfo::getUserId).collect(Collectors.toList());
+            if (!matchedStudentIds.isEmpty()) {
+                wrapper.in(PaperInfo::getStudentId, matchedStudentIds);
+            } else {
+                wrapper.eq(PaperInfo::getStudentId, -1L);
+            }
+        }
+
+        // 查重状态筛选
+        if (checkStatus != null && !checkStatus.isEmpty()) {
+            addCheckStatusCondition(wrapper, checkStatus);
+        }
+
+        // 相似度范围筛选（数值范围）
+        if (minSimilarity != null || maxSimilarity != null) {
+            addSimilarityRangeByValue(wrapper, minSimilarity, maxSimilarity);
+        }
+
+        // 排除已删除的论文
+        wrapper.eq(PaperInfo::getIsDeleted, 0);
+        wrapper.orderByDesc(PaperInfo::getCreateTime);
+
+        Page<PaperInfo> resultPage = paperInfoMapper.selectPage(paperPage, wrapper);
+
+        // 补充关联信息
+        enhancePaperList(resultPage.getRecords());
+
+        log.info("管理员获取论文列表成功: 总数={}", resultPage.getTotal());
+        return Result.success("论文列表获取成功", resultPage);
     }
 
     @Override
     public Result<PaperInfo> getPaperDetail(Long paperId) {
-        try {
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            // 补充详细信息
-            enhancePaperDetail(paperInfo);
-            
-            log.info("获取论文详情成功: paperId={}", paperId);
-            return Result.success("论文详情获取成功", paperInfo);
-        } catch (Exception e) {
-            log.error("获取论文详情失败: paperId={}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文详情失败: " + e.getMessage());
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        // 补充详细信息
+        enhancePaperDetail(paperInfo);
+
+        log.info("获取论文详情成功: paperId={}", paperId);
+        return Result.success("论文详情获取成功", paperInfo);
     }
 
     @Override
     public Result<String> auditPaper(Long paperId, String auditResult, String auditComment) {
-        try {
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-
-            // 验证论文状态必须为待审核
-            if (!DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus())) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文当前状态不允许审核：" + paperInfo.getPaperStatus());
-            }
-
-            // 更新审核状态
-            if ("approved".equals(auditResult)) {
-                paperInfo.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
-            } else if ("rejected".equals(auditResult)) {
-                paperInfo.setPaperStatus(DictConstants.PaperStatus.REJECTED);
-            } else {
-                return Result.error(ResultCode.PARAM_ERROR, "无效的审核结果");
-            }
-            
-            paperInfo.setCheckResult(auditComment);
-            paperInfo.setUpdateTime(LocalDateTime.now());
-            
-            paperInfoMapper.updateById(paperInfo);
-            
-            log.info("论文审核成功: paperId={}, result={}", paperId, auditResult);
-            return Result.success("论文审核成功");
-        } catch (Exception e) {
-            log.error("论文审核失败: paperId={}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文审核失败: " + e.getMessage());
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        // 验证论文状态必须为待审核
+        if (!DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus())) {
+            throw new BusinessException(ResultCode.PERMISSION_NOT_STATUS, "论文当前状态不允许审核：" + paperInfo.getPaperStatus());
+        }
+
+        // 更新审核状态
+        if ("approved".equals(auditResult)) {
+            paperInfo.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
+        } else if ("rejected".equals(auditResult)) {
+            paperInfo.setPaperStatus(DictConstants.PaperStatus.REJECTED);
+        } else {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "无效的审核结果");
+        }
+
+        paperInfo.setCheckResult(auditComment);
+        paperInfo.setUpdateTime(LocalDateTime.now());
+
+        paperInfoMapper.updateById(paperInfo);
+
+        log.info("论文审核成功: paperId={}, result={}", paperId, auditResult);
+        return Result.success("论文审核成功");
     }
 
     @Override
     public Result<String> batchAuditPapers(List<Long> paperIds, String auditResult, String auditComment) {
-        try {
-            // 批量查询论文信息，避免N+1
-            Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(paperIds).stream()
-                    .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
+        // 批量查询论文信息，避免N+1
+        Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(paperIds).stream()
+                .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
 
-            int successCount = 0;
-            int failCount = 0;
+        int successCount = 0;
+        int failCount = 0;
 
-            for (Long paperId : paperIds) {
-                try {
-                    PaperInfo paperInfo = paperMap.get(paperId);
-                    if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                        failCount++;
-                        continue;
-                    }
-                    // 验证论文状态必须为待审核
-                    if (!DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus())) {
-                        failCount++;
-                        continue;
-                    }
-                    if ("approved".equals(auditResult)) {
-                        paperInfo.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
-                    } else if ("rejected".equals(auditResult)) {
-                        paperInfo.setPaperStatus(DictConstants.PaperStatus.REJECTED);
-                    } else {
-                        failCount++;
-                        continue;
-                    }
-                    paperInfo.setCheckResult(auditComment);
-                    paperInfo.setUpdateTime(LocalDateTime.now());
-                    paperInfoMapper.updateById(paperInfo);
-                    successCount++;
-                } catch (Exception e) {
-                    log.error("批量审核单个论文失败: paperId={}", paperId, e);
+        for (Long paperId : paperIds) {
+            try {
+                PaperInfo paperInfo = paperMap.get(paperId);
+                if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
                     failCount++;
+                    continue;
                 }
+                // 验证论文状态必须为待审核
+                if (!DictConstants.PaperStatus.AUDITING.equals(paperInfo.getPaperStatus())) {
+                    failCount++;
+                    continue;
+                }
+                if ("approved".equals(auditResult)) {
+                    paperInfo.setPaperStatus(DictConstants.PaperStatus.COMPLETED);
+                } else if ("rejected".equals(auditResult)) {
+                    paperInfo.setPaperStatus(DictConstants.PaperStatus.REJECTED);
+                } else {
+                    failCount++;
+                    continue;
+                }
+                paperInfo.setCheckResult(auditComment);
+                paperInfo.setUpdateTime(LocalDateTime.now());
+                paperInfoMapper.updateById(paperInfo);
+                successCount++;
+            } catch (Exception e) {
+                log.error("批量审核单个论文失败: paperId={}", paperId, e);
+                failCount++;
             }
+        }
 
-            String message = String.format("批量审核完成: 成功%d个, 失败%d个", successCount, failCount);
-            log.info(message);
+        String message = String.format("批量审核完成: 成功%d个, 失败%d个", successCount, failCount);
+        log.info(message);
 
-            if (successCount > 0) {
-                return Result.success(message);
-            } else {
-                return Result.error(ResultCode.SYSTEM_ERROR, "批量审核全部失败");
-            }
-        } catch (Exception e) {
-            log.error("批量审核论文失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量审核论文失败: " + e.getMessage());
+        if (successCount > 0) {
+            return Result.success(message);
+        } else {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "批量审核全部失败");
         }
     }
 
     @Override
     public Result<String> deletePaper(Long paperId) {
-        try {
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            // 软删除
-            paperInfo.setIsDeleted(1);
-            paperInfo.setUpdateTime(LocalDateTime.now());
-            paperInfoMapper.updateById(paperInfo);
-            
-            log.info("论文删除成功: paperId={}", paperId);
-            return Result.success("论文删除成功");
-        } catch (Exception e) {
-            log.error("论文删除失败: paperId={}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文删除失败: " + e.getMessage());
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        // 软删除
+        paperInfo.setIsDeleted(1);
+        paperInfo.setUpdateTime(LocalDateTime.now());
+        paperInfoMapper.updateById(paperInfo);
+
+        log.info("论文删除成功: paperId={}", paperId);
+        return Result.success("论文删除成功");
     }
 
     @Override
     public Result<String> batchDeletePapers(List<Long> paperIds) {
-        try {
-            if (paperIds == null || paperIds.isEmpty()) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
-            }
-            // 批量查询论文信息，避免N+1
-            Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(paperIds).stream()
-                    .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
-            int successCount = 0;
-            for (Long paperId : paperIds) {
-                PaperInfo paperInfo = paperMap.get(paperId);
-                if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                    continue;
-                }
-                paperInfo.setIsDeleted(1);
-                paperInfo.setUpdateTime(LocalDateTime.now());
-                paperInfoMapper.updateById(paperInfo);
-                successCount++;
-            }
-            log.info("批量论文删除成功: 请求{}篇, 成功{}篇", paperIds.size(), successCount);
-            return Result.success(String.format("批量删除成功，共处理%d篇论文", successCount));
-        } catch (Exception e) {
-            log.error("批量论文删除失败: paperIds={}", paperIds, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量论文删除失败: " + e.getMessage());
+        if (paperIds == null || paperIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "论文ID列表不能为空");
         }
+        // 批量查询论文信息，避免N+1
+        Map<Long, PaperInfo> paperMap = paperInfoMapper.selectBatchIds(paperIds).stream()
+                .collect(Collectors.toMap(PaperInfo::getId, p -> p, (a, b) -> a));
+        int successCount = 0;
+        for (Long paperId : paperIds) {
+            PaperInfo paperInfo = paperMap.get(paperId);
+            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+                continue;
+            }
+            paperInfo.setIsDeleted(1);
+            paperInfo.setUpdateTime(LocalDateTime.now());
+            paperInfoMapper.updateById(paperInfo);
+            successCount++;
+        }
+        log.info("批量论文删除成功: 请求{}篇, 成功{}篇", paperIds.size(), successCount);
+        return Result.success(String.format("批量删除成功，共处理%d篇论文", successCount));
     }
 
     @Override
     public Result<Map<String, Object>> getPaperStatistics() {
-        try {
-            Map<String, Object> stats = new HashMap<>();
-            
-            // 总论文数
-            Long totalPapers = paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>().eq(PaperInfo::getIsDeleted, 0));
-            Long withdraw = paperInfoMapper.selectCount(
-                    new LambdaQueryWrapper<PaperInfo>().eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
-                            .eq(PaperInfo::getIsDeleted, 0));
-            stats.put("totalPapers", totalPapers- withdraw);
+        Map<String, Object> stats = new HashMap<>();
 
-            // 已查重
-            Long checked = paperInfoMapper.selectCount(
-                    new LambdaQueryWrapper<PaperInfo>().eq(
-                            PaperInfo::getCheckCompleted, 1)
-                            .ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
-                    .eq(PaperInfo::getIsDeleted, 0)
-            );
-            stats.put("checked", checked);
+        // 总论文数
+        Long totalPapers = paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>().eq(PaperInfo::getIsDeleted, 0));
+        Long withdraw = paperInfoMapper.selectCount(
+                new LambdaQueryWrapper<PaperInfo>().eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
+                        .eq(PaperInfo::getIsDeleted, 0));
+        stats.put("totalPapers", totalPapers- withdraw);
 
-            // 各状态论文数
-            Map<String, Long> statusStats = new HashMap<>();
-            statusStats.put("pending", paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.PENDING)
-                    .eq(PaperInfo::getIsDeleted, 0)));
-            statusStats.put("assigned", paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.ASSIGNED)
-                    .eq(PaperInfo::getIsDeleted, 0)));
-            statusStats.put("checking", paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.CHECKING)
-                    .eq(PaperInfo::getIsDeleted, 0)));
-            statusStats.put("auditing", paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.AUDITING)
-                    .eq(PaperInfo::getIsDeleted, 0)));
-            statusStats.put("completed", paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.COMPLETED)
-                    .eq(PaperInfo::getIsDeleted, 0)));
-            statusStats.put("rejected", paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.REJECTED)
-                    .eq(PaperInfo::getIsDeleted, 0)));
-            
-            stats.put("statusStats", statusStats);
-            
-            // 今日新增论文数
-            LocalDateTime todayStart = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
-            Long todayPapers = paperInfoMapper.selectCount(
-                new LambdaQueryWrapper<PaperInfo>()
-                    .ge(PaperInfo::getCreateTime, todayStart)
-                    .eq(PaperInfo::getIsDeleted, 0));
-            stats.put("todayPapers", todayPapers);
-            
-            log.info("获取论文统计信息成功");
-            return Result.success("论文统计信息获取成功", stats);
-        } catch (Exception e) {
-            log.error("获取论文统计信息失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "获取论文统计信息失败: " + e.getMessage());
-        }
+        // 已查重
+        Long checked = paperInfoMapper.selectCount(
+                new LambdaQueryWrapper<PaperInfo>().eq(
+                        PaperInfo::getCheckCompleted, 1)
+                        .ne(PaperInfo::getPaperStatus, DictConstants.PaperStatus.WITHDRAWN)
+                .eq(PaperInfo::getIsDeleted, 0)
+        );
+        stats.put("checked", checked);
+
+        // 各状态论文数
+        Map<String, Long> statusStats = new HashMap<>();
+        statusStats.put("pending", paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.PENDING)
+                .eq(PaperInfo::getIsDeleted, 0)));
+        statusStats.put("assigned", paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.ASSIGNED)
+                .eq(PaperInfo::getIsDeleted, 0)));
+        statusStats.put("checking", paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.CHECKING)
+                .eq(PaperInfo::getIsDeleted, 0)));
+        statusStats.put("auditing", paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.AUDITING)
+                .eq(PaperInfo::getIsDeleted, 0)));
+        statusStats.put("completed", paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.COMPLETED)
+                .eq(PaperInfo::getIsDeleted, 0)));
+        statusStats.put("rejected", paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .eq(PaperInfo::getPaperStatus, DictConstants.PaperStatus.REJECTED)
+                .eq(PaperInfo::getIsDeleted, 0)));
+
+        stats.put("statusStats", statusStats);
+
+        // 今日新增论文数
+        LocalDateTime todayStart = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
+        Long todayPapers = paperInfoMapper.selectCount(
+            new LambdaQueryWrapper<PaperInfo>()
+                .ge(PaperInfo::getCreateTime, todayStart)
+                .eq(PaperInfo::getIsDeleted, 0));
+        stats.put("todayPapers", todayPapers);
+
+        log.info("获取论文统计信息成功");
+        return Result.success("论文统计信息获取成功", stats);
     }
 
     @Override
@@ -528,8 +494,8 @@ public class AdminPaperServiceImpl implements AdminPaperService {
                     .doWrite(exportData);
             
             log.info("论文列表导出成功: 导出数量={}", exportData.size());
-        } catch (Exception e) {
-            log.error("导出论文列表失败: {}", e.getMessage(), e);
+        } catch (IOException e) {
+            log.error("导出论文列表IO失败: {}", e.getMessage(), e);
             try {
                 response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 response.getWriter().write("导出失败: " + e.getMessage());
@@ -597,151 +563,127 @@ public class AdminPaperServiceImpl implements AdminPaperService {
     
     @Override
     public Result<String> downloadPaper(Long paperId) {
-        try {
-            // 获取论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            // 检查是否有文件
-            if (paperInfo.getFileId() == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文文件不存在");
-            }
-            
-            // 获取文件信息
-            FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
-            if (fileInfo == null) {
-                return Result.error(ResultCode.PARAM_ERROR, "文件信息不存在");
-            }
-            
-            // 构造文件下载链接
-            String downloadUrl = "/api/v1/file/download/" + paperInfo.getFileId();
-            
-            log.info("论文文件下载准备就绪: paperId={}, fileName={}", paperId, fileInfo.getOriginalFilename());
-            return Result.success("论文文件下载链接生成成功", downloadUrl);
-            
-        } catch (Exception e) {
-            log.error("论文文件下载失败: paperId={}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "论文文件下载失败: " + e.getMessage());
+        // 获取论文信息
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
         }
+
+        // 检查是否有文件
+        if (paperInfo.getFileId() == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文文件不存在");
+        }
+
+        // 获取文件信息
+        FileInfo fileInfo = fileService.getById(paperInfo.getFileId());
+        if (fileInfo == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "文件信息不存在");
+        }
+
+        // 构造文件下载链接
+        String downloadUrl = "/api/v1/file/download/" + paperInfo.getFileId();
+
+        log.info("论文文件下载准备就绪: paperId={}, fileName={}", paperId, fileInfo.getOriginalFilename());
+        return Result.success("论文文件下载链接生成成功", downloadUrl);
     }
     
     @Override
     public Result<String> schoolInternalCheckPaper(Long paperId) {
-        try {
-            // 获取论文信息
-            PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-            if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文不存在");
-            }
-            
-            // 更新论文查重标记
-            updatePaperCheckFlags(paperInfo, "school", "local");
-            
-            // 执行内部查重检测
-            Result<SimilarityDetectionResult> detectionResult = detectionService.detectPaperSimilarity(paperId, null);
-            
-            if (detectionResult.getCode() == 200) {
-                SimilarityDetectionResult result = detectionResult.getData();
-                
-                // 更新查重完成状态和相似度
-                updatePaperCheckCompletion(paperInfo, result.getOverallSimilarity(), true);
-                
-                log.info("校内查重检测完成: paperId={}, similarity={}%, segments={}", 
-                        paperId, result.getOverallSimilarity(), result.getSimilarSegments().size());
-                return Result.success("校内查重检测完成", "查重相似度: " + result.getOverallSimilarity() + "%");
-            } else {
-                // 查重失败，更新失败状态
-                updatePaperCheckCompletion(paperInfo, null, false);
-                return Result.error(detectionResult.getCode(), "查重检测失败: " + detectionResult.getMessage());
-            }
-            
-        } catch (Exception e) {
-            log.error("校内查重检测失败：paperId={}", paperId, e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "校内查重检测失败：" + e.getMessage());
+        // 获取论文信息
+        PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+        if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
+        }
+
+        // 更新论文查重标记
+        updatePaperCheckFlags(paperInfo, "school", "local");
+
+        // 执行内部查重检测
+        Result<SimilarityDetectionResult> detectionResult = detectionService.detectPaperSimilarity(paperId, null);
+
+        if (detectionResult.getCode() == 200) {
+            SimilarityDetectionResult result = detectionResult.getData();
+
+            // 更新查重完成状态和相似度
+            updatePaperCheckCompletion(paperInfo, result.getOverallSimilarity(), true);
+
+            log.info("校内查重检测完成: paperId={}, similarity={}%, segments={}",
+                    paperId, result.getOverallSimilarity(), result.getSimilarSegments().size());
+            return Result.success("校内查重检测完成", "查重相似度: " + result.getOverallSimilarity() + "%");
+        } else {
+            // 查重失败，更新失败状态
+            updatePaperCheckCompletion(paperInfo, null, false);
+            return Result.error(detectionResult.getCode(), "查重检测失败: " + detectionResult.getMessage());
         }
     }
         
     @Override
     public Result<String> batchSchoolInternalCheckPaper(List<Long> paperIds) {
-        try {
-            if (paperIds == null || paperIds.isEmpty()) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文 ID 列表不能为空");
-            }
-                
-            if (paperIds.size() > 20) {
-                return Result.error(ResultCode.PARAM_ERROR, "单次批量查重最多支持 20 篇论文");
-            }
-                
-            int successCount = 0;
-            int failCount = 0;
-            List<String> failReasons = new ArrayList<>();
-                
-            for (Long paperId : paperIds) {
-                try {
-                    PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-                    if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
-                        failCount++;
-                        failReasons.add("论文 ID " + paperId + " 不存在");
-                        continue;
-                    }
-                        
-                    // 更新论文查重标记
-                    updatePaperCheckFlags(paperInfo, "school", "local");
-                        
-                    // 执行内部查重检测
-                    Result<SimilarityDetectionResult> detectionResult = detectionService.detectPaperSimilarity(paperId, null);
-                        
-                    if (detectionResult.getCode() == 200) {
-                        SimilarityDetectionResult result = detectionResult.getData();
-                        updatePaperCheckCompletion(paperInfo, result.getOverallSimilarity(), true);
-                        successCount++;
-                        log.info("批量查重 - 论文 ID: {}, 相似度：{}%", paperId, result.getOverallSimilarity());
-                    } else {
-                        failCount++;
-                        failReasons.add("论文 ID " + paperId + ": " + detectionResult.getMessage());
-                        updatePaperCheckCompletion(paperInfo, null, false);
-                    }
-                } catch (Exception e) {
-                    failCount++;
-                    failReasons.add("论文 ID " + paperId + ": " + e.getMessage());
-                    log.error("批量查重失败：paperId={}", paperId, e);
-                }
-            }
-                
-            String message = String.format("批量查重完成：成功%d篇，失败%d篇", successCount, failCount);
-            if (!failReasons.isEmpty()) {
-                message += "。失败详情：" + String.join("; ", failReasons);
-            }
-                
-            return Result.success(message);
-                
-        } catch (Exception e) {
-            log.error("批量校内查重失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量校内查重失败：" + e.getMessage());
+        if (paperIds == null || paperIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "论文 ID 列表不能为空");
         }
+
+        if (paperIds.size() > 20) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "单次批量查重最多支持 20 篇论文");
+        }
+
+        int successCount = 0;
+        int failCount = 0;
+        List<String> failReasons = new ArrayList<>();
+
+        for (Long paperId : paperIds) {
+            try {
+                PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
+                if (paperInfo == null || paperInfo.getIsDeleted() == 1) {
+                    failCount++;
+                    failReasons.add("论文 ID " + paperId + " 不存在");
+                    continue;
+                }
+
+                // 更新论文查重标记
+                updatePaperCheckFlags(paperInfo, "school", "local");
+
+                // 执行内部查重检测
+                Result<SimilarityDetectionResult> detectionResult = detectionService.detectPaperSimilarity(paperId, null);
+
+                if (detectionResult.getCode() == 200) {
+                    SimilarityDetectionResult result = detectionResult.getData();
+                    updatePaperCheckCompletion(paperInfo, result.getOverallSimilarity(), true);
+                    successCount++;
+                    log.info("批量查重 - 论文 ID: {}, 相似度：{}%", paperId, result.getOverallSimilarity());
+                } else {
+                    failCount++;
+                    failReasons.add("论文 ID " + paperId + ": " + detectionResult.getMessage());
+                    updatePaperCheckCompletion(paperInfo, null, false);
+                }
+            } catch (Exception e) {
+                failCount++;
+                failReasons.add("论文 ID " + paperId + ": " + e.getMessage());
+                log.error("批量查重失败：paperId={}", paperId, e);
+            }
+        }
+
+        String message = String.format("批量查重完成：成功%d篇，失败%d篇", successCount, failCount);
+        if (!failReasons.isEmpty()) {
+            message += "。失败详情：" + String.join("; ", failReasons);
+        }
+
+        return Result.success(message);
     }
         
     @Override
     public Result<String> batchThirdPartyCheckPaper(List<Long> paperIds) {
-        try {
-            if (paperIds == null || paperIds.isEmpty()) {
-                return Result.error(ResultCode.PARAM_ERROR, "论文 ID 列表不能为空");
-            }
-                
-            if (paperIds.size() > 20) {
-                return Result.error(ResultCode.PARAM_ERROR, "单次批量查重最多支持 20 篇论文");
-            }
-                
-            // TODO: 实现第三方查重逻辑（需要对接知网、维普等 API）
-            // 当前返回提示错误
-            return Result.error(ResultCode.SYSTEM_ERROR, "第三方查重功能暂未实现，请联系管理员配置");
-                
-        } catch (Exception e) {
-            log.error("批量第三方查重失败", e);
-            return Result.error(ResultCode.SYSTEM_ERROR, "批量第三方查重失败：" + e.getMessage());
+        if (paperIds == null || paperIds.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "论文 ID 列表不能为空");
         }
+
+        if (paperIds.size() > 20) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "单次批量查重最多支持 20 篇论文");
+        }
+
+        // TODO: 实现第三方查重逻辑（需要对接知网、维普等 API）
+        // 当前返回提示错误
+        throw new BusinessException(ResultCode.SYSTEM_ERROR, "第三方查重功能暂未实现，请联系管理员配置");
     }
 
     /**

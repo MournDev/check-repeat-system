@@ -63,11 +63,4 @@ public class VirusScanService {
         }
     }
 
-    /**
-     * 将可疑文件移入隔离区
-     */
-    public String quarantine(MultipartFile file) {
-        log.warn("文件已隔离: {}", file.getOriginalFilename());
-        return quarantinePath + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-    }
 }

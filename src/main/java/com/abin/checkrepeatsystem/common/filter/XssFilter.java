@@ -20,13 +20,17 @@ import java.util.regex.Pattern;
 public class XssFilter implements Filter {
 
     private static final Pattern[] XSS_PATTERNS = {
-        Pattern.compile("<script\\b[^>]*>(.*?)</script>", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("<script\\b[^>]*>(.*?)</script>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
         Pattern.compile("javascript\\s*:", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("vbscript\\s*:", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("data\\s*:\\s*text/html", Pattern.CASE_INSENSITIVE),
         Pattern.compile("on\\w+\\s*=", Pattern.CASE_INSENSITIVE),
         Pattern.compile("<iframe\\b[^>]*>", Pattern.CASE_INSENSITIVE),
         Pattern.compile("<object\\b[^>]*>", Pattern.CASE_INSENSITIVE),
         Pattern.compile("<embed\\b[^>]*>", Pattern.CASE_INSENSITIVE),
         Pattern.compile("<link\\b[^>]*>", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("<form\\b[^>]*>", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("expression\\s*\\(", Pattern.CASE_INSENSITIVE),
     };
 
     @Override

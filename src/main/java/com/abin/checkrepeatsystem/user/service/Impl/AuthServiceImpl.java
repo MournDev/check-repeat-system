@@ -6,6 +6,7 @@ import com.abin.checkrepeatsystem.common.Result;
 import com.abin.checkrepeatsystem.common.annotation.OperationLog;
 import com.abin.checkrepeatsystem.common.enums.ResultCode;
 import com.abin.checkrepeatsystem.common.enums.UserTypeEnum;
+import com.abin.checkrepeatsystem.common.service.TokenRevocationService;
 import com.abin.checkrepeatsystem.common.utils.HttpIpUtils;
 import com.abin.checkrepeatsystem.common.utils.IpLocationUtils;
 import com.abin.checkrepeatsystem.common.utils.JwtUtils;
@@ -17,11 +18,7 @@ import com.abin.checkrepeatsystem.pojo.dto.ForgotPasswordReq;
 import com.abin.checkrepeatsystem.pojo.dto.LoginReq;
 import com.abin.checkrepeatsystem.pojo.dto.RefreshTokenReq;
 import com.abin.checkrepeatsystem.pojo.dto.RegisterReq;
-import com.abin.checkrepeatsystem.pojo.entity.SysRole;
-import com.abin.checkrepeatsystem.pojo.entity.SysUser;
-import com.abin.checkrepeatsystem.pojo.entity.SysLoginLog;
-import com.abin.checkrepeatsystem.pojo.entity.StudentInfo;
-import com.abin.checkrepeatsystem.pojo.entity.AdminInfo;
+import com.abin.checkrepeatsystem.pojo.entity.*;
 import com.abin.checkrepeatsystem.user.mapper.SysLoginLogMapper;
 import com.abin.checkrepeatsystem.user.service.AuthService;
 import com.abin.checkrepeatsystem.user.service.StudentInfoService;
@@ -78,9 +75,14 @@ public class AuthServiceImpl implements AuthService {
     private final AdminInfoService adminInfoService;
 
     private final SysOperationLogMapper sysOperationLogMapper;
+
     private final RedisTemplate<String, String> redisTemplate;
+
     private final JavaMailSender mailSender;
+
     private final ApplicationMonitorService monitorService;
+
+    private final TokenRevocationService tokenRevocationService;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -119,6 +121,7 @@ public class AuthServiceImpl implements AuthService {
         newUser.setPassword(passwordEncoder.encode(registerReq.getPassword())); // 密码加密
         newUser.setRealName(registerReq.getRealName());
         newUser.setRoleId(registerReq.getRoleId());
+        newUser.setUserType(sysRole.getRoleCode()); // 根据角色设置用户类型
         newUser.setEmail(registerReq.getEmail());
         newUser.setPhone(registerReq.getPhone());
         newUser.setLastLoginTime(null); // 首次注册无登录时间
@@ -140,6 +143,16 @@ public class AuthServiceImpl implements AuthService {
         String loginIp = HttpIpUtils.getRealIp(request);           // IP地址
         String loginDevice = UserAgentUtils.parseDevice(request);   // 设备信息
         String loginLocation = IpLocationUtils.getLocationByIp(loginIp); // 地理位置
+
+        // 0. 检查该IP是否被锁定（防暴力破解，按IP锁定而非账户锁定，防止攻击者故意锁定他人账户）
+        String lockKey = "login_lock:" + loginIp;
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(lockKey))) {
+            Long ttl = redisTemplate.getExpire(lockKey, java.util.concurrent.TimeUnit.SECONDS);
+            long minutes = ttl != null ? Math.max(1, ttl / 60) : 15;
+            log.warn("登录被拒绝：IP已锁定，IP={}，剩余锁定时间={}分钟", loginIp, minutes);
+            return Result.error(ResultCode.ACCOUNT_LOCKED, "登录尝试过于频繁，请" + minutes + "分钟后重试");
+        }
+
         // 1. 执行Spring Security认证（用户名+密码校验）
         Authentication authentication;
         try {
@@ -155,10 +168,10 @@ public class AuthServiceImpl implements AuthService {
                     loginDevice, 0, "用户名或密码错误");
             // 记录登录失败操作日志
             try {
-                com.abin.checkrepeatsystem.pojo.entity.SysOperationLog operationLog = new com.abin.checkrepeatsystem.pojo.entity.SysOperationLog();
+                SysOperationLog operationLog = new SysOperationLog();
                 operationLog.setOperationType("user_login");
                 operationLog.setDescription("用户登录失败");
-                operationLog.setUserId(null);
+                operationLog.setUserId(0L);
                 operationLog.setUserName(loginReq.getUsername());
                 operationLog.setUserType("unknown");
                 operationLog.setTarget("AuthServiceImpl.login");
@@ -174,11 +187,29 @@ public class AuthServiceImpl implements AuthService {
             } catch (Exception ex) {
                 log.warn("记录登录失败操作日志失败", ex);
             }
+
+            // 记录登录失败次数，同一IP连续5次失败锁定15分钟
+            String failKey = "login_fail:" + loginIp;
+            Long failCount = redisTemplate.opsForValue().increment(failKey, 1);
+            if (failCount != null && failCount == 1) {
+                redisTemplate.expire(failKey, 15, java.util.concurrent.TimeUnit.MINUTES);
+            }
+            if (failCount != null && failCount >= 5) {
+                redisTemplate.opsForValue().set(lockKey, "1", 15, java.util.concurrent.TimeUnit.MINUTES);
+                redisTemplate.delete(failKey);
+                log.warn("IP已锁定：IP={}，连续失败{}次", loginIp, failCount);
+                monitorService.recordBusinessEvent("ip_locked", "failure", 1);
+                return Result.error(ResultCode.ACCOUNT_LOCKED, "登录尝试过于频繁，该IP已锁定15分钟");
+            }
+
             monitorService.recordBusinessEvent("user_login", "failure", 1);
-            return Result.error(ResultCode.PARAM_ERROR, "用户名或密码错误");
+            int remaining = 5 - (failCount != null ? failCount.intValue() : 1);
+            return Result.error(ResultCode.PARAM_ERROR, "用户名或密码错误，还剩" + remaining + "次尝试机会");
         }
 
-        // 2. 认证通过：设置上下文（后续权限校验会用到）
+        // 2. 认证通过：清除该IP的登录失败计数
+        redisTemplate.delete("login_fail:" + loginIp);
+        redisTemplate.delete("login_lock:" + loginIp);
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         // 3. 查询用户完整信息（含基础字段、审计字段）
@@ -251,8 +282,9 @@ public class AuthServiceImpl implements AuthService {
                 loginVO.setClassName(studentInfo.getClassName());
                 loginVO.setCollegeName(studentInfo.getCollegeName());
             }
-        } else if (UserTypeEnum.ROLE_ADMIN.equals(sysUser.getUserType())) {
-            // 如果是管理员用户，从AdminInfo表获取管理员特有信息
+        } else if (UserTypeEnum.ROLE_ADMIN.equals(sysUser.getUserType())
+                || UserTypeEnum.ROLE_SUPER_ADMIN.equals(sysUser.getUserType())) {
+            // 如果是管理员/超级管理员用户，从AdminInfo表获取管理员特有信息
             AdminInfo adminInfo = adminInfoService.getByUserId(sysUser.getId());
             if (adminInfo != null) {
                 loginVO.setPosition(adminInfo.getPosition());
@@ -280,38 +312,57 @@ public class AuthServiceImpl implements AuthService {
             return Result.error(ResultCode.PARAM_VALUE_INVALID, "令牌已失效，请重新登录");
         }
 
-        // 2. 校验旧令牌有效性（格式+是否过期）
+        // 2. 校验旧令牌格式
         if (!jwtUtils.validateTokenFormat(oldToken)) {
             log.warn("令牌刷新失败：旧令牌格式错误，token={}", maskToken(oldToken));
             return Result.error(ResultCode.PARAM_ERROR, "令牌格式错误，请重新登录");
         }
-        if (jwtUtils.isTokenExpired(oldToken)) {
-            log.warn("令牌刷新失败：旧令牌已过期，token={}", maskToken(oldToken));
-            return Result.error(ResultCode.PARAM_VALUE_INVALID, "旧令牌已过期，请重新登录");
+
+        // 3. 校验过期时间：允许过期宽限期内刷新（7天），超过则拒绝
+        io.jsonwebtoken.Claims claims;
+        try {
+            claims = jwtUtils.extractAllClaimsIgnoreExpiry(oldToken);
+        } catch (Exception e) {
+            log.warn("令牌刷新失败：令牌解析失败，token={}", maskToken(oldToken));
+            return Result.error(ResultCode.PARAM_ERROR, "令牌解析失败，请重新登录");
         }
 
-        // 3. 从旧令牌提取用户核心信息（无需查库，减少IO开销）
-        Long userId = jwtUtils.extractUserId(oldToken);
-        String username = jwtUtils.extractUsername(oldToken);
-        String roleCode = jwtUtils.extractRoleCode(oldToken);
-        // 兜底：校验令牌中的用户信息是否完整
+        Date expiration = claims.getExpiration();
+        long expiredMs = System.currentTimeMillis() - expiration.getTime();
+        long gracePeriodMs = 7L * 24 * 60 * 60 * 1000; // 7天宽限期
+        if (expiredMs > gracePeriodMs) {
+            log.warn("令牌刷新失败：令牌已过期超过宽限期(7天)，token={}", maskToken(oldToken));
+            return Result.error(ResultCode.PARAM_VALUE_INVALID, "令牌已过期，请重新登录");
+        }
+
+        // 4. 从旧令牌提取用户核心信息（无需查库，减少IO开销）
+        Long userId = claims.get("userId", Long.class);
+        String username = claims.getSubject();
+        String roleCode = claims.get("roleCode", String.class);
         if (userId == null || username == null || roleCode == null) {
             log.error("令牌刷新失败：旧令牌信息不完整，token={}", maskToken(oldToken));
             return Result.error(ResultCode.PARAM_ERROR, "令牌信息损坏，请重新登录");
         }
 
-        // 3. 生成新令牌（过期时间重置，保持用户信息一致）
+        // 5. 生成新令牌（过期时间重置，保持用户信息一致）
         String newToken = jwtUtils.generateToken(userId, username, roleCode);
         Long newExpireTime = jwtUtils.getExpirationDate(newToken).getTime();
 
-        // 4. 封装刷新响应VO
+        // 6. 封装刷新响应VO
         RefreshTokenVO refreshTokenVO = new RefreshTokenVO();
         refreshTokenVO.setNewToken(newToken);
         refreshTokenVO.setExpireTime(newExpireTime);
 
-        // 将旧令牌加入黑名单
+        // 7. 将旧令牌加入黑名单（已过期的用宽限期剩余TTL，未过期的用原始剩余TTL）
         try {
-            long remainingTtl = jwtUtils.getExpirationDate(oldToken).getTime() - System.currentTimeMillis();
+            long remainingTtl;
+            if (expiredMs > 0) {
+                // 已过期：黑名单保留到宽限期结束
+                remainingTtl = gracePeriodMs - expiredMs;
+            } else {
+                // 未过期：黑名单保留到原始过期时间
+                remainingTtl = -expiredMs;
+            }
             if (remainingTtl > 0) {
                 redisTemplate.opsForValue().set("token_blacklist:" + oldToken, "1",
                     remainingTtl, java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -321,7 +372,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         log.info("令牌刷新成功：用户名={}，旧令牌过期时间={}，新令牌过期时间={}",
-                username, jwtUtils.getExpirationDate(oldToken), newExpireTime);
+                username, expiration, newExpireTime);
         return Result.success("令牌刷新成功", refreshTokenVO);
     }
 
@@ -393,6 +444,8 @@ public class AuthServiceImpl implements AuthService {
             sysUser.setPassword(passwordEncoder.encode(forgotPasswordReq.getNewPassword()));
             sysUserMapper.updateById(sysUser);
             redisTemplate.delete("pwd_reset_code:" + username);
+            // 吊销该用户的所有旧 token
+            tokenRevocationService.revokeAllTokensForUser(sysUser.getId());
             log.info("用户密码重置成功：用户名={}", username);
             return Result.success("密码重置成功");
         } catch (Exception e) {

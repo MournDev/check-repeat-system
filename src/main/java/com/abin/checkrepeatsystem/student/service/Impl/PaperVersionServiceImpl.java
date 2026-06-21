@@ -1,6 +1,8 @@
 package com.abin.checkrepeatsystem.student.service.Impl;
 
 import com.abin.checkrepeatsystem.common.constant.DictConstants;
+import com.abin.checkrepeatsystem.common.enums.ResultCode;
+import com.abin.checkrepeatsystem.common.exception.BusinessException;
 import com.abin.checkrepeatsystem.common.service.FileService;
 import com.abin.checkrepeatsystem.common.utils.FileMimeTypeUtils;
 import com.abin.checkrepeatsystem.mapper.FileInfoMapper;
@@ -48,8 +50,11 @@ public class PaperVersionServiceImpl {
 
     public List<PaperSubmitDTO> getPaperVersions(Long paperId, Long studentId) {
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-        if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("论文不存在或无权限访问");
+        if (paperInfo == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
+        }
+        if (!paperInfo.getStudentId().equals(studentId)) {
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
         }
         List<PaperSubmit> submits = paperSubmitMapper.selectList(
             new LambdaQueryWrapper<PaperSubmit>()
@@ -72,8 +77,11 @@ public class PaperVersionServiceImpl {
         log.info("获取论文版本详情 - 论文ID: {}, 版本ID: {}, 学生ID: {}", paperId, versionId, studentId);
 
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-        if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("论文不存在或无权限访问");
+        if (paperInfo == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
+        }
+        if (!paperInfo.getStudentId().equals(studentId)) {
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
         }
 
         PaperSubmit paperSubmit = paperSubmitMapper.selectOne(
@@ -83,7 +91,7 @@ public class PaperVersionServiceImpl {
                 .last("LIMIT 1")
         );
         if (paperSubmit == null) {
-            throw new RuntimeException("版本" + versionId + "不存在");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "版本" + versionId + "不存在");
         }
 
         PaperVersionDTO versionDTO = new PaperVersionDTO();
@@ -125,19 +133,22 @@ public class PaperVersionServiceImpl {
         log.info("开始版本对比 - 论文ID: {}, 版本数量: {}, 学生ID: {}", paperId, versionIds.size(), studentId);
 
         if (versionIds.size() != 2) {
-            throw new RuntimeException("必须选择两个版本进行对比");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "必须选择两个版本进行对比");
         }
 
         PaperInfo paperInfo = paperInfoMapper.selectById(paperId);
-        if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("论文不存在或无权限访问");
+        if (paperInfo == null) {
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "论文不存在");
+        }
+        if (!paperInfo.getStudentId().equals(studentId)) {
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限访问该论文");
         }
 
         PaperSubmit versionA = findSubmitByVersion(paperId, versionIds.get(0).intValue());
         PaperSubmit versionB = findSubmitByVersion(paperId, versionIds.get(1).intValue());
 
         if (versionA == null || versionB == null) {
-            throw new RuntimeException("版本信息不正确: 版本" + versionIds.get(0) + "或" + versionIds.get(1) + "不存在");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "版本信息不正确: 版本" + versionIds.get(0) + "或" + versionIds.get(1) + "不存在");
         }
 
         VersionCompareResult result = new VersionCompareResult();
@@ -224,7 +235,7 @@ public class PaperVersionServiceImpl {
             log.info("版本对比报告下载完成 - 论文ID: {}", paperId);
         } catch (Exception e) {
             log.error("下载版本对比报告失败 - 论文ID: {}", paperId, e);
-            throw new RuntimeException("下载对比报告失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "下载对比报告失败: " + e.getMessage());
         }
     }
 
@@ -233,12 +244,12 @@ public class PaperVersionServiceImpl {
 
         PaperSubmit paperSubmit = paperSubmitMapper.selectById(versionId);
         if (paperSubmit == null) {
-            throw new RuntimeException("版本不存在");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "版本不存在");
         }
 
         PaperInfo paperInfo = paperInfoMapper.selectById(paperSubmit.getPaperId());
         if (paperInfo == null || !paperInfo.getStudentId().equals(studentId)) {
-            throw new RuntimeException("无权限下载此版本");
+            throw new BusinessException(ResultCode.PERMISSION_NO_ACCESS, "无权限下载此版本");
         }
 
         FileInfo fileInfo = fileService.getById(paperSubmit.getFileId());
@@ -262,13 +273,13 @@ public class PaperVersionServiceImpl {
                     }
                     response.getOutputStream().flush();
                 } catch (Exception e) {
-                    throw new RuntimeException("读取文件失败: " + e.getMessage());
+                    throw new BusinessException(ResultCode.SYSTEM_ERROR, "读取文件失败: " + e.getMessage());
                 }
             } else {
-                throw new RuntimeException("文件不存在");
+                throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "文件不存在");
             }
         } else {
-            throw new RuntimeException("文件信息不存在");
+            throw new BusinessException(ResultCode.RESOURCE_NOT_FOUND, "文件信息不存在");
         }
 
         log.info("论文版本下载完成 - 版本ID: {}", versionId);

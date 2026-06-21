@@ -50,11 +50,10 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
                 return Result.error(ResultCode.BUSINESS_TASK_ASSIGNED, "论文分配状态不允许确认");
             }
 
-            // 2. 更新论文分配状态
+            // 2. 更新论文分配状态（论文状态保持 ASSIGNED，由查重任务创建时转为 CHECKING）
             PaperInfo updatePaper = new PaperInfo();
             updatePaper.setId(paperId);
             updatePaper.setAllocationStatus(DictConstants.AllocationStatus.CONFIRMED);
-            updatePaper.setPaperStatus(DictConstants.PaperStatus.CHECKING);  // 进入待查重状态
             updatePaper.setConfirmTime(LocalDateTime.now());
             updatePaper.setUpdateTime(LocalDateTime.now());
             paperInfoMapper.updateById(updatePaper);
@@ -103,7 +102,9 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
             // 2. 更新论文分配状态
             PaperInfo updatePaper = new PaperInfo();
             updatePaper.setId(paperId);
-            updatePaper.setAllocationStatus(DictConstants.AllocationStatus.REJECTED);
+            updatePaper.setAllocationStatus(DictConstants.AllocationStatus.PENDING_REASSIGN);
+            updatePaper.setTeacherId(null);  // 清除原导师，以便重新分配
+            updatePaper.setTeacherName(null);
             updatePaper.setPaperStatus(DictConstants.PaperStatus.PENDING);  // 返回待分配状态，重新分配
             updatePaper.setUpdateTime(LocalDateTime.now());
             paperInfoMapper.updateById(updatePaper);
